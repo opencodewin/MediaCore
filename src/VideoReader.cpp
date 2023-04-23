@@ -496,7 +496,7 @@ public:
                 else if (!m_vfrmQ.empty())
                 {
                     auto& vf = m_vfrmQ.back();
-                    if (pts >= vf->pts && pts <= vf->pts+vf->dur || vf->isEofFrame)
+                    if (pts >= vf->pts && pts < vf->pts+vf->dur || vf->isEofFrame)
                         hVfrm = vf;
                 }
                 if (hVfrm)
@@ -1292,7 +1292,7 @@ private:
                 {
                     auto vf = *iter;
                     bool remove = false;
-                    if (vf->pts < m_cacheRange.first)
+                    if (vf->pts+vf->dur < m_cacheRange.first)
                     {
                         if (m_readForward && (!vf->isEofFrame || m_vfrmQ.size() > 1))
                             remove = true;
