@@ -187,29 +187,102 @@ public:
         if (idx0 > idx1)
             return true;
 
-        // init 'images' with blank image
-        images.reserve(idx1-idx0+1);
-        for (int32_t i = idx0; i <= idx1; i++)
+        images.resize(idx1-idx0+1);
         {
-            Image::Holder hIamge(new Image());
-            hIamge->mTimestampMs = CalcSnapshotMts(i);
-            images.push_back(hIamge);
-        }
-
-        lock_guard<mutex> readLock(m_goptskListReadLocks[0]);
-        for (auto& goptsk : m_goptskList)
-        {
-            if (idx0 >= goptsk->TaskRange().SsIdx().second || idx1 < goptsk->TaskRange().SsIdx().first)
-                continue;
-            auto ssIter = goptsk->ssImgList.begin();
-            while (ssIter != goptsk->ssImgList.end())
+            lock_guard<mutex> readLock(m_goptskListReadLocks[0]);
+            for (auto& goptsk : m_goptskList)
             {
-                auto& ss = *ssIter++;
-                if (ss->index < idx0 || ss->index > idx1)
+                if (idx0 >= goptsk->TaskRange().SsIdx().second || idx1 < goptsk->TaskRange().SsIdx().first)
                     continue;
-                images[ss->index-idx0] = ss->img;
+                auto ssIter = goptsk->ssImgList.begin();
+                while (ssIter != goptsk->ssImgList.end())
+                {
+                    auto& ss = *ssIter++;
+                    if (ss->index < idx0 || ss->index > idx1)
+                        continue;
+                    images[ss->index-idx0] = ss->img;
+                }
             }
         }
+
+        if (!m_isOvssComplete)
+        {
+            vector<ImGui::ImMat> ovss;
+            m_hOverview->GetSnapshots(ovss);
+            bool allValid = true;
+            for (auto& m : ovss)
+            {
+                if (!m.empty())
+                {
+                    auto iter = find_if(m_ovssimgs.begin(), m_ovssimgs.end(), [m] (auto& img) {
+                        return img->mImgMat.time_stamp >= m.time_stamp;
+                    });
+                    if (iter == m_ovssimgs.end() || (*iter)->mImgMat.time_stamp > m.time_stamp)
+                    {
+                        Image::Holder hImage(new Image());
+                        hImage->mImgMat = m;
+                        hImage->mTimestampMs = (int64_t)(m.time_stamp*1000);
+                        hImage->mTextureHolder = TextureHolder(new ImTextureID(0), [this] (ImTextureID* pTid) {
+                            if (*pTid)
+                                ImGui::ImDestroyTexture(*pTid);
+                            delete pTid;
+                        });
+                        ImMatToTexture(hImage->mImgMat, *(hImage->mTextureHolder));
+                        hImage->mTextureReady = true;
+                        m_ovssimgs.insert(iter, std::move(hImage));
+                    }
+                }
+                else
+                    allValid = false;
+            }
+            if (allValid)
+                m_isOvssComplete = true;
+        }
+        if (m_ovssimgs.empty())
+        {
+            ImGui::ImMat prevMat;
+            const int loopCnt = images.size();
+            for (int i = 0; i < loopCnt; i++)
+            {
+                auto& img = images[i];
+                if (!img)
+                {
+                    img = Image::Holder(new Image());
+                    img->mImgMat = prevMat;
+                    img->mTimestampMs = CalcSnapshotMts(idx0+i);
+                }
+                else
+                {
+                    prevMat = img->mImgMat;
+                }
+            }
+        }
+        else
+        {
+            auto candIter1 = m_ovssimgs.begin();
+            auto candIter2 = candIter1; candIter2++;
+            int64_t candMs1 = (*candIter1)->mTimestampMs;
+            int64_t candMs2 = candIter2 == m_ovssimgs.end() ? INT64_MAX : (*candIter2)->mTimestampMs;
+            const int loopCnt = images.size();
+            for (int i = 0; i < loopCnt; i++)
+            {
+                auto& img = images[i];
+                if (!img)
+                {
+                    const int64_t currSsMs = CalcSnapshotMts(idx0+i);
+                    while (currSsMs >= candMs2)
+                    {
+                        candIter1 = candIter2++;
+                        candMs1 = candMs2;
+                        candMs2 = candIter2 == m_ovssimgs.end() ? INT64_MAX : (*candIter2)->mTimestampMs;
+                    }
+                    img = Image::Holder(new Image());
+                    *img = **candIter1;
+                    img->mTimestampMs = currSsMs;
+                }
+            }
+        }
+
         return true;
     }
 
@@ -406,6 +479,13 @@ public:
         }
         if (m_prepared)
             ResetGopDecodeTaskList();
+        return true;
+    }
+
+    bool SetOverview(Overview::Holder hOverview) override
+    {
+        m_hOverview = hOverview;
+        m_isOvssComplete = false;
         return true;
     }
 
@@ -2071,6 +2151,9 @@ private:
     mutex m_goptskFreeLock;
     atomic_int32_t m_pendingVidfrmCnt{0};
     int32_t m_maxPendingVidfrmCnt{2};
+    Overview::Holder m_hOverview;
+    list<Image::Holder> m_ovssimgs;
+    bool m_isOvssComplete{false};
     // textures
     list<TextureHolder> m_deprecatedTextures;
     mutex m_deprecatedTextureLock;

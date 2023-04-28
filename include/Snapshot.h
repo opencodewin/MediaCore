@@ -19,9 +19,10 @@
 #include <string>
 #include <memory>
 #include "immat.h"
-#include "MediaParser.h"
-#include "Logger.h"
 #include "MediaCore.h"
+#include "MediaParser.h"
+#include "Overview.h"
+#include "Logger.h"
 
 namespace MediaCore
 {
@@ -80,6 +81,7 @@ namespace Snapshot
         virtual bool SetSnapshotResizeFactor(float widthFactor, float heightFactor) = 0;
         virtual bool SetOutColorFormat(ImColorFormat clrfmt) = 0;
         virtual bool SetResizeInterpolateMode(ImInterpolateMode interp) = 0;
+        virtual bool SetOverview(Overview::Holder hOverview) = 0;
 
         virtual MediaInfo::Holder GetMediaInfo() const = 0;
         virtual const VideoStream* GetVideoStream() const = 0;

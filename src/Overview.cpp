@@ -802,7 +802,8 @@ private:
                                 av_packet_unref(&avpkt);
                                 avpktLoaded = false;
                                 idleLoop = idleLoop2 = false;
-                                enqDone = true;
+                                if (enqpkt->pts > m_vidAvStm->start_time)
+                                    enqDone = true;
                             }
                         }
                         else
@@ -858,7 +859,7 @@ private:
                     int fferr = avcodec_receive_frame(m_viddecCtx, &avfrm);
                     if (fferr == 0)
                     {
-                        // m_logger->Log(DEBUG) << "<<< Get video frame pts=" << avfrm.pts << "(" << MillisecToString(av_rescale_q(avfrm.pts, m_vidAvStm->time_base, MILLISEC_TIMEBASE)) << ")." << endl;
+                        m_logger->Log(DEBUG) << "<<< Get video frame pts=" << avfrm.pts << "(" << MillisecToString(av_rescale_q(avfrm.pts, m_vidAvStm->time_base, MILLISEC_TIMEBASE)) << ")." << endl;
                         avfrmLoaded = true;
                         idleLoop = idleLoop2 = false;
                     }
