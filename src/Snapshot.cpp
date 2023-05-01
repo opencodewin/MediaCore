@@ -205,7 +205,7 @@ public:
             }
         }
 
-        if (!m_isOvssComplete)
+        if (!m_isOvssComplete && m_hOverview)
         {
             vector<ImGui::ImMat> ovss;
             m_hOverview->GetSnapshots(ovss);
