@@ -47,7 +47,9 @@ public:
     {
         string fileName = SysUtils::ExtractFileName(hParser->GetUrl());
         ostringstream loggerNameOss;
-        loggerNameOss << "VClip-" << fileName.substr(0, 8);
+        loggerNameOss << id;
+        string idstr = loggerNameOss.str(); loggerNameOss.str("");
+        loggerNameOss << "VClp-" << fileName.substr(0, 4) << "-" << idstr.substr(idstr.size()-4);
 
         m_logger = GetLogger(loggerNameOss.str());
         m_hInfo = hParser->GetMediaInfo();
@@ -56,7 +58,9 @@ public:
         auto vidStm = hParser->GetBestVideoStream();
         if (vidStm->isImage)
             throw invalid_argument("This video stream is an IMAGE, it should be instantiated with a 'VideoClip_ImageImpl' instance!");
-        m_hReader = MediaReader::CreateVideoInstance();
+        loggerNameOss.str("");
+        loggerNameOss << "VRdr-" << fileName.substr(0, 4) << "-" << idstr.substr(idstr.size()-4);
+        m_hReader = MediaReader::CreateVideoInstance(loggerNameOss.str());
         m_hReader->EnableHwAccel(VideoClip::USE_HWACCEL);
         if (!m_hReader->Open(hParser))
             throw runtime_error(m_hReader->GetError());

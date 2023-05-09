@@ -395,7 +395,7 @@ public:
         if (!m_quitThread || m_isImage)
             return;
 
-        double readPos = m_seekPosUpdated ? m_seekPosTs : m_prevReadResult.first;
+        double readPos = m_seekPosUpdated ? m_seekPosTs : (double)CvtPtsToMts(m_readPos)/1000;
         if (!OpenMedia(m_hParser))
         {
             m_logger->Log(Error) << "FAILED to re-open media when waking up this MediaReader!" << endl;
@@ -676,15 +676,19 @@ private:
 
     bool OpenMedia(MediaParser::Holder hParser)
     {
-        // create new logger based on opened media name
-        auto fileName = SysUtils::ExtractFileName(hParser->GetUrl());
-        ostringstream loggerNameOss;
-        loggerNameOss << "Vreader-" << fileName.substr(0, 8);
-        int n;
-        Level l = m_logger->GetShowLevels(n);
-        auto newLoggerName = loggerNameOss.str();
-        m_logger = Logger::GetLogger(newLoggerName);
-        m_logger->SetShowLevels(l, n);
+        if (m_logger->GetName() == GetVideoLogger()->GetName())
+        {
+            // if this VideoReader is using the default logger,
+            // then create more specific logger based on opened media name
+            auto fileName = SysUtils::ExtractFileName(hParser->GetUrl());
+            ostringstream loggerNameOss;
+            loggerNameOss << "Vreader-" << fileName.substr(0, 8);
+            int n;
+            Level l = m_logger->GetShowLevels(n);
+            auto newLoggerName = loggerNameOss.str();
+            m_logger = Logger::GetLogger(newLoggerName);
+            m_logger->SetShowLevels(l, n);
+        }
 
         // open media
         int fferr = avformat_open_input(&m_avfmtCtx, hParser->GetUrl().c_str(), nullptr, nullptr);

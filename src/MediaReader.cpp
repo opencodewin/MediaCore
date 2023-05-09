@@ -56,13 +56,13 @@ public:
     {
         if (loggerName.empty())
         {
-            m_logger = MediaReader::GetLogger();
+            m_logger = MediaReader::GetDefaultLogger();
         }
         else
         {
             m_logger = Logger::GetLogger(loggerName);
             int n;
-            Level l = MediaReader::GetLogger()->GetShowLevels(n);
+            Level l = MediaReader::GetDefaultLogger()->GetShowLevels(n);
             m_logger->SetShowLevels(l, n);
         }
     }
@@ -3282,7 +3282,7 @@ MediaReader::Holder MediaReader::CreateInstance(const string& loggerName)
     return MediaReader::Holder(new MediaReader_Impl(loggerName), MEDIA_READER_HOLDER_DELETER);
 }
 
-ALogger* MediaReader::GetLogger()
+ALogger* MediaReader::GetDefaultLogger()
 {
     return Logger::GetLogger("MReader");
 }
