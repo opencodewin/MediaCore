@@ -664,7 +664,11 @@ private:
         for (uint32_t i = 0; i < m_tracks.size(); i++)
             oss << "[in_" << i << "]";
         oss << "amix=inputs=" << m_tracks.size();
+#if (LIBAVFILTER_VERSION_MAJOR > 7) || (LIBAVFILTER_VERSION_MAJOR == 7) && (LIBAVFILTER_VERSION_MINOR > 110)
         oss << ":normalize=0";
+#else
+        oss << ":sum=1";
+#endif
         string filtArgs = oss.str(); oss.str("");
         m_logger->Log(DEBUG) << "'MultiTrackAudioReader' mixer filter args: '" << filtArgs << "'." << endl;
         fferr = avfilter_graph_parse_ptr(m_filterGraph, filtArgs.c_str(), &m_filterInputs, &m_filterOutputs, nullptr);

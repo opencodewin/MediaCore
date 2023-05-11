@@ -489,7 +489,7 @@ private:
         }
         if (!isFirstFilter)
         {
-            fgArgsOss << ",aformat=f=" << av_get_sample_fmt_name(smpfmt);
+            fgArgsOss << ",aformat=sample_fmts=" << av_get_sample_fmt_name(smpfmt);
         }
         string fgArgs = fgArgsOss.str();
         m_logger->Log(DEBUG) << "Initialze filter-graph with arguments '" << fgArgs << "'." << endl;
@@ -671,7 +671,7 @@ private:
             if (i < channels-1)
                 fgArgsOss << " | ";
         }
-        fgArgsOss << ",aformat=f=" << av_get_sample_fmt_name(smpfmt);
+        fgArgsOss << ",aformat=sample_fmts=" << av_get_sample_fmt_name(smpfmt);
         string fgArgs = fgArgsOss.str();
         m_logger->Log(DEBUG) << "Initialze PAN filter-graph with arguments '" << fgArgs << "'." << endl;
         fferr = avfilter_graph_parse_ptr(m_panFg, fgArgs.c_str(), &inputs, &outputs, nullptr);
