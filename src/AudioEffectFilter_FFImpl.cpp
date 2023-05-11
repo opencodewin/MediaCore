@@ -620,18 +620,27 @@ private:
             uint64_t ch = av_channel_layout_extract_channel(chlyt, i);
             if (ch == AV_CH_FRONT_LEFT || ch == AV_CH_BACK_LEFT || ch == AV_CH_FRONT_LEFT_OF_CENTER ||
                 ch == AV_CH_SIDE_LEFT || ch == AV_CH_TOP_FRONT_LEFT || ch == AV_CH_TOP_BACK_LEFT ||
-                ch == AV_CH_STEREO_LEFT || ch == AV_CH_WIDE_LEFT || ch == AV_CH_SURROUND_DIRECT_LEFT ||
-                ch == AV_CH_TOP_SIDE_LEFT || ch == AV_CH_BOTTOM_FRONT_LEFT)
+                ch == AV_CH_STEREO_LEFT || ch == AV_CH_WIDE_LEFT || ch == AV_CH_SURROUND_DIRECT_LEFT
+#if (LIBAVUTIL_VERSION_MAJOR > 56) || (LIBAVUTIL_VERSION_MAJOR == 56) && (LIBAVUTIL_VERSION_MINOR > 57)
+                || ch == AV_CH_TOP_SIDE_LEFT || ch == AV_CH_BOTTOM_FRONT_LEFT
+#endif
+                )
                 xCoef *= (1-m_currPanParams.x)/0.5;
             else if (ch == AV_CH_FRONT_RIGHT || ch == AV_CH_BACK_RIGHT || ch == AV_CH_FRONT_RIGHT_OF_CENTER ||
                 ch == AV_CH_SIDE_RIGHT || ch == AV_CH_TOP_FRONT_RIGHT || ch == AV_CH_TOP_BACK_RIGHT ||
-                ch == AV_CH_STEREO_RIGHT || ch == AV_CH_WIDE_RIGHT || ch == AV_CH_SURROUND_DIRECT_RIGHT ||
-                ch == AV_CH_TOP_SIDE_RIGHT || ch == AV_CH_BOTTOM_FRONT_RIGHT)
+                ch == AV_CH_STEREO_RIGHT || ch == AV_CH_WIDE_RIGHT || ch == AV_CH_SURROUND_DIRECT_RIGHT
+#if (LIBAVUTIL_VERSION_MAJOR > 56) || (LIBAVUTIL_VERSION_MAJOR == 56) && (LIBAVUTIL_VERSION_MINOR > 57)
+                || ch == AV_CH_TOP_SIDE_RIGHT || ch == AV_CH_BOTTOM_FRONT_RIGHT
+#endif
+                )
                 xCoef *= m_currPanParams.x/0.5;
             if (ch == AV_CH_FRONT_LEFT || ch == AV_CH_FRONT_RIGHT || ch == AV_CH_FRONT_CENTER ||
                 ch == AV_CH_FRONT_LEFT_OF_CENTER || ch == AV_CH_FRONT_RIGHT_OF_CENTER || ch == AV_CH_TOP_FRONT_LEFT ||
-                ch == AV_CH_TOP_FRONT_CENTER || ch == AV_CH_TOP_FRONT_RIGHT || ch == AV_CH_BOTTOM_FRONT_CENTER ||
-                ch == AV_CH_BOTTOM_FRONT_LEFT || ch == AV_CH_BOTTOM_FRONT_RIGHT)
+                ch == AV_CH_TOP_FRONT_CENTER || ch == AV_CH_TOP_FRONT_RIGHT
+#if (LIBAVUTIL_VERSION_MAJOR > 56) || (LIBAVUTIL_VERSION_MAJOR == 56) && (LIBAVUTIL_VERSION_MINOR > 57)
+                || ch == AV_CH_BOTTOM_FRONT_CENTER || ch == AV_CH_BOTTOM_FRONT_LEFT || ch == AV_CH_BOTTOM_FRONT_RIGHT
+#endif                
+                )
                 yCoef *= (1-m_currPanParams.y)/0.5;
             else if (ch == AV_CH_BACK_LEFT || ch == AV_CH_BACK_RIGHT || ch == AV_CH_BACK_CENTER ||
                 ch == AV_CH_TOP_BACK_LEFT || ch == AV_CH_TOP_BACK_CENTER || ch == AV_CH_TOP_BACK_RIGHT)
