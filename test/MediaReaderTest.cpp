@@ -95,7 +95,7 @@ static void MediaReader_Initialize(void** handle)
         ->SetShowLevels(DEBUG);
     MediaParser::GetLogger()
         ->SetShowLevels(INFO);
-    MediaReader::GetLogger()
+    MediaReader::GetDefaultLogger()
         ->SetShowLevels(INFO);
 
 #ifdef USE_BOOKMARK

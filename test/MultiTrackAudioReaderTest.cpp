@@ -98,7 +98,7 @@ static void MultiTrackAudioReader_Initialize(void** handle)
 {
     GetDefaultLogger()
         ->SetShowLevels(DEBUG);
-    MediaReader::GetLogger()
+    MediaReader::GetDefaultLogger()
         ->SetShowLevels(INFO);
     MultiTrackAudioReader::GetLogger()
         ->SetShowLevels(DEBUG);
