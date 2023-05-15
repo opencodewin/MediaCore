@@ -206,5 +206,13 @@ add_custom_command(TARGET SubtitleReaderTest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     $<TARGET_FILE:SubtitleReaderTest> $<TARGET_FILE_DIR:MediaCore>)
 
+add_executable(UnitTest
+    ${LIB_TEST_DIR}/UnitTest.cpp
+)
+target_link_libraries(UnitTest MediaCore)
+add_custom_command(TARGET UnitTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:UnitTest> $<TARGET_FILE_DIR:MediaCore>)
+
 endif(BUILD_MEDIACORE_TEST)
 # <<<
