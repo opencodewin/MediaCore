@@ -222,6 +222,12 @@ public:
         m_readSamples = pos*m_outSampleRate/1000;
         // update read iterators
         UpdateReadIterator(pos);
+        // seek clip position
+        for (auto hClip : m_clips)
+        {
+            auto clipPos = pos-hClip->Start();
+            hClip->SeekTo(clipPos);
+        }
     }
 
     AudioEffectFilter::Holder GetAudioEffectFilter() override
