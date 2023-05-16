@@ -180,7 +180,7 @@ public:
     {
         if (pos < 0)
             pos = 0;
-        else if (pos > Duration())
+        else if (pos >= Duration())
             pos = Duration()-1;
         const double p = (double)(pos+m_startOffset)/1000;
         if (!m_srcReader->SeekTo(p))

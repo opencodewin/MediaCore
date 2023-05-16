@@ -73,9 +73,6 @@ public:
         m_duration = lastClip->Start()+lastClip->Duration();
         // update overlap
         UpdateClipOverlap(hClip);
-        // call 'SeekTo()' to update iterators
-        const int64_t readPos = m_readFrames*1000*m_frameRate.den/m_frameRate.num;
-        SeekTo(readPos);
     }
 
     void MoveClip(int64_t id, int64_t start) override

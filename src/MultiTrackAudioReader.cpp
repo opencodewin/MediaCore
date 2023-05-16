@@ -25,6 +25,7 @@
 #include "MultiTrackAudioReader.h"
 #include "FFUtils.h"
 #include "SysUtils.h"
+#include "DebugHelper.h"
 extern "C"
 {
     #include "libavutil/avutil.h"
@@ -318,26 +319,22 @@ public:
             else
             {
                 m_prevSeekPos = m_seekPos = pos;
-                m_seeking = true;
-                m_probeMode = probeMode;
+                m_seekPosChanged = true;
+                m_probeMode = true;
             }
         }
         else
         {
-            TerminateMixingThread();
-
             // disable probe mode effect if there is any
-            m_probeMode = probeMode;
-            m_seeking = false;
-            m_prevSeekPos = m_seekPos = INT64_MIN;
+            m_probeMode = false;
             m_aeFilter->SetMuted(false);
+            m_prevSeekPos = INT64_MIN;
 
-            m_outputMats.clear();
+            m_seekPos = pos;
+            m_seekPosChanged = true;
+            m_inSeeking = true;
             m_samplePos = pos*m_outSampleRate/1000;
             m_readPos = pos;
-            for (auto track : m_tracks)
-                track->SeekTo(pos);
-            StartMixingThread();
         }
         return true;
     }
@@ -371,6 +368,10 @@ public:
         {
             m_errMsg = "This MultiTrackAudioReader instance is NOT started yet!";
             return false;
+        }
+        while (m_inSeeking && !m_quit)
+        {
+            this_thread::sleep_for(chrono::milliseconds(5));
         }
 
         m_outputMatsLock.lock();
@@ -430,8 +431,6 @@ public:
             m_errMsg = "This MultiTrackVideoReader instance is NOT started yet!";
             return false;
         }
-
-        UpdateDuration();
 
         SeekTo(ReadPos());
         return true;
@@ -722,6 +721,20 @@ private:
             bool idleLoop = true;
             int fferr;
 
+            if (!m_probeMode && m_seekPosChanged.exchange(false))
+            {
+                {
+                    lock_guard<mutex> lk(m_outputMatsLock);
+                    m_outputMats.clear();
+                }
+                {
+                    lock_guard<recursive_mutex> lk(m_trackLock);
+                    for (auto track : m_tracks)
+                        track->SeekTo(m_seekPos);
+                }
+                m_inSeeking = false;
+            }
+
             int64_t mixingPos = m_samplePos*1000/m_outSampleRate;
             m_eof = m_readForward ? mixingPos >= Duration() : mixingPos <= 0;
             if (m_outputMats.size() < m_outputMatsMaxCount)
@@ -729,7 +742,7 @@ private:
                 // handle probe mode transition
                 if (m_probeMode)
                 {
-                    if (m_seeking.exchange(false))
+                    if (m_seekPosChanged.exchange(false))
                     {
                         m_probeStage = -1;
                         m_aeFilter->SetMuted(true);
@@ -910,7 +923,8 @@ private:
     int32_t m_probeStage;  // -1 : fade out; 1 : fade in; 0 : do nothing
     int64_t m_probeDuration{200};  // 200 milliseconds
     int64_t m_probeSampleDur{0};
-    atomic_bool m_seeking{false};
+    atomic_bool m_seekPosChanged{false};
+    atomic_bool m_inSeeking{false};
     int64_t m_seekPos{INT64_MIN};
     int64_t m_prevSeekPos{INT64_MIN};
 

@@ -20,6 +20,7 @@
 #include <algorithm>
 #include "AudioTrack.h"
 #include "FFUtils.h"
+#include "DebugHelper.h"
 extern "C"
 {
     #include "libavutil/samplefmt.h"
@@ -793,7 +794,6 @@ private:
                 {
                     const AudioClip::Holder& hClip = *iter;
                     int64_t clipPos = pos-hClip->Start();
-                    hClip->SeekTo(clipPos);
                     if (m_readClipIter == m_clips.end() && clipPos < hClip->Duration())
                         m_readClipIter = iter;
                     iter++;
