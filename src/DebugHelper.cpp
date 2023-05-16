@@ -87,7 +87,7 @@ public:
             m_currTspan.second.first = tpNow;
     }
 
-    void End() override
+    TimeSpan End() override
     {
         auto tpNow = SysClock::now();
         EnrollCurrentTimeSpan(tpNow);
@@ -97,6 +97,7 @@ public:
             m_tspanStack.pop_back();
             EnrollCurrentTimeSpan(tpNow);
         }
+        return {m_startTp, tpNow};
     }
 
     void Reset() override

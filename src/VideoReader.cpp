@@ -60,6 +60,8 @@ public:
         int n;
         Level l = GetVideoLogger()->GetShowLevels(n);
         m_logger->SetShowLevels(l, n);
+
+        m_prevReadResult.first = 0;
     }
 
     virtual ~VideoReader_Impl() {}
@@ -139,22 +141,11 @@ public:
 
         auto vidStream = GetVideoStream();
         m_isImage = vidStream->isImage;
-
-        if (!m_frmCvt.SetOutSize(outWidth, outHeight))
-        {
-            m_errMsg = m_frmCvt.GetError();
-            return false;
-        }
-        if (!m_frmCvt.SetOutColorFormat(outClrfmt))
-        {
-            m_errMsg = m_frmCvt.GetError();
-            return false;
-        }
-        if (!m_frmCvt.SetResizeInterpolateMode(rszInterp))
-        {
-            m_errMsg = m_frmCvt.GetError();
-            return false;
-        }
+        m_outWidth = outWidth;
+        m_outHeight = outHeight;
+        m_useSizeFactor = false;
+        m_outClrFmt = outClrfmt;
+        m_interpMode = rszInterp;
 
         m_vidDurTs = vidStream->duration;
         AVRational timebase = { vidStream->timebase.num, vidStream->timebase.den };
@@ -194,30 +185,11 @@ public:
 
         auto vidStream = GetVideoStream();
         m_isImage = vidStream->isImage;
-
-        m_ssWFacotr = outWidthFactor;
-        m_ssHFacotr = outHeightFactor;
-        uint32_t outWidth = (uint32_t)ceil(vidStream->width*outWidthFactor);
-        if ((outWidth&0x1) == 1)
-            outWidth++;
-        uint32_t outHeight = (uint32_t)ceil(vidStream->height*outHeightFactor);
-        if ((outHeight&0x1) == 1)
-            outHeight++;
-        if (!m_frmCvt.SetOutSize(outWidth, outHeight))
-        {
-            m_errMsg = m_frmCvt.GetError();
-            return false;
-        }
-        if (!m_frmCvt.SetOutColorFormat(outClrfmt))
-        {
-            m_errMsg = m_frmCvt.GetError();
-            return false;
-        }
-        if (!m_frmCvt.SetResizeInterpolateMode(rszInterp))
-        {
-            m_errMsg = m_frmCvt.GetError();
-            return false;
-        }
+        m_ssWFactor = outWidthFactor;
+        m_ssHFactor = outHeightFactor;
+        m_useSizeFactor = true;
+        m_outClrFmt = outClrfmt;
+        m_interpMode = rszInterp;
 
         m_vidDurTs = vidStream->duration;
         AVRational timebase = { vidStream->timebase.num, vidStream->timebase.den };
@@ -323,6 +295,11 @@ public:
         m_seekPosTs = 0;
         m_vidfrmIntvMts = 0;
         m_vidDurTs = 0;
+        if (m_pFrmCvt)
+        {
+            delete m_pFrmCvt;
+            m_pFrmCvt = nullptr;
+        }
 
         m_prepared = false;
         m_started = false;
@@ -597,7 +574,7 @@ public:
         const VideoStream* vidStream = GetVideoStream();
         if (!vidStream)
             return 0;
-        uint32_t w = m_frmCvt.GetOutWidth();
+        uint32_t w = m_pFrmCvt->GetOutWidth();
         if (w > 0)
             return w;
         w = vidStream->width;
@@ -609,7 +586,7 @@ public:
         const VideoStream* vidStream = GetVideoStream();
         if (!vidStream)
             return 0;
-        uint32_t h = m_frmCvt.GetOutHeight();
+        uint32_t h = m_pFrmCvt->GetOutHeight();
         if (h > 0)
             return h;
         h = vidStream->height;
@@ -782,6 +759,40 @@ private:
             lock_guard<mutex> lk(m_seekPosLock);
             if (m_seekPosUpdated)
                 UpdateReadPos(m_readPos);
+        }
+
+        if (!m_pFrmCvt)
+        {
+            m_pFrmCvt = new AVFrameToImMatConverter();
+            if (!m_pFrmCvt)
+            {
+                m_errMsg = "FAILED to allocate new 'AVFrameToImMatConverter' instance!";
+                return false;
+            }
+            if (m_useSizeFactor)
+            {
+                m_outWidth = (uint32_t)ceil(m_vidAvStm->codecpar->width*m_ssWFactor);
+                if ((m_outWidth&0x1) == 1)
+                    m_outWidth++;
+                m_outHeight = (uint32_t)ceil(m_vidAvStm->codecpar->height*m_ssHFactor);
+                if ((m_outHeight&0x1) == 1)
+                    m_outHeight++;
+            }
+            if (!m_pFrmCvt->SetOutSize(m_outWidth, m_outHeight))
+            {
+                m_errMsg = m_pFrmCvt->GetError();
+                return false;
+            }
+            if (!m_pFrmCvt->SetOutColorFormat(m_outClrFmt))
+            {
+                m_errMsg = m_pFrmCvt->GetError();
+                return false;
+            }
+            if (!m_pFrmCvt->SetResizeInterpolateMode(m_interpMode))
+            {
+                m_errMsg = m_pFrmCvt->GetError();
+                return false;
+            }
         }
 
         m_prepared = true;
@@ -1324,7 +1335,7 @@ private:
             if (hVfrm)
             {
                 // AddCheckPoint("ConvImg0");
-                if (!m_frmCvt.ConvertImage(hVfrm->frmPtr.get(), hVfrm->vmat, hVfrm->ts))
+                if (!m_pFrmCvt->ConvertImage(hVfrm->frmPtr.get(), hVfrm->vmat, hVfrm->ts))
                 {
                     m_logger->Log(Error) << "AVFrameToImMatConverter::ConvertImage() FAILED at pos " << hVfrm->ts << "(" << hVfrm->pts << ")! Discard this frame." << endl;
                     lock_guard<mutex> _lk(m_vfrmQLock);
@@ -1392,7 +1403,7 @@ private:
     pair<int32_t, int32_t> m_forwardCacheFrameCount{1, 3};
     pair<int32_t, int32_t> m_backwardCacheFrameCount{8, 2};
     mutex m_cacheRangeLock;
-    pair<double, ImGui::ImMat> m_prevReadResult{0, ImGui::ImMat()};
+    pair<double, ImGui::ImMat> m_prevReadResult;
     bool m_readForward{true};
     bool m_seekPosUpdated{false};
     double m_seekPosTs{0};
@@ -1402,8 +1413,12 @@ private:
     int64_t m_vidfrmIntvPts{0};
     double m_vidDurTs{0};
 
-    float m_ssWFacotr{1.f}, m_ssHFacotr{1.f};
-    AVFrameToImMatConverter m_frmCvt;
+    uint32_t m_outWidth{0}, m_outHeight{0};
+    float m_ssWFactor{1.f}, m_ssHFactor{1.f};
+    bool m_useSizeFactor{false};
+    ImColorFormat m_outClrFmt;
+    ImInterpolateMode m_interpMode;
+    AVFrameToImMatConverter* m_pFrmCvt{nullptr};
 };
 
 static const auto VIDEO_READER_HOLDER_DELETER = [] (MediaReader* p) {

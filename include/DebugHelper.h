@@ -55,7 +55,7 @@ namespace MediaCore
 
         virtual void SetLogInterval(uint32_t millisec) = 0;
         virtual void Start() = 0;
-        virtual void End() = 0;
+        virtual TimeSpan End() = 0;
         virtual void Reset() = 0;
         virtual void SectionStart(const std::string& name) = 0;
         virtual void SectionEnd() = 0;
