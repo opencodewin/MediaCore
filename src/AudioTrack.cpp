@@ -71,9 +71,6 @@ public:
     void InsertClip(AudioClip::Holder hClip) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
-        if (!CheckClipRangeValid(hClip->Id(), hClip->Start(), hClip->End()))
-            throw invalid_argument("Invalid argument for inserting clip!");
-
         // add this clip into clip list
         hClip->SetDirection(m_readForward);
         m_clips.push_back(hClip);
@@ -100,9 +97,6 @@ public:
             return;
         else
             hClip->SetStart(start);
-
-        if (!CheckClipRangeValid(id, hClip->Start(), hClip->End()))
-            throw invalid_argument("Invalid argument for moving clip!");
 
         // update clip order
         m_clips.sort(CLIP_SORT_CMP);
@@ -138,9 +132,6 @@ public:
         }
         if (!rangeChanged)
             return;
-
-        if (!CheckClipRangeValid(id, hClip->Start(), hClip->End()))
-            throw invalid_argument("Invalid argument for changing clip range!");
 
         // update clip order
         m_clips.sort(CLIP_SORT_CMP);
@@ -589,19 +580,6 @@ public:
 private:
     static function<bool(const AudioClip::Holder&, const AudioClip::Holder&)> CLIP_SORT_CMP;
     static function<bool(const AudioOverlap::Holder&, const AudioOverlap::Holder&)> OVERLAP_SORT_CMP;
-
-    bool CheckClipRangeValid(int64_t clipId, int64_t start, int64_t end)
-    {
-        for (auto& overlap : m_overlaps)
-        {
-            if (clipId == overlap->FrontClip()->Id() || clipId == overlap->RearClip()->Id())
-                continue;
-            if ((start > overlap->Start() && start < overlap->End()) ||
-                (end > overlap->Start() && end < overlap->End()))
-                return false;
-        }
-        return true;
-    }
 
     void UpdateClipOverlap(AudioClip::Holder hUpdateClip, bool remove = false)
     {
