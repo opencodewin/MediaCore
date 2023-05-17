@@ -24,6 +24,7 @@ namespace MediaCore
     class VideoTransformFilter_VulkanImpl : public VideoTransformFilter_Base
     {
     public:
+        virtual ~VideoTransformFilter_VulkanImpl();
         const std::string GetFilterName() const override;
         bool Initialize(uint32_t outWidth, uint32_t outHeight) override;
         VideoTransformFilterHolder Clone(uint32_t outWidth, uint32_t outHeight) override { return nullptr; }
@@ -35,7 +36,7 @@ namespace MediaCore
         void UpdatePassThrough();
 
     private:
-        ImGui::warpAffine_vulkan m_warpAffine;
+        ImGui::warpAffine_vulkan* m_pWarpAffine{nullptr};
         ImGui::ImMat m_affineMat;
         double m_realScaleRatioH{1}, m_realScaleRatioV{1};
         ImPixel m_cropRect;

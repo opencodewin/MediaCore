@@ -17,6 +17,7 @@
 
 #include <sstream>
 #include <algorithm>
+#include <cassert>
 #include "VideoTrack.h"
 #include "MediaCore.h"
 #include "DebugHelper.h"
@@ -46,7 +47,7 @@ public:
 
     VideoClip::Holder AddNewClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t startOffset, int64_t endOffset, int64_t readPos) override
     {
-        lock_guard<recursive_mutex> lk(m_apiLock);
+        lock_guard<recursive_mutex> lk(m_clipChangeLock);
         VideoClip::Holder hClip;
         auto vidstream = hParser->GetBestVideoStream();
         if (vidstream->isImage)
@@ -59,56 +60,56 @@ public:
 
     void InsertClip(VideoClip::Holder hClip) override
     {
-        lock_guard<recursive_mutex> lk(m_apiLock);
+        lock_guard<recursive_mutex> lk(m_clipChangeLock);
         if (!CheckClipRangeValid(hClip->Id(), hClip->Start(), hClip->End()))
             throw invalid_argument("Invalid argument for inserting clip!");
 
-        // add this clip into clip list
+        // add this clip into clip list 2
         hClip->SetDirection(m_readForward);
-        m_clips.push_back(hClip);
         hClip->SetTrackId(m_id);
-        m_clips.sort(CLIP_SORT_CMP);
-        // update track duration
-        VideoClip::Holder lastClip = m_clips.back();
-        m_duration = lastClip->Start()+lastClip->Duration();
-        // update overlap
-        UpdateClipOverlap(hClip);
+        m_clips2.push_back(hClip);
+        if (hClip->End() > m_duration2)
+            m_duration2 = hClip->End();
+        m_clipChanged = true;
     }
 
     void MoveClip(int64_t id, int64_t start) override
     {
-        lock_guard<recursive_mutex> lk(m_apiLock);
-        VideoClip::Holder hClip = GetClipById(id);
+        lock_guard<recursive_mutex> lk(m_clipChangeLock);
+        VideoClip::Holder hClip = GetClipById2(id);
         if (!hClip)
             throw invalid_argument("Invalid value for argument 'id'!");
-
         if (hClip->Start() == start)
             return;
-        else
-            hClip->SetStart(start);
 
+        bool isTailClip = hClip->End() == m_duration2;
+        hClip->SetStart(start);
         if (!CheckClipRangeValid(id, hClip->Start(), hClip->End()))
             throw invalid_argument("Invalid argument for moving clip!");
 
-        // update clip order
-        m_clips.sort(CLIP_SORT_CMP);
-        // update track duration
-        VideoClip::Holder lastClip = m_clips.back();
-        m_duration = lastClip->Start()+lastClip->Duration();
-        // update overlap
-        UpdateClipOverlap(hClip);
-        // call 'SeekTo()' to update iterators
-        const int64_t readPos = m_readFrames*1000*m_frameRate.den/m_frameRate.num;
-        SeekTo(readPos);
+        if (hClip->End() >= m_duration2)
+            m_duration2 = hClip->End();
+        else if (isTailClip)
+        {
+            int64_t newDuration = 0;
+            for (auto& clip : m_clips2)
+            {
+                if (clip->End() > newDuration)
+                    newDuration = clip->End();
+            }
+            m_duration2 = newDuration;
+        }
+        m_clipChanged = true;
     }
 
     void ChangeClipRange(int64_t id, int64_t startOffset, int64_t endOffset) override
     {
-        lock_guard<recursive_mutex> lk(m_apiLock);
-        VideoClip::Holder hClip = GetClipById(id);
+        lock_guard<recursive_mutex> lk(m_clipChangeLock);
+        VideoClip::Holder hClip = GetClipById2(id);
         if (!hClip)
             throw invalid_argument("Invalid value for argument 'id'!");
 
+        bool isTailClip = hClip->End() == m_duration2;
         bool rangeChanged = false;
         if (hClip->IsImage())
         {
@@ -143,81 +144,87 @@ public:
         }
         if (!rangeChanged)
             return;
-
         if (!CheckClipRangeValid(id, hClip->Start(), hClip->End()))
             throw invalid_argument("Invalid argument for changing clip range!");
 
-        // update clip order
-        m_clips.sort(CLIP_SORT_CMP);
-        // update track duration
-        VideoClip::Holder lastClip = m_clips.back();
-        m_duration = lastClip->Start()+lastClip->Duration();
-        // update overlap
-        UpdateClipOverlap(hClip);
-        // call 'SeekTo()' to update iterators
-        const int64_t readPos = m_readFrames*1000*m_frameRate.den/m_frameRate.num;
-        SeekTo(readPos);
+        if (hClip->End() >= m_duration2)
+            m_duration2 = hClip->End();
+        else if (isTailClip)
+        {
+            int64_t newDuration = 0;
+            for (auto& clip : m_clips2)
+            {
+                if (clip->End() > newDuration)
+                    newDuration = clip->End();
+            }
+            m_duration2 = newDuration;
+        }
+        m_clipChanged = true;
     }
 
     VideoClip::Holder RemoveClipById(int64_t clipId) override
     {
-        lock_guard<recursive_mutex> lk(m_apiLock);
-        auto iter = find_if(m_clips.begin(), m_clips.end(), [clipId](const VideoClip::Holder& clip) {
+        lock_guard<recursive_mutex> lk(m_clipChangeLock);
+        auto iter = find_if(m_clips2.begin(), m_clips2.end(), [clipId](const VideoClip::Holder& clip) {
             return clip->Id() == clipId;
         });
-        if (iter == m_clips.end())
+        if (iter == m_clips2.end())
             return nullptr;
 
-        VideoClip::Holder hClip = (*iter);
-        m_clips.erase(iter);
+        auto hClip = *iter;
+        bool isTailClip = hClip->End() == m_duration2;
+        m_clips2.erase(iter);
         hClip->SetTrackId(-1);
-        UpdateClipOverlap(hClip, true);
-        // call 'SeekTo()' to update iterators
-        const int64_t readPos = m_readFrames*1000*m_frameRate.den/m_frameRate.num;
-        SeekTo(readPos);
 
-        if (m_clips.empty())
-            m_duration = 0;
-        else
+        if (isTailClip)
         {
-            VideoClip::Holder lastClip = m_clips.back();
-            m_duration = lastClip->Start()+lastClip->Duration();
+            int64_t newDuration = 0;
+            for (auto& clip : m_clips2)
+            {
+                if (clip->End() > newDuration)
+                    newDuration = clip->End();
+            }
+            m_duration2 = newDuration;
         }
+        m_clipChanged = true;
         return hClip;
     }
 
     VideoClip::Holder RemoveClipByIndex(uint32_t index) override
     {
-        lock_guard<recursive_mutex> lk(m_apiLock);
-        if (index >= m_clips.size())
+        lock_guard<recursive_mutex> lk(m_clipChangeLock);
+        if (index >= m_clips2.size())
             throw invalid_argument("Argument 'index' exceeds the count of clips!");
 
-        auto iter = m_clips.begin();
+        auto iter = m_clips2.begin();
         while (index > 0)
         {
             iter++; index--;
         }
 
-        VideoClip::Holder hClip = (*iter);
-        m_clips.erase(iter);
+        auto hClip = *iter;
+        bool isTailClip = hClip->End() == m_duration2;
+        m_clips2.erase(iter);
         hClip->SetTrackId(-1);
-        UpdateClipOverlap(hClip, true);
-        // call 'SeekTo()' to update iterators
-        const int64_t readPos = m_readFrames*1000*m_frameRate.den/m_frameRate.num;
-        SeekTo(readPos);
 
-        if (m_clips.empty())
-            m_duration = 0;
-        else
+        if (isTailClip)
         {
-            VideoClip::Holder lastClip = m_clips.back();
-            m_duration = lastClip->Start()+lastClip->Duration();
+            int64_t newDuration = 0;
+            for (auto& clip : m_clips2)
+            {
+                if (clip->End() > newDuration)
+                    newDuration = clip->End();
+            }
+            m_duration2 = newDuration;
         }
+        m_clipChanged = true;
         return hClip;
     }
 
     uint32_t ClipCount() const override
     {
+        if (m_clipChanged)
+            return m_clips2.size();
         return m_clips.size();
     }
     
@@ -268,6 +275,8 @@ public:
 
     int64_t Duration() const override
     {
+        if (m_clipChanged)
+            return m_duration2;
         return m_duration;
     }
 
@@ -378,8 +387,12 @@ public:
     void ReadVideoFrame(vector<CorrelativeFrame>& frames, ImGui::ImMat& out) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
+        const int64_t readPos = ReadPos();
 
-        const int64_t readPos = m_readFrames*1000*m_frameRate.den/m_frameRate.num;
+        // if clip changed, update m_clips
+        if (m_clipChanged)
+            UpdateClipState(readPos);
+        // notify read position to each clip
         for (auto& clip : m_clips)
             clip->NotifyReadPos(readPos-clip->Start());
 
@@ -520,56 +533,97 @@ private:
         return true;
     }
 
-    void UpdateClipOverlap(VideoClip::Holder hUpdateClip, bool remove = false)
+    void UpdateClipState(int64_t readPos)
     {
-        const int64_t id1 = hUpdateClip->Id();
-        // remove invalid overlaps
-        auto ovIter = m_overlaps.begin();
-        while (ovIter != m_overlaps.end())
         {
-            auto& hOverlap = *ovIter;
-            if (hOverlap->FrontClip()->TrackId() != m_id || hOverlap->RearClip()->TrackId() != m_id)
-            {
-                ovIter = m_overlaps.erase(ovIter);
-                continue;
-            }
-            if (hOverlap->FrontClip()->Id() == id1 || hOverlap->RearClip()->Id() == id1)
-            {
-                hOverlap->Update();
-                if (hOverlap->Duration() <= 0)
-                {
-                    ovIter = m_overlaps.erase(ovIter);
-                    continue;
-                }
-            }
-            ovIter++;
+            lock_guard<recursive_mutex> lk2(m_clipChangeLock);
+            if (!m_clipChanged)
+                return;
+            m_clips = m_clips2;
+            m_clipChanged = false;
         }
-        if (!remove)
+        // udpate duration
+        if (m_clips.empty())
         {
-            // add new overlaps
-            for (auto& clip : m_clips)
+            m_duration = 0;
+        }
+        else
+        {
+            m_clips.sort(CLIP_SORT_CMP);
+            auto& tail = m_clips.back();
+            m_duration = tail->End();
+        }
+        // update overlap
+        UpdateClipOverlap();
+        // seek
+        SeekTo(readPos);
+    }
+
+    void UpdateClipOverlap()
+    {
+        lock_guard<mutex> lk(m_ovlpUpdateLock);
+        if (m_clips.empty())
+        {
+            m_overlaps.clear();
+            return;
+        }
+
+        list<VideoOverlap::Holder> newOverlaps;
+        auto clipIter1 = m_clips.begin();
+        auto clipIter2 = clipIter1; clipIter2++;
+        while (clipIter2 != m_clips.end())
+        {
+            const auto& clip1 = *clipIter1;
+            const auto& clip2 = *clipIter2++;
+            const auto cid1 = clip1->Id();
+            const auto cid2 = clip2->Id();
+            if (VideoOverlap::HasOverlap(clip1, clip2))
             {
-                if (hUpdateClip == clip)
-                    continue;
-                if (VideoOverlap::HasOverlap(hUpdateClip, clip))
+                auto ovlpIter = m_overlaps.begin();
+                while (ovlpIter != m_overlaps.end())
                 {
-                    const int64_t id2 = clip->Id();
-                    auto iter = find_if(m_overlaps.begin(), m_overlaps.end(), [id1, id2] (const VideoOverlap::Holder& overlap) {
-                        const int64_t idf = overlap->FrontClip()->Id();
-                        const int64_t idr = overlap->RearClip()->Id();
-                        return (id1 == idf && id2 == idr) || (id1 == idr && id2 == idf);
-                    });
-                    if (iter == m_overlaps.end())
+                    const auto& ovlp = *ovlpIter;
+                    const auto fid = ovlp->FrontClip()->Id();
+                    const auto rid = ovlp->RearClip()->Id();
+                    if (cid1 != fid && cid1 != rid || cid2 != fid && cid2 != rid)
                     {
-                        auto hOverlap = VideoOverlap::CreateInstance(0, hUpdateClip, clip);
-                        m_overlaps.push_back(hOverlap);
+                        ovlpIter++;
+                        continue;
                     }
+                    break;
                 }
+                if (ovlpIter != m_overlaps.end())
+                {
+                    auto& ovlp = *ovlpIter;
+                    ovlp->Update();
+                    assert(ovlp->Duration() > 0);
+                    newOverlaps.push_back(*ovlpIter);
+                }
+                else
+                {
+                    newOverlaps.push_back(VideoOverlap::CreateInstance(0, clip1, clip2));
+                }
+            }
+            if (clipIter2 == m_clips.end())
+            {
+                clipIter1++;
+                clipIter2 = clipIter1;
+                clipIter2++;
             }
         }
 
-        // sort overlap by 'Start' time
+        m_overlaps = std::move(newOverlaps);
         m_overlaps.sort(OVERLAP_SORT_CMP);
+    }
+
+    VideoClip::Holder GetClipById2(int64_t id)
+    {
+        auto iter = find_if(m_clips2.begin(), m_clips2.end(), [id] (const VideoClip::Holder& clip) {
+            return clip->Id() == id;
+        });
+        if (iter != m_clips2.end())
+            return *iter;
+        return nullptr;
     }
 
 private:
@@ -580,10 +634,14 @@ private:
     Ratio m_frameRate;
     list<VideoClip::Holder> m_clips;
     list<VideoClip::Holder>::iterator m_readClipIter;
+    list<VideoClip::Holder> m_clips2;
+    bool m_clipChanged{false};
+    recursive_mutex m_clipChangeLock;
     list<VideoOverlap::Holder> m_overlaps;
     list<VideoOverlap::Holder>::iterator m_readOverlapIter;
+    mutex m_ovlpUpdateLock;
     int64_t m_readFrames{0};
-    int64_t m_duration{0};
+    int64_t m_duration{0}, m_duration2{0};
     bool m_readForward{true};
     bool m_visible{true};
 };
@@ -601,16 +659,18 @@ VideoTrack::Holder VideoTrack::CreateInstance(int64_t id, uint32_t outWidth, uin
 VideoTrack::Holder VideoTrack_Impl::Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate)
 {
     lock_guard<recursive_mutex> lk(m_apiLock);
+    const int64_t readPos = ReadPos();
+    if (m_clipChanged)
+        UpdateClipState(readPos);
+
     VideoTrack_Impl* newInstance = new VideoTrack_Impl(m_id, outWidth, outHeight, frameRate);
     // duplicate the clips
     for (auto clip : m_clips)
     {
         auto newClip = clip->Clone(outWidth, outHeight, frameRate);
-        newInstance->m_clips.push_back(newClip);
         newClip->SetTrackId(m_id);
-        VideoClip::Holder lastClip = newInstance->m_clips.back();
-        newInstance->m_duration = lastClip->Start()+lastClip->Duration();
-        newInstance->UpdateClipOverlap(newClip);
+        newInstance->m_clips2.push_back(newClip);
+        newInstance->UpdateClipState(0);
     }
     // clone the transitions on the overlaps
     for (auto overlap : m_overlaps)

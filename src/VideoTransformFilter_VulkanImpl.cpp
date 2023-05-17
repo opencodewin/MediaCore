@@ -31,6 +31,15 @@ namespace MediaCore
         return "VideoTransformFilter_VulkanImpl";
     }
 
+    VideoTransformFilter_VulkanImpl::~VideoTransformFilter_VulkanImpl()
+    {
+        if (m_pWarpAffine)
+        {
+            delete m_pWarpAffine;
+            m_pWarpAffine = nullptr;
+        }
+    }
+
     bool VideoTransformFilter_VulkanImpl::Initialize(uint32_t outWidth, uint32_t outHeight)
     {
         if (outWidth == 0 || outHeight == 0)
@@ -222,7 +231,9 @@ namespace MediaCore
         {
             ImGui::VkMat vkmat; vkmat.type = IM_DT_INT8;
             vkmat.w = m_outWidth; vkmat.h = m_outHeight;
-            m_warpAffine.warp(inMat, vkmat, m_affineMat, m_interpMode, ImPixel(0, 0, 0, 0), m_cropRect);
+            if (!m_pWarpAffine)
+                m_pWarpAffine = new ImGui::warpAffine_vulkan();
+            m_pWarpAffine->warp(inMat, vkmat, m_affineMat, m_interpMode, ImPixel(0, 0, 0, 0), m_cropRect);
             vkmat.time_stamp = inMat.time_stamp;
             vkmat.rate = inMat.rate;
             vkmat.flags = inMat.flags;
