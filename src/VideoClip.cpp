@@ -791,7 +791,7 @@ VideoOverlap::Holder VideoOverlap::CreateInstance(int64_t id, VideoClip::Holder 
     });
 }
 
-std::ostream& operator<<(std::ostream& os, VideoOverlap::Holder hOverlap)
+std::ostream& operator<<(std::ostream& os, const VideoOverlap::Holder& hOverlap)
 {
     os << "{'id':" << hOverlap->Id() << ", 'start':" << hOverlap->Start() << ", 'dur':" << hOverlap->Duration() << "}";
     return os;

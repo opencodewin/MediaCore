@@ -101,6 +101,6 @@ namespace MediaCore
         virtual void SeekTo(int64_t pos) = 0;
         virtual ImGui::ImMat ReadAudioSamples(uint32_t& readSamples, bool& eof) = 0;
 
-        friend std::ostream& operator<<(std::ostream& os, Holder hOverlap);
+        friend std::ostream& operator<<(std::ostream& os, const Holder& hOverlap);
     };
 }

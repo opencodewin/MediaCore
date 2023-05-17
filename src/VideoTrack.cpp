@@ -227,36 +227,16 @@ public:
         return hClip;
     }
 
-    uint32_t ClipCount() const override
+    list<VideoClip::Holder> GetClipList() override
     {
-        if (m_clipChanged)
-            return m_clips2.size();
-        return m_clips.size();
+        lock_guard<recursive_mutex> lk(m_clipChangeLock);
+        return list<VideoClip::Holder>(m_clips);
     }
-    
-    list<VideoClip::Holder>::iterator ClipListBegin() override
+
+    list<VideoOverlap::Holder> GetOverlapList() override
     {
-        return m_clips.begin();
-    }
-    
-    list<VideoClip::Holder>::iterator ClipListEnd() override
-    {
-        return m_clips.end();
-    }
-    
-    uint32_t OverlapCount() const override
-    {
-        return m_overlaps.size();
-    }
-    
-    list<VideoOverlap::Holder>::iterator OverlapListBegin() override
-    {
-        return m_overlaps.begin();
-    }
-    
-    list<VideoOverlap::Holder>::iterator OverlapListEnd() override
-    {
-        return m_overlaps.end();
+        lock_guard<mutex> lk(m_ovlpUpdateLock);
+        return list<VideoOverlap::Holder>(m_overlaps);
     }
 
     int64_t Id() const override

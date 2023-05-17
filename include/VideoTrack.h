@@ -56,12 +56,8 @@ struct VideoTrack
     virtual VideoOverlap::Holder GetOverlapById(int64_t id) = 0;
     virtual void UpdateClipState() = 0;
 
-    virtual uint32_t ClipCount() const = 0;
-    virtual std::list<VideoClip::Holder>::iterator ClipListBegin() = 0;
-    virtual std::list<VideoClip::Holder>::iterator ClipListEnd() = 0;
-    virtual uint32_t OverlapCount() const = 0;
-    virtual std::list<VideoOverlap::Holder>::iterator OverlapListBegin() = 0;
-    virtual std::list<VideoOverlap::Holder>::iterator OverlapListEnd() = 0;
+    virtual std::list<VideoClip::Holder> GetClipList() = 0;
+    virtual std::list<VideoOverlap::Holder> GetOverlapList() = 0;
 };
 
 MEDIACORE_API std::ostream& operator<<(std::ostream& os, VideoTrack::Holder hTrack);

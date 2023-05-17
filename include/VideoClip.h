@@ -114,6 +114,6 @@ struct VideoOverlap
     virtual VideoTransition::Holder GetTransition() const = 0;
     virtual void SetTransition(VideoTransition::Holder hTrans) = 0;
 
-    friend std::ostream& operator<<(std::ostream& os, VideoOverlap& overlap);
+    friend std::ostream& operator<<(std::ostream& os, const Holder& hOverlap);
 };
 }

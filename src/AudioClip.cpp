@@ -472,7 +472,7 @@ AudioOverlap::Holder AudioOverlap::CreateInstance(int64_t id, AudioClip::Holder 
     return AudioOverlap::Holder(new AudioOverlap_Impl(id, hClip1, hClip2), AUDIO_OVERLAP_HOLDER_DELETER);
 }
 
-std::ostream& operator<<(std::ostream& os, AudioOverlap::Holder hOverlap)
+std::ostream& operator<<(std::ostream& os, const AudioOverlap::Holder& hOverlap)
 {
     os << "{'id':" << hOverlap->Id() << ", 'start':" << hOverlap->Start() << ", 'dur':" << hOverlap->Duration() << "}";
     return os;

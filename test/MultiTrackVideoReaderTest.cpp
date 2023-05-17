@@ -200,8 +200,9 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         if (!noTrack)
         {
             VideoTrack::Holder hTrack = g_mtVidReader->GetTrackByIndex(s_clipOpTrackSelIdx);
-            auto clipIter = hTrack->ClipListBegin();
-            while (clipIter != hTrack->ClipListEnd())
+            auto clipList = hTrack->GetClipList();
+            auto clipIter = clipList.begin();
+            while (clipIter != clipList.end())
             {
                 ostringstream oss;
                 oss << "Clip#" << (*clipIter)->Id();
@@ -422,22 +423,24 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         {
             ostringstream oss;
             oss << "Track#" << vidTrackIdx++ << "{ 'clips': [";
-            for (auto clIter = (*track)->ClipListBegin(); clIter != (*track)->ClipListEnd();)
+            auto clipList = (*track)->GetClipList();
+            for (auto clIter = clipList.begin(); clIter != clipList.end();)
             {
                 oss << "Clip#" << (*clIter)->Id() << ":{'tlOff':" << (*clIter)->Start()
                     << ", 'off0':" << (*clIter)->StartOffset() << ", 'off1':" << (*clIter)->EndOffset()
                     << ", 'dur':" << (*clIter)->Duration() << "}";
                 clIter++;
-                if (clIter != (*track)->ClipListEnd())
+                if (clIter != clipList.end())
                     oss << ", ";
             }
             oss << "], 'overlaps': [";
-            for (auto ovIter = (*track)->OverlapListBegin(); ovIter != (*track)->OverlapListEnd();)
+            auto ovlpList = (*track)->GetOverlapList();
+            for (auto ovIter = ovlpList.begin(); ovIter != ovlpList.end();)
             {
                 oss << "Overlap#" << (*ovIter)->Id() << ":{'start':" << (*ovIter)->Start()
                     << ", 'dur':" << (*ovIter)->Duration() << "}";
                 ovIter++;
-                if (ovIter != (*track)->OverlapListEnd())
+                if (ovIter != ovlpList.end())
                     oss << ", ";
             }
             oss << "].";
