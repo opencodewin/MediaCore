@@ -17,6 +17,7 @@
 
 #include <sstream>
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include "VideoTrack.h"
 #include "MediaCore.h"
@@ -71,6 +72,7 @@ public:
         if (hClip->End() > m_duration2)
             m_duration2 = hClip->End();
         m_clipChanged = true;
+        m_syncReadPos = true;
     }
 
     void MoveClip(int64_t id, int64_t start) override
@@ -100,6 +102,7 @@ public:
             m_duration2 = newDuration;
         }
         m_clipChanged = true;
+        m_syncReadPos = true;
     }
 
     void ChangeClipRange(int64_t id, int64_t startOffset, int64_t endOffset) override
@@ -160,6 +163,7 @@ public:
             m_duration2 = newDuration;
         }
         m_clipChanged = true;
+        m_syncReadPos = true;
     }
 
     VideoClip::Holder RemoveClipById(int64_t clipId) override
@@ -187,6 +191,7 @@ public:
             m_duration2 = newDuration;
         }
         m_clipChanged = true;
+        m_syncReadPos = true;
         return hClip;
     }
 
@@ -218,6 +223,7 @@ public:
             m_duration2 = newDuration;
         }
         m_clipChanged = true;
+        m_syncReadPos = true;
         return hClip;
     }
 
@@ -391,7 +397,10 @@ public:
 
         // if clip changed, update m_clips
         if (m_clipChanged)
-            UpdateClipState(readPos);
+            UpdateClipState();
+        // sync read position if needed
+        if (m_syncReadPos.exchange(false))
+            SeekTo(readPos);
         // notify read position to each clip
         for (auto& clip : m_clips)
             clip->NotifyReadPos(readPos-clip->Start());
@@ -517,24 +526,10 @@ public:
         return nullptr;
     }
 
-    friend ostream& operator<<(ostream& os, VideoTrack_Impl& track);
-
-private:
-    bool CheckClipRangeValid(int64_t clipId, int64_t start, int64_t end)
+    void UpdateClipState() override
     {
-        for (auto& overlap : m_overlaps)
-        {
-            if (clipId == overlap->FrontClip()->Id() || clipId == overlap->RearClip()->Id())
-                continue;
-            if ((start > overlap->Start() && start < overlap->End()) ||
-                (end > overlap->Start() && end < overlap->End()))
-                return false;
-        }
-        return true;
-    }
-
-    void UpdateClipState(int64_t readPos)
-    {
+        if (!m_clipChanged)
+            return;
         {
             lock_guard<recursive_mutex> lk2(m_clipChangeLock);
             if (!m_clipChanged)
@@ -555,8 +550,22 @@ private:
         }
         // update overlap
         UpdateClipOverlap();
-        // seek
-        SeekTo(readPos);
+    }
+
+    friend ostream& operator<<(ostream& os, VideoTrack_Impl& track);
+
+private:
+    bool CheckClipRangeValid(int64_t clipId, int64_t start, int64_t end)
+    {
+        for (auto& overlap : m_overlaps)
+        {
+            if (clipId == overlap->FrontClip()->Id() || clipId == overlap->RearClip()->Id())
+                continue;
+            if ((start > overlap->Start() && start < overlap->End()) ||
+                (end > overlap->Start() && end < overlap->End()))
+                return false;
+        }
+        return true;
     }
 
     void UpdateClipOverlap()
@@ -636,6 +645,7 @@ private:
     list<VideoClip::Holder>::iterator m_readClipIter;
     list<VideoClip::Holder> m_clips2;
     bool m_clipChanged{false};
+    atomic_bool m_syncReadPos{false};
     recursive_mutex m_clipChangeLock;
     list<VideoOverlap::Holder> m_overlaps;
     list<VideoOverlap::Holder>::iterator m_readOverlapIter;
@@ -659,9 +669,8 @@ VideoTrack::Holder VideoTrack::CreateInstance(int64_t id, uint32_t outWidth, uin
 VideoTrack::Holder VideoTrack_Impl::Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate)
 {
     lock_guard<recursive_mutex> lk(m_apiLock);
-    const int64_t readPos = ReadPos();
     if (m_clipChanged)
-        UpdateClipState(readPos);
+        UpdateClipState();
 
     VideoTrack_Impl* newInstance = new VideoTrack_Impl(m_id, outWidth, outHeight, frameRate);
     // duplicate the clips
@@ -670,7 +679,7 @@ VideoTrack::Holder VideoTrack_Impl::Clone(uint32_t outWidth, uint32_t outHeight,
         auto newClip = clip->Clone(outWidth, outHeight, frameRate);
         newClip->SetTrackId(m_id);
         newInstance->m_clips2.push_back(newClip);
-        newInstance->UpdateClipState(0);
+        newInstance->UpdateClipState();
     }
     // clone the transitions on the overlaps
     for (auto overlap : m_overlaps)
