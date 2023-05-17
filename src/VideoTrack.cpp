@@ -679,6 +679,7 @@ VideoTrack::Holder VideoTrack_Impl::Clone(uint32_t outWidth, uint32_t outHeight,
         auto newClip = clip->Clone(outWidth, outHeight, frameRate);
         newClip->SetTrackId(m_id);
         newInstance->m_clips2.push_back(newClip);
+        newInstance->m_clipChanged = true;
         newInstance->UpdateClipState();
     }
     // clone the transitions on the overlaps
