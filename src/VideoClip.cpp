@@ -62,6 +62,7 @@ public:
             throw invalid_argument("This video stream is an IMAGE, it should be instantiated with a 'VideoClip_ImageImpl' instance!");
         loggerNameOss.str(""); loggerNameOss << "VRdr-" << fileName.substr(0, 4) << "-" << idstr;
         m_hReader = MediaReader::CreateVideoInstance(loggerNameOss.str());
+        // m_hReader->SetLogLevel(VERBOSE);
         m_hReader->EnableHwAccel(VideoClip::USE_HWACCEL);
         if (!m_hReader->Open(hParser))
             throw runtime_error(m_hReader->GetError());

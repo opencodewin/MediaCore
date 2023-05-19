@@ -326,8 +326,11 @@ public:
         m_seekPosTs = ts;
         m_inSeeking = true;
         m_seekPosUpdated = true;
-        int64_t seekPts = CvtMtsToPts(ts*1000);
-        UpdateReadPos(seekPts);
+        if (m_prepared)
+        {
+            int64_t seekPts = CvtMtsToPts(ts*1000);
+            UpdateReadPos(seekPts);
+        }
         return true;
     }
 
@@ -381,9 +384,6 @@ public:
         m_seekPosTs = readPos;
         m_seekPosUpdated = true;
         m_inSeeking = true;
-        int64_t seekPts = CvtMtsToPts(m_seekPosTs*1000);
-        UpdateReadPos(seekPts);
-
         StartAllThreads();
     }
 
@@ -447,6 +447,9 @@ public:
             UpdateReadPos(pts);
         m_logger->Log(VERBOSE) << ">> TO READ frame: pts=" << pts << ", ts=" << pos << "." << endl;
 
+        auto wait1 = GetTimePoint();
+        auto wait0 = wait1;
+        const int64_t hungupWarnInternal = 3000;
         VideoFrame::Holder hVfrm;
         while (!m_quitThread)
         {
@@ -482,6 +485,12 @@ public:
             if (!wait)
                 break;
             this_thread::sleep_for(chrono::milliseconds(2));
+            auto wait2 = GetTimePoint();
+            if (CountElapsedMillisec(wait1, wait2) > 3000)
+            {
+                wait1 = wait2;
+                Log(WARN) << "ReadVideoFrame() Hung UP for " << (double)CountElapsedMillisec(wait0, wait2)/1000 << "seconds!" << endl;
+            }
         }
         if (!hVfrm)
         {
@@ -685,7 +694,6 @@ private:
             m_errMsg = oss.str();
             return false;
         }
-        UpdateReadPos(m_vidStartTime);
         return true;
     }
 
@@ -755,11 +763,6 @@ private:
             m_errMsg = oss.str();
             return false;
         }
-        {
-            lock_guard<mutex> lk(m_seekPosLock);
-            if (m_seekPosUpdated)
-                UpdateReadPos(m_readPos);
-        }
 
         if (!m_pFrmCvt)
         {
@@ -796,6 +799,11 @@ private:
         }
 
         m_prepared = true;
+        {
+            lock_guard<mutex> lk(m_seekPosLock);
+            int64_t readPos = !m_seekPosUpdated ? m_vidStartTime : CvtMtsToPts(m_seekPosTs*1000);
+            UpdateReadPos(readPos);
+        }
         return true;
     }
 
@@ -870,6 +878,8 @@ private:
         auto& cacheFrameCount = m_readForward ? m_forwardCacheFrameCount : m_backwardCacheFrameCount;
         m_cacheRange.first = readPts-cacheFrameCount.first*m_vidfrmIntvPts;
         m_cacheRange.second = readPts+cacheFrameCount.second*m_vidfrmIntvPts;
+        // m_logger->Log(VERBOSE) << "~~~~~ UpdateReadPos: first(" << m_cacheRange.first << ") = readPts(" << readPts << ") - cachFrmCnt1(" << cacheFrameCount.first << ") * intvPts(" << m_vidfrmIntvPts << ")" << endl;
+        // m_logger->Log(VERBOSE) << "~~~~~ UpdateReadPos: second(" << m_cacheRange.second << ") = readPts(" << readPts << ") + cachFrmCnt2(" << cacheFrameCount.second << ") * intvPts(" << m_vidfrmIntvPts << ")" << endl;
         if (m_vidfrmIntvPts > 1)
         {
             m_cacheRange.first--;
@@ -1310,14 +1320,21 @@ private:
                     if (vf->pts+vf->dur < m_cacheRange.first)
                     {
                         if (m_readForward && (!vf->isEofFrame || m_vfrmQ.size() > 1))
+                        {
+                            // m_logger->Log(VERBOSE) << "   --------- Set remove=true : vf->pts(" << vf->pts << ")+vf->dur(" << vf->dur << ") < cacheRange.first(" << m_cacheRange.first
+                            //         << "), readForward=" << m_readForward << ", isEofFrame=" << vf->isEofFrame << ", vfrmQ.size=" << m_vfrmQ.size() << endl;
                             remove = true;
+                        }
                     }
                     else if (vf->pts > m_cacheRange.second)
                     {
                         if (firstGreaterPts)
                             firstGreaterPts = false;
                         else
+                        {
+                            // m_logger->Log(VERBOSE) << "   --------- Set remove=true : vf->pts(" << vf->pts << ") > cacheRange.second(" << m_cacheRange.second << ")" << endl;
                             remove = true;
+                        }
                     }
                     if (remove)
                     {
