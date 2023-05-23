@@ -18,15 +18,201 @@
 #include <sstream>
 #include <algorithm>
 #include <atomic>
+#include <thread>
 #include <cassert>
 #include "VideoTrack.h"
 #include "MediaCore.h"
 #include "DebugHelper.h"
+#include "Logger.h"
 
 using namespace std;
+using namespace Logger;
 
 namespace MediaCore
 {
+class ReadFrameTask_Impl : public ReadFrameTask
+{
+public:
+    ReadFrameTask_Impl(int64_t frameIndex, int64_t readPos, bool canDrop, bool needSeek)
+        : m_frameIndex(frameIndex)
+        , m_readPos(readPos)
+        , m_canDrop(canDrop)
+        , m_needSeek(needSeek)
+    {}
+
+    int64_t FrameIndex() const override
+    {
+        return m_frameIndex;
+    }
+
+    int64_t ReadPos() const
+    {
+        return m_readPos;
+    }
+
+    bool CanDrop() const
+    {
+        return m_canDrop;
+    }
+
+    bool NeedSeek() const
+    {
+        return m_needSeek;
+    }
+
+    bool HasSeeked() const
+    {
+        return m_seeked;
+    }
+
+    void SetSeeked()
+    {
+        m_seeked = true;
+    }
+
+    bool IsSourceFrameReady() const override
+    {
+        return m_src1Ready && (!m_hasOvlp || m_src2Ready);
+    }
+
+    void StartProcessing() override
+    {
+        m_needProcess = true;
+    }
+
+    void Reprocess()
+    {
+        m_outputReady = false;
+    }
+
+    bool GetVideoFrame(std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out) override
+    {
+        for (auto& frm : m_outFrames)
+            frames.push_back(frm);
+        out = m_outMat;
+        return true;
+    }
+
+    void SetDiscarded() override
+    {
+        m_discarded = true;
+    }
+
+    bool IsDiscarded() const override
+    {
+        return m_discarded;
+    }
+
+    bool IsOutputFrameReady() const override
+    {
+        return m_outputReady;
+    }
+
+    bool IsStarted() const
+    {
+        return m_started;
+    }
+
+    bool IsInited() const
+    {
+        return m_inited;
+    }
+
+    void Initialize(VideoClip::Holder hClip1, VideoClip::Holder hClip2, VideoOverlap::Holder hOvlp)
+    {
+        m_hClip1 = hClip1;
+        m_hClip2 = hClip2;
+        m_hasOvlp = hOvlp != nullptr;
+        m_hOvlp = hOvlp;
+        m_inited = true;
+        if (!hClip1)
+        {
+            m_src1Ready = m_src2Ready = true;
+            m_outputReady = true;
+        }
+    }
+
+    void SetStarted()
+    {
+        m_started = true;
+    }
+
+    bool NeedProcess() const
+    {
+        return m_needProcess && !m_outputReady;
+    }
+
+    void SetOutputReady()
+    {
+        m_outputReady = true;
+    }
+
+    void DoReadSourceFrame()
+    {
+        if (m_hClip1 && !m_src1Ready)
+        {
+            auto clipPos = m_readPos-m_hClip1->Start();
+            m_hClip1->NotifyReadPos(clipPos);
+            m_hClip1->ReadSourceFrame(clipPos, m_srcVmat1, m_eof1, false);
+            if (!m_srcVmat1.empty() || m_eof1)
+                m_src1Ready = true;
+        }
+        if (m_hClip2 && !m_src2Ready)
+        {
+            auto clipPos = m_readPos-m_hClip2->Start();
+            m_hClip2->NotifyReadPos(clipPos);
+            m_hClip2->ReadSourceFrame(clipPos, m_srcVmat2, m_eof2, false);
+            if (!m_srcVmat2.empty() || m_eof2)
+                m_src2Ready = true;
+        }
+    }
+
+    void ProcessFrame()
+    {
+        if (!IsSourceFrameReady())
+            return;
+        if (m_hasOvlp)
+        {
+            m_hOvlp->ProcessSourceFrame(m_readPos-m_hOvlp->Start(), m_outFrames, m_outMat, m_srcVmat1, m_srcVmat2);
+        }
+        else if (m_hClip1)
+        {
+            m_hClip1->ProcessSourceFrame(m_readPos-m_hClip1->Start(), m_outFrames, m_outMat, m_srcVmat1);
+        }
+        m_outMat.time_stamp = (double)m_readPos/1000;
+        m_outputReady = true;
+    }
+
+private:
+    int64_t m_frameIndex;
+    int64_t m_readPos;
+    bool m_canDrop;
+    bool m_needSeek;
+    bool m_seeked{false};
+    bool m_started{false};
+    bool m_inited{false};
+    bool m_needProcess{false};
+    ImGui::ImMat m_srcVmat1;
+    bool m_eof1{false};
+    VideoClip::Holder m_hClip1;
+    bool m_src1Ready{false};
+    bool m_hasOvlp{false};
+    ImGui::ImMat m_srcVmat2;
+    bool m_eof2{false};
+    VideoClip::Holder m_hClip2;
+    bool m_src2Ready{false};
+    VideoOverlap::Holder m_hOvlp;
+    vector<CorrelativeFrame> m_outFrames;
+    ImGui::ImMat m_outMat;
+    bool m_outputReady{false};
+    bool m_discarded{false};
+};
+
+static const auto READ_FRAME_TASK_HOLDER_DELETER = [] (ReadFrameTask* p) {
+    ReadFrameTask_Impl* ptr = dynamic_cast<ReadFrameTask_Impl*>(p);
+    delete ptr;
+};
+
 static const auto CLIP_SORT_CMP = [] (const VideoClip::Holder& a, const VideoClip::Holder& b){
     return a->Start() < b->Start();
 };
@@ -42,6 +228,17 @@ public:
         : m_id(id), m_outWidth(outWidth), m_outHeight(outHeight), m_frameRate(frameRate)
     {
         m_readClipIter = m_clips.begin();
+        m_readThread = thread(&VideoTrack_Impl::ReadFrameProc, this);
+    }
+
+    ~VideoTrack_Impl()
+    {
+        m_quitThread = true;
+        if (m_readThread.joinable())
+            m_readThread.join();
+        for (auto& rft : m_readFrameTasks)
+            rft->SetDiscarded();
+        m_readFrameTasks.clear();
     }
 
     Holder Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) override;
@@ -72,7 +269,6 @@ public:
         if (hClip->End() > m_duration2)
             m_duration2 = hClip->End();
         m_clipChanged = true;
-        m_syncReadPos = true;
     }
 
     void MoveClip(int64_t id, int64_t start) override
@@ -102,7 +298,6 @@ public:
             m_duration2 = newDuration;
         }
         m_clipChanged = true;
-        m_syncReadPos = true;
     }
 
     void ChangeClipRange(int64_t id, int64_t startOffset, int64_t endOffset) override
@@ -163,7 +358,6 @@ public:
             m_duration2 = newDuration;
         }
         m_clipChanged = true;
-        m_syncReadPos = true;
     }
 
     VideoClip::Holder RemoveClipById(int64_t clipId) override
@@ -191,7 +385,6 @@ public:
             m_duration2 = newDuration;
         }
         m_clipChanged = true;
-        m_syncReadPos = true;
         return hClip;
     }
 
@@ -223,7 +416,6 @@ public:
             m_duration2 = newDuration;
         }
         m_clipChanged = true;
-        m_syncReadPos = true;
         return hClip;
     }
 
@@ -266,9 +458,9 @@ public:
         return m_duration;
     }
 
-    int64_t ReadPos() const override
+    int64_t ReadPos(int64_t frameIndex) const
     {
-        return m_readFrames*1000*m_frameRate.den/m_frameRate.num;
+        return frameIndex*1000*m_frameRate.den/m_frameRate.num;
     }
 
     bool Direction() const override
@@ -276,180 +468,29 @@ public:
         return m_readForward;
     }
 
-    void SeekTo(int64_t pos) override
+    ReadFrameTask::Holder CreateReadFrameTask(int64_t frameIndex, bool canDrop, bool needSeek)
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
-        if (pos < 0)
-            throw invalid_argument("Argument 'pos' can NOT be NEGATIVE!");
-
-        if (m_readForward)
+        if (frameIndex < 0)
+            return nullptr;
+        const int64_t readPos = ReadPos(frameIndex);
+        ReadFrameTask_Impl* pTask = new ReadFrameTask_Impl(frameIndex, readPos, canDrop, needSeek);
+        ReadFrameTask::Holder hTask(pTask, READ_FRAME_TASK_HOLDER_DELETER);
         {
-            // update read clip iterator
-            m_readClipIter = m_clips.end();
+            lock_guard<mutex> lk2(m_readFrameTasksLock);
+            if (!m_readFrameTasks.empty())
             {
-                auto iter = m_clips.begin();
-                while (iter != m_clips.end())
+                ReadFrameTask_Impl* pTailTask = dynamic_cast<ReadFrameTask_Impl*>(m_readFrameTasks.back().get());
+                if (!pTailTask->IsStarted() && pTailTask->CanDrop())
                 {
-                    const VideoClip::Holder& hClip = *iter;
-                    int64_t clipPos = pos-hClip->Start();
-                    hClip->SeekTo(clipPos);
-                    if (m_readClipIter == m_clips.end() && clipPos < hClip->Duration())
-                        m_readClipIter = iter;
-                    iter++;
+                    auto& rft = m_readFrameTasks.back();
+                    rft->SetDiscarded();
+                    m_readFrameTasks.pop_back();
                 }
             }
-            // update read overlap iterator
-            m_readOverlapIter = m_overlaps.end();
-            {
-                auto iter = m_overlaps.begin();
-                while (iter != m_overlaps.end())
-                {
-                    const VideoOverlap::Holder& hOverlap = *iter;
-                    int64_t overlapPos = pos-hOverlap->Start();
-                    if (m_readOverlapIter == m_overlaps.end() && overlapPos < hOverlap->Duration())
-                    {
-                        m_readOverlapIter = iter;
-                        break;
-                    }
-                    iter++;
-                }
-            }
+            m_readFrameTasks.push_back(hTask);
         }
-        else
-        {
-            m_readClipIter = m_clips.end();
-            {
-                auto riter = m_clips.rbegin();
-                while (riter != m_clips.rend())
-                {
-                    const VideoClip::Holder& hClip = *riter;
-                    int64_t clipPos = pos-hClip->Start();
-                    hClip->SeekTo(clipPos);
-                    if (m_readClipIter == m_clips.end() && clipPos >= 0)
-                        m_readClipIter = riter.base();
-                    riter++;
-                }
-            }
-            m_readOverlapIter = m_overlaps.end();
-            {
-                auto riter = m_overlaps.rbegin();
-                while (riter != m_overlaps.rend())
-                {
-                    const VideoOverlap::Holder& hOverlap = *riter;
-                    int64_t overlapPos = pos-hOverlap->Start();
-                    if (m_readOverlapIter == m_overlaps.end() && overlapPos >= 0)
-                        m_readOverlapIter = riter.base();
-                    riter++;
-                }
-            }
-        }
-
-        m_readFrames = (int64_t)(pos*m_frameRate.num/(m_frameRate.den*1000));
-    }
-
-    void SetReadFrameIndex(int64_t index) override
-    {
-        if (m_readFrames != index)
-        {
-            bool isMoveForward = index > m_readFrames;
-            if (!m_readForward) isMoveForward = !isMoveForward;
-            m_readFrames = index;
-            if (!isMoveForward)
-            {
-                int64_t pos = index*m_frameRate.den*1000/m_frameRate.num;
-                SeekTo(pos);
-            }
-        }
-    }
-
-    void SkipOneFrame() override
-    {
-        if (m_readForward)
-            m_readFrames++;
-        else
-            m_readFrames--;
-    }
-
-    void ReadVideoFrame(vector<CorrelativeFrame>& frames, ImGui::ImMat& out) override
-    {
-        lock_guard<recursive_mutex> lk(m_apiLock);
-        const int64_t readPos = ReadPos();
-
-        // if clip changed, update m_clips
-        if (m_clipChanged)
-            UpdateClipState();
-        // sync read position if needed
-        if (m_syncReadPos.exchange(false))
-            SeekTo(readPos);
-        // notify read position to each clip
-        for (auto& clip : m_clips)
-            clip->NotifyReadPos(readPos-clip->Start());
-
-        if (m_readForward)
-        {
-            // first, find the image from a overlap
-            bool readFromeOverlay = false;
-            while (m_readOverlapIter != m_overlaps.end() && readPos >= (*m_readOverlapIter)->Start())
-            {
-                auto& hOverlap = *m_readOverlapIter;
-                bool eof = false;
-                if (readPos < hOverlap->End())
-                {
-                    hOverlap->ReadVideoFrame(readPos-hOverlap->Start(), frames, out, eof);
-                    readFromeOverlay = true;
-                    break;
-                }
-                else
-                    m_readOverlapIter++;
-            }
-
-            if (!readFromeOverlay)
-            {
-                // then try to read the image from a clip
-                while (m_readClipIter != m_clips.end() && readPos >= (*m_readClipIter)->Start())
-                {
-                    auto& hClip = *m_readClipIter;
-                    bool eof = false;
-                    if (readPos < hClip->End())
-                    {
-                        hClip->ReadVideoFrame(readPos-hClip->Start(), frames, out, eof);
-                        break;
-                    }
-                    else
-                        m_readClipIter++;
-                }
-            }
-
-            out.time_stamp = (double)readPos/1000;
-            m_readFrames++;
-        }
-        else
-        {
-            if (!m_overlaps.empty())
-            {
-                if (m_readOverlapIter == m_overlaps.end()) m_readOverlapIter--;
-                while (m_readOverlapIter != m_overlaps.begin() && readPos < (*m_readOverlapIter)->Start())
-                    m_readOverlapIter--;
-                auto& hOverlap = *m_readOverlapIter;
-                bool eof = false;
-                if (readPos >= hOverlap->Start() && readPos < hOverlap->End())
-                    hOverlap->ReadVideoFrame(readPos-hOverlap->Start(), frames, out, eof);
-            }
-
-            if (out.empty() && !m_clips.empty())
-            {
-                if (m_readClipIter == m_clips.end()) m_readClipIter--;
-                while (m_readClipIter != m_clips.begin() && readPos < (*m_readClipIter)->Start())
-                    m_readClipIter--;
-                auto& hClip = *m_readClipIter;
-                bool eof = false;
-                if (readPos >= hClip->Start() && readPos < hClip->End())
-                    hClip->ReadVideoFrame(readPos-hClip->Start(), frames, out, eof);
-            }
-
-            out.time_stamp = (double)readPos/1000;
-            m_readFrames--;
-        }
+        return hTask;
     }
 
     void SetDirection(bool forward) override
@@ -530,11 +571,117 @@ public:
         }
         // update overlap
         UpdateClipOverlap();
+
+        m_needUpdateReadIter = true;
     }
 
     friend ostream& operator<<(ostream& os, VideoTrack_Impl& track);
 
 private:
+    void ReadFrameProc()
+    {
+        while (!m_quitThread)
+        {
+            bool idleLoop = true;
+
+            ReadFrameTask::Holder hTask;
+            ReadFrameTask_Impl* pTask = nullptr;
+            // check if there is a task need to be processed
+            {
+                lock_guard<mutex> lk(m_readFrameTasksLock);
+                auto iter = m_readFrameTasks.begin();
+                while (iter != m_readFrameTasks.end())
+                {
+                    // remove this task if it's discarded
+                    if ((*iter)->IsDiscarded())
+                    {
+                        iter = m_readFrameTasks.erase(iter);
+                        continue;
+                    }
+
+                    ReadFrameTask_Impl* pt = dynamic_cast<ReadFrameTask_Impl*>(iter->get());
+                    if (pt->NeedProcess())
+                    {
+                        hTask = *iter;
+                        pTask = pt;
+                        break;
+                    }
+                    iter++;
+                }
+                if (!hTask)
+                {
+                    iter = m_readFrameTasks.begin();
+                    while (iter != m_readFrameTasks.end())
+                    {
+                        ReadFrameTask_Impl* pt = dynamic_cast<ReadFrameTask_Impl*>(iter->get());
+                        if (!pt->IsSourceFrameReady())
+                        {
+                            hTask = *iter;
+                            pTask = pt;
+                            break;
+                        }
+                        iter++;
+                    }
+                }
+                if (pTask)
+                    pTask->SetStarted();
+            }
+
+            // if clip changed, update m_clips
+            if (m_clipChanged)
+                UpdateClipState();
+
+            // handle read frame task
+            if (pTask)
+            {
+                const int64_t readPos = pTask->ReadPos();
+                if (!pTask->IsInited())
+                {
+                    UpdateReadIterator(readPos);
+                    VideoClip::Holder hClip1, hClip2;
+                    VideoOverlap::Holder hOvlp;
+                    if (m_readOverlapIter != m_overlaps.end() && readPos >= (*m_readOverlapIter)->Start() && readPos < (*m_readOverlapIter)->End())
+                    {
+                        hOvlp = *m_readOverlapIter;
+                        hClip1 = hOvlp->FrontClip();
+                        hClip2 = hOvlp->RearClip();
+                    }
+                    else if (m_readClipIter != m_clips.end() && readPos >= (*m_readClipIter)->Start() && readPos < (*m_readClipIter)->End())
+                    {
+                        hClip1 = *m_readClipIter;
+                    }
+                    pTask->Initialize(hClip1, hClip2, hOvlp);
+                }
+                if (!pTask->IsSourceFrameReady())
+                {
+                    if (pTask->NeedSeek() && !pTask->HasSeeked())
+                    {
+                        SeekClipPos(readPos);
+                        pTask->SetSeeked();
+                    }
+                    pTask->DoReadSourceFrame();
+                    if (pTask->IsSourceFrameReady())
+                        idleLoop = false;
+                }
+                if (pTask->IsSourceFrameReady() && pTask->NeedProcess())
+                {
+                    pTask->ProcessFrame();
+                    idleLoop = false;
+                }
+            }
+
+            if (idleLoop)
+                this_thread::sleep_for(chrono::milliseconds(2));
+        }
+    }
+
+    void SeekClipPos(int64_t readPos)
+    {
+        Log(DEBUG) << "----> SeekClipPos(" << readPos << ")" << endl;
+        for (auto& c : m_clips)
+            c->SeekTo(readPos-c->Start());
+    }
+
     bool CheckClipRangeValid(int64_t clipId, int64_t start, int64_t end)
     {
         for (auto& overlap : m_overlaps)
@@ -605,6 +752,163 @@ private:
         m_overlaps.sort(OVERLAP_SORT_CMP);
     }
 
+    void UpdateReadIterator(int64_t readPos)
+    {
+        if (m_needUpdateReadIter.exchange(false))
+        {
+            if (m_readForward)
+            {
+                // update read clip iterator
+                m_readClipIter = m_clips.end();
+                {
+                    auto iter = m_clips.begin();
+                    while (iter != m_clips.end())
+                    {
+                        const VideoClip::Holder& hClip = *iter;
+                        int64_t clipPos = readPos-hClip->Start();
+                        if (m_readClipIter == m_clips.end() && clipPos < hClip->Duration())
+                            m_readClipIter = iter;
+                        iter++;
+                    }
+                }
+                // update read overlap iterator
+                m_readOverlapIter = m_overlaps.end();
+                {
+                    auto iter = m_overlaps.begin();
+                    while (iter != m_overlaps.end())
+                    {
+                        const VideoOverlap::Holder& hOverlap = *iter;
+                        int64_t overlapPos = readPos-hOverlap->Start();
+                        if (m_readOverlapIter == m_overlaps.end() && overlapPos < hOverlap->Duration())
+                        {
+                            m_readOverlapIter = iter;
+                            break;
+                        }
+                        iter++;
+                    }
+                }
+            }
+            else
+            {
+                m_readClipIter = m_clips.end();
+                {
+                    auto riter = m_clips.rbegin();
+                    while (riter != m_clips.rend())
+                    {
+                        const VideoClip::Holder& hClip = *riter;
+                        int64_t clipPos = readPos-hClip->Start();
+                        if (m_readClipIter == m_clips.end() && clipPos >= 0)
+                            m_readClipIter = riter.base();
+                        riter++;
+                    }
+                }
+                m_readOverlapIter = m_overlaps.end();
+                {
+                    auto riter = m_overlaps.rbegin();
+                    while (riter != m_overlaps.rend())
+                    {
+                        const VideoOverlap::Holder& hOverlap = *riter;
+                        int64_t overlapPos = readPos-hOverlap->Start();
+                        if (m_readOverlapIter == m_overlaps.end() && overlapPos >= 0)
+                            m_readOverlapIter = riter.base();
+                        riter++;
+                    }
+                }
+            }
+        }
+        else
+        {
+            if (!m_clips.empty())
+            {
+                if (m_readClipIter == m_clips.end())
+                    m_readClipIter--;
+                if (m_readForward)
+                {
+                    if (m_readClipIter != m_clips.begin())
+                    {
+                        auto prevClipIter = m_readClipIter;
+                        prevClipIter--;
+                        while (m_readClipIter != m_clips.begin() && readPos < (*prevClipIter)->End())
+                        {
+                            m_readClipIter = prevClipIter;
+                            if (prevClipIter == m_clips.begin())
+                                break;
+                            prevClipIter--;
+                        }
+                    }
+                    if (readPos >= (*m_readClipIter)->End())
+                    {
+                        while (m_readClipIter != m_clips.end() && readPos >= (*m_readClipIter)->End())
+                            m_readClipIter++;
+                    }
+                }
+                else
+                {
+                    auto nextClipIter = m_readClipIter;
+                    nextClipIter++;
+                    while (nextClipIter != m_clips.end() && readPos >= (*nextClipIter)->Start())
+                    {
+                        m_readClipIter = nextClipIter;
+                        nextClipIter++;
+                    }
+                    if (readPos < (*m_readClipIter)->Start())
+                    {
+                        while (m_readClipIter != m_clips.begin() && readPos < (*m_readClipIter)->Start())
+                            m_readClipIter--;
+                    }
+                }
+            }
+            else
+            {
+                m_readClipIter = m_clips.end();
+            }
+            if (!m_overlaps.empty())
+            {
+                if (m_readOverlapIter == m_overlaps.end())
+                    m_readOverlapIter--;
+                if (m_readForward)
+                {
+                    if (m_readOverlapIter != m_overlaps.begin())
+                    {
+                        auto prevOvlpIter = m_readOverlapIter;
+                        prevOvlpIter--;
+                        while (m_readOverlapIter != m_overlaps.begin() && readPos < (*prevOvlpIter)->End())
+                        {
+                            m_readOverlapIter = prevOvlpIter;
+                            if (prevOvlpIter == m_overlaps.begin())
+                                break;
+                            prevOvlpIter--;
+                        }
+                    }
+                    if (readPos >= (*m_readOverlapIter)->End())
+                    {
+                        while (m_readOverlapIter != m_overlaps.end() && readPos >= (*m_readOverlapIter)->End())
+                            m_readOverlapIter++;
+                    }
+                }
+                else
+                {
+                    auto nextOvlpIter = m_readOverlapIter;
+                    nextOvlpIter++;
+                    while (nextOvlpIter != m_overlaps.end() && readPos >= (*nextOvlpIter)->Start())
+                    {
+                        m_readOverlapIter = nextOvlpIter;
+                        nextOvlpIter++;
+                    }
+                    if (readPos < (*m_readOverlapIter)->Start())
+                    {
+                        while (m_readOverlapIter != m_overlaps.begin() && readPos < (*m_readOverlapIter)->Start())
+                            m_readOverlapIter--;
+                    }
+                }
+            }
+            else
+            {
+                m_readOverlapIter = m_overlaps.end();
+            }
+        }
+    }
+
     VideoClip::Holder GetClipById2(int64_t id)
     {
         auto iter = find_if(m_clips2.begin(), m_clips2.end(), [id] (const VideoClip::Holder& clip) {
@@ -625,15 +929,18 @@ private:
     list<VideoClip::Holder>::iterator m_readClipIter;
     list<VideoClip::Holder> m_clips2;
     bool m_clipChanged{false};
-    atomic_bool m_syncReadPos{false};
+    atomic_bool m_needUpdateReadIter{false};
     recursive_mutex m_clipChangeLock;
     list<VideoOverlap::Holder> m_overlaps;
     list<VideoOverlap::Holder>::iterator m_readOverlapIter;
     mutex m_ovlpUpdateLock;
-    int64_t m_readFrames{0};
     int64_t m_duration{0}, m_duration2{0};
     bool m_readForward{true};
     bool m_visible{true};
+    thread m_readThread;
+    bool m_quitThread{false};
+    list<ReadFrameTask::Holder> m_readFrameTasks;
+    mutex m_readFrameTasksLock;
 };
 
 static const auto VIDEO_TRACK_HOLDER_DELETER = [] (VideoTrack* p) {

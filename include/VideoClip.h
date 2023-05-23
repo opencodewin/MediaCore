@@ -72,6 +72,8 @@ struct VideoClip
     virtual void ChangeEndOffset(int64_t endOffset) = 0;
     virtual void SetDuration(int64_t duration) = 0;
     virtual void ReadVideoFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, bool& eof) = 0;
+    virtual void ReadSourceFrame(int64_t pos, ImGui::ImMat& out, bool& eof, bool wait) = 0;
+    virtual void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, const ImGui::ImMat& in) = 0;
     virtual void SeekTo(int64_t pos) = 0;
     virtual void NotifyReadPos(int64_t pos) = 0;
     virtual void SetDirection(bool forward) = 0;
@@ -109,10 +111,11 @@ struct VideoOverlap
     virtual VideoClip::Holder RearClip() const = 0;
 
     virtual void ReadVideoFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, bool& eof) = 0;
+    virtual void SetTransition(VideoTransition::Holder hTrans) = 0;
+    virtual void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, const ImGui::ImMat& in1, const ImGui::ImMat& in2) = 0;
     virtual void SeekTo(int64_t pos) = 0;
     virtual void Update() = 0;
     virtual VideoTransition::Holder GetTransition() const = 0;
-    virtual void SetTransition(VideoTransition::Holder hTrans) = 0;
 
     friend std::ostream& operator<<(std::ostream& os, const Holder& hOverlap);
 };

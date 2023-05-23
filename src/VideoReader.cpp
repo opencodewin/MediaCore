@@ -580,24 +580,24 @@ public:
 
     uint32_t GetVideoOutWidth() const override
     {
+        uint32_t w = m_outWidth;
+        if (w > 0)
+            return w;
         const VideoStream* vidStream = GetVideoStream();
         if (!vidStream)
             return 0;
-        uint32_t w = m_pFrmCvt->GetOutWidth();
-        if (w > 0)
-            return w;
         w = vidStream->width;
         return w;
     }
 
     uint32_t GetVideoOutHeight() const override
     {
+        uint32_t h = m_outHeight;
+        if (h > 0)
+            return h;
         const VideoStream* vidStream = GetVideoStream();
         if (!vidStream)
             return 0;
-        uint32_t h = m_pFrmCvt->GetOutHeight();
-        if (h > 0)
-            return h;
         h = vidStream->height;
         return h;
     }

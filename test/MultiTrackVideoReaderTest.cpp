@@ -58,58 +58,6 @@ static vector<string> s_fitScaleTypeSelections;
 static int s_fitScaleTypeSelIdx = 0;
 static bool s_showClipSourceFrame = false;
 
-static void MultiTrackVideoReader_Initialize(void** handle)
-{
-    GetDefaultLogger()
-        ->SetShowLevels(DEBUG);
-    MultiTrackVideoReader::GetLogger()
-        ->SetShowLevels(INFO);
-    MediaReader::GetVideoLogger()
-        ->SetShowLevels(INFO);
-    GetSubtitleTrackLogger()
-        ->SetShowLevels(DEBUG);
-
-#ifdef USE_BOOKMARK
-	// load bookmarks
-	ifstream docFile(c_bookmarkPath, ios::in);
-	if (docFile.is_open())
-	{
-		stringstream strStream;
-		strStream << docFile.rdbuf(); //read the file
-		ImGuiFileDialog::Instance()->DeserializeBookmarks(strStream.str());
-		docFile.close();
-	}
-#endif
-
-    ImGuiIO& io = ImGui::GetIO();
-    io.IniFilename = c_imguiIniPath.c_str();
-
-    s_fitScaleTypeSelections = { "fit", "crop", "fill", "stretch" };
-
-    InitializeSubtitleLibrary();
-
-    g_mtVidReader = MultiTrackVideoReader::CreateInstance();
-    g_mtVidReader->Configure(c_videoOutputWidth, c_videoOutputHeight, c_videoFrameRate);
-    g_mtVidReader->Start();
-}
-
-static void MultiTrackVideoReader_Finalize(void** handle)
-{
-    g_mtVidReader = nullptr;
-
-    ReleaseSubtitleLibrary();
-
-#ifdef USE_BOOKMARK
-	// save bookmarks
-	ofstream configFileWriter(c_bookmarkPath, ios::out);
-	if (!configFileWriter.bad())
-	{
-		configFileWriter << ImGuiFileDialog::Instance()->SerializeBookmarks();
-		configFileWriter.close();
-	}
-#endif
-}
-
 static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
 {
     bool app_done = false;
@@ -499,7 +447,7 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
 
         const int64_t readPos = (int64_t)(playPos*1000);
         vector<CorrelativeFrame> frames;
-        bool readRes = g_mtVidReader->ReadVideoFrameEx(readPos, frames, true, !g_isSeeking);
+        bool readRes = g_mtVidReader->ReadVideoFrameEx(readPos, frames, true, !g_isSeeking && !g_isPlay);
         ImGui::ImMat vmat;
         if (s_showClipSourceFrame)
         {
@@ -546,12 +494,13 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         {
             g_isSeeking = true;
             g_playStartTp = Clock::now();
-            g_mtVidReader->SeekTo(currPos*1000, true);
+            g_mtVidReader->ConsecutiveSeek(currPos*1000);
             g_playStartPos = currPos;
         }
 
         if (g_isSeeking && ImGui::IsMouseReleased(ImGuiMouseButton_Left))
         {
+            g_mtVidReader->StopConsecutiveSeek();
             g_isSeeking = false;
         }
 
@@ -666,6 +615,58 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
     }
 
     return app_done;
+}
+
+static void MultiTrackVideoReader_Initialize(void** handle)
+{
+    GetDefaultLogger()
+        ->SetShowLevels(DEBUG);
+    MultiTrackVideoReader::GetLogger()
+        ->SetShowLevels(DEBUG);
+    MediaReader::GetVideoLogger()
+        ->SetShowLevels(INFO);
+    GetSubtitleTrackLogger()
+        ->SetShowLevels(DEBUG);
+
+#ifdef USE_BOOKMARK
+	// load bookmarks
+	ifstream docFile(c_bookmarkPath, ios::in);
+	if (docFile.is_open())
+	{
+		stringstream strStream;
+		strStream << docFile.rdbuf(); //read the file
+		ImGuiFileDialog::Instance()->DeserializeBookmarks(strStream.str());
+		docFile.close();
+	}
+#endif
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename = c_imguiIniPath.c_str();
+
+    s_fitScaleTypeSelections = { "fit", "crop", "fill", "stretch" };
+
+    InitializeSubtitleLibrary();
+
+    g_mtVidReader = MultiTrackVideoReader::CreateInstance();
+    g_mtVidReader->Configure(c_videoOutputWidth, c_videoOutputHeight, c_videoFrameRate);
+    g_mtVidReader->Start();
+}
+
+static void MultiTrackVideoReader_Finalize(void** handle)
+{
+    g_mtVidReader = nullptr;
+
+    ReleaseSubtitleLibrary();
+
+#ifdef USE_BOOKMARK
+	// save bookmarks
+	ofstream configFileWriter(c_bookmarkPath, ios::out);
+	if (!configFileWriter.bad())
+	{
+		configFileWriter << ImGuiFileDialog::Instance()->SerializeBookmarks();
+		configFileWriter.close();
+	}
+#endif
 }
 
 void Application_Setup(ApplicationWindowProperty& property)

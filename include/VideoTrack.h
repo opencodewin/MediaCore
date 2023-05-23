@@ -24,6 +24,20 @@
 
 namespace MediaCore
 {
+struct ReadFrameTask
+{
+    using Holder = std::shared_ptr<ReadFrameTask>;
+
+    virtual int64_t FrameIndex() const = 0;
+    virtual bool IsSourceFrameReady() const = 0;
+    virtual void StartProcessing() = 0;
+    virtual void Reprocess() = 0;
+    virtual bool IsOutputFrameReady() const = 0;
+    virtual bool GetVideoFrame(std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out) = 0;
+    virtual void SetDiscarded() = 0;
+    virtual bool IsDiscarded() const = 0;
+};
+
 struct VideoTrack
 {
     using Holder = std::shared_ptr<VideoTrack>;
@@ -35,15 +49,11 @@ struct VideoTrack
     virtual uint32_t OutHeight() const = 0;
     virtual Ratio FrameRate() const = 0;
     virtual int64_t Duration() const = 0;
-    virtual int64_t ReadPos() const = 0;
     virtual void SetDirection(bool forward) = 0;
     virtual bool Direction() const = 0;
     virtual void SetVisible(bool visible) = 0;
     virtual bool IsVisible() const = 0;
-    virtual void ReadVideoFrame(std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out) = 0;
-    virtual void SeekTo(int64_t pos) = 0;
-    virtual void SetReadFrameIndex(int64_t index) = 0;
-    virtual void SkipOneFrame() = 0;
+    virtual ReadFrameTask::Holder CreateReadFrameTask(int64_t frameIndex, bool canDrop, bool needSeek) = 0;
 
     virtual VideoClip::Holder AddNewClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t startOffset, int64_t endOffset, int64_t readPos) = 0;
     virtual void InsertClip(VideoClip::Holder hClip) = 0;

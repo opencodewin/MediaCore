@@ -31,6 +31,46 @@ using namespace Logger;
 
 namespace MediaCore
 {
+// Utility class 'FailedRead' is a helper class for counting and logging failed read
+struct FailedRead
+{
+    double pos{-1};
+    TimePoint t0, prevLogTp;
+    int32_t failedCnt;
+
+    void CountFailedRead(double _pos)
+    {
+        if (pos != _pos)
+            Reset(_pos);
+        else
+            IncrCount();
+    }
+
+    void Reset(double _pos)
+    {
+        pos = _pos;
+        t0 = SysClock::now();
+        prevLogTp = TimePoint();
+        failedCnt = 1;
+    }
+
+    void IncrCount()
+    {
+        failedCnt++;
+    }
+
+    void LogAtInterval(int64_t ms, ALogger* logger, Level l, const string& errMsg)
+    {
+        TimePoint t1 = SysClock::now();
+        if (CountElapsedMillisec(prevLogTp, t1) > ms)
+        {
+            auto t = CountElapsedMillisec(t0, t1);
+            logger->Log(l) << errMsg << " Total elapsed " << t << " milliseconds, failed " << failedCnt << " times." << endl;
+            prevLogTp = t1;
+        }
+    }
+};
+
 bool VideoClip::USE_HWACCEL = true;
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -244,11 +284,51 @@ public:
         // process with external filter
         auto hFilter = m_hFilter;
         if (hFilter)
-            image = hFilter->FilterImage(image, pos/*+m_start*/);
+            image = hFilter->FilterImage(image, pos);
         frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, image});
 
         // process with transform filter
-        image = m_hWarpFilter->FilterImage(image, pos/*+m_start*/);
+        image = m_hWarpFilter->FilterImage(image, pos);
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, image});
+        out = image;
+    }
+
+    void ReadSourceFrame(int64_t pos, ImGui::ImMat& out, bool& eof, bool wait) override
+    {
+        if (m_eof)
+        {
+            eof = true;
+            return;
+        }
+        if (m_hReader->IsSuspended())
+            m_hReader->Wakeup();
+
+        const double readPosTs = (double)(pos+m_startOffset)/1000;
+        if (!m_hReader->ReadVideoFrame(readPosTs, out, eof, wait))
+        {
+            m_failedRead.CountFailedRead(readPosTs);
+            ostringstream oss;
+            oss << "FAILED to read frame @ timeline-pos=" << pos << "ms, media-time=" << readPosTs << "s! Error is '" << m_hReader->GetError() << "'.";
+            m_failedRead.LogAtInterval(5000, m_logger, DEBUG, oss.str());
+        }
+    }
+
+    void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, const ImGui::ImMat& in) override
+    {
+        if (in.empty())
+            return;
+
+        ImGui::ImMat image = in;
+        frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, image});
+
+        // process with external filter
+        auto hFilter = m_hFilter;
+        if (hFilter)
+            image = hFilter->FilterImage(image, pos);
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, image});
+
+        // process with transform filter
+        image = m_hWarpFilter->FilterImage(image, pos);
         frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, image});
         out = image;
     }
@@ -325,6 +405,7 @@ private:
     VideoFilter::Holder m_hFilter;
     VideoTransformFilterHolder m_hWarpFilter;
     int64_t m_wakeupRange{1000};
+    FailedRead m_failedRead;
 };
 
 static const auto VIDEO_CLIP_HOLDER_VIDEOIMPL_DELETER = [] (VideoClip* p) {
@@ -505,6 +586,32 @@ public:
 
         // process with transform filter
         image = m_hWarpFilter->FilterImage(image, pos/*+m_start*/);
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, image});
+        out = image;
+    }
+
+    void ReadSourceFrame(int64_t pos, ImGui::ImMat& out, bool& eof, bool wait) override
+    {
+        if (!m_hReader->ReadVideoFrame(0, out, eof, wait))
+            throw runtime_error(m_hReader->GetError());
+    }
+
+    void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, const ImGui::ImMat& in) override
+    {
+        if (in.empty())
+            return;
+
+        ImGui::ImMat image = in;
+        frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, image});
+
+        // process with external filter
+        auto hFilter = m_hFilter;
+        if (hFilter)
+            image = hFilter->FilterImage(image, pos);
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, image});
+
+        // process with transform filter
+        image = m_hWarpFilter->FilterImage(image, pos);
         frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, image});
         out = image;
     }
@@ -691,6 +798,39 @@ public:
         eof = eof1 || eof2;
         if (pos == Duration())
             eof = true;
+
+        if (vmat1.empty())
+        {
+            m_logger->Log(WARN) << "'vmat1' is EMPTY!" << endl;
+            out = vmat2;
+            return;
+        }
+        if (vmat2.empty())
+        {
+            m_logger->Log(WARN) << "'vmat2' is EMPTY!" << endl;
+            out = vmat1;
+            return;
+        }
+
+        auto hTrans = m_hTrans;
+        out = hTrans->MixTwoImages(vmat1, vmat2, pos+m_start, Duration());
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSITION, m_hFrontClip->Id(), m_hFrontClip->TrackId(), out});
+    }
+
+    void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, const ImGui::ImMat& in1, const ImGui::ImMat& in2) override
+    {
+        if (pos < 0 || pos > Duration())
+            throw invalid_argument("Argument 'pos' can NOT be NEGATIVE or larger than overlap duration!");
+
+        ImGui::ImMat vmat1;
+        bool eof1{false};
+        int64_t pos1 = pos+(Start()-m_hFrontClip->Start());
+        m_hFrontClip->ProcessSourceFrame(pos1, frames, vmat1, in1);
+
+        ImGui::ImMat vmat2;
+        bool eof2{false};
+        int64_t pos2 = pos+(Start()-m_hRearClip->Start());
+        m_hRearClip->ProcessSourceFrame(pos2, frames, vmat2, in2);
 
         if (vmat1.empty())
         {
