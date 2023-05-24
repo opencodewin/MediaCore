@@ -37,7 +37,11 @@ extern "C"
     #include "libavfilter/buffersink.h"
 }
 
+#if defined(_WIN32)
+#define HWFRAME_MAPPING     0
+#else
 #define HWFRAME_MAPPING     1
+#endif
 #define YUV_CONVERT_PLANAR  1
 
 #define ISYUV420P(format)   \

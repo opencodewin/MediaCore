@@ -34,8 +34,18 @@ struct ReadFrameTask
     virtual void Reprocess() = 0;
     virtual bool IsOutputFrameReady() const = 0;
     virtual bool GetVideoFrame(std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out) = 0;
+    virtual bool IsStarted() const = 0;
     virtual void SetDiscarded() = 0;
     virtual bool IsDiscarded() const = 0;
+    virtual bool IsVisible() const = 0;
+    virtual void SetVisible(bool visible) = 0;
+
+    struct Callback
+    {
+        virtual bool TriggerDrop() = 0;
+        virtual bool TriggerStart() = 0;
+    };
+    virtual void SetCallback(Callback* pCallback) = 0;
 };
 
 struct VideoTrack
@@ -53,7 +63,7 @@ struct VideoTrack
     virtual bool Direction() const = 0;
     virtual void SetVisible(bool visible) = 0;
     virtual bool IsVisible() const = 0;
-    virtual ReadFrameTask::Holder CreateReadFrameTask(int64_t frameIndex, bool canDrop, bool needSeek) = 0;
+    virtual ReadFrameTask::Holder CreateReadFrameTask(int64_t frameIndex, bool canDrop, bool needSeek, ReadFrameTask::Callback* pCb = nullptr) = 0;
 
     virtual VideoClip::Holder AddNewClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t startOffset, int64_t endOffset, int64_t readPos) = 0;
     virtual void InsertClip(VideoClip::Holder hClip) = 0;
@@ -68,6 +78,8 @@ struct VideoTrack
 
     virtual std::list<VideoClip::Holder> GetClipList() = 0;
     virtual std::list<VideoOverlap::Holder> GetOverlapList() = 0;
+
+    virtual void SetLogLevel(Logger::Level l) = 0;
 };
 
 MEDIACORE_API std::ostream& operator<<(std::ostream& os, VideoTrack::Holder hTrack);

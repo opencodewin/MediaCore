@@ -92,8 +92,8 @@ public:
         if (idstr.size() > 4)
             idstr = idstr.substr(idstr.size()-4);
         loggerNameOss.str(""); loggerNameOss << "VClp-" << fileName.substr(0, 4) << "-" << idstr;
-
         m_logger = GetLogger(loggerNameOss.str());
+
         m_hInfo = hParser->GetMediaInfo();
         if (hParser->GetBestVideoStreamIndex() < 0)
             throw invalid_argument("Argument 'hParser' has NO VIDEO stream!");

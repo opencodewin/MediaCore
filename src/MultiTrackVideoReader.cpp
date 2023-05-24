@@ -20,6 +20,7 @@
 #include <atomic>
 #include <sstream>
 #include <cmath>
+#include <iomanip>
 #include "MultiTrackVideoReader.h"
 #include "VideoBlender.h"
 #include "FFUtils.h"
@@ -143,6 +144,7 @@ public:
         TerminateMixingThread();
 
         VideoTrack::Holder hNewTrack = VideoTrack::CreateInstance(trackId, m_outWidth, m_outHeight, m_frameRate);
+        // hNewTrack->SetLogLevel(DEBUG);
         hNewTrack->SetDirection(m_readForward);
         {
             lock_guard<recursive_mutex> lk2(m_trackLock);
@@ -551,7 +553,7 @@ public:
         }
 
         {
-            lock_guard<mutex> lk2(m_mixFrameTasksLock);
+            lock_guard<recursive_mutex> lk2(m_mixFrameTasksLock);
             for (auto& mft : m_mixFrameTasks)
             {
                 bool foundTrack = false;
@@ -829,19 +831,41 @@ private:
         }
     }
 
-    struct MixFrameTask
+    struct MixFrameTask : public ReadFrameTask::Callback
     {
         using Holder = shared_ptr<MixFrameTask>;
         int64_t frameIndex;
         vector<pair<VideoTrack::Holder, ReadFrameTask::Holder>> readFrameTaskTable;
         bool outputReady{false};
         vector<CorrelativeFrame> outputFrames;
+        atomic_uint8_t state{0};  // lsb#1 means this task is dropped, lsb#2 means this task is started
+        static const uint8_t DROP_BIT, START_BIT;
+
+        bool TriggerDrop() override
+        {
+            uint8_t testVal = 0;
+            if (state.compare_exchange_strong(testVal, DROP_BIT))
+                return true;
+            if (testVal == DROP_BIT)
+                return true;
+            return false;
+        }
+
+        bool TriggerStart() override
+        {
+            uint8_t testVal = 0;
+            if (state.compare_exchange_strong(testVal, START_BIT))
+                return true;
+            if (testVal == START_BIT)
+                return true;
+            return false;
+        }
     };
 
     MixFrameTask::Holder FindCandidateAndRemoveDeprecatedTasks(int64_t targetIndex, bool precise)
     {
         MixFrameTask::Holder hCandiFrame;
-        lock_guard<mutex> lk(m_mixFrameTasksLock);
+        lock_guard<recursive_mutex> lk(m_mixFrameTasksLock);
         if (m_readForward)
         {
             auto mftIter = m_mixFrameTasks.begin();
@@ -907,13 +931,24 @@ private:
 
     MixFrameTask::Holder AddMixFrameTask(int64_t frameIndex, bool canDrop, bool needSeek)
     {
-        lock_guard<mutex> lk(m_mixFrameTasksLock);
+        lock_guard<recursive_mutex> lk(m_mixFrameTasksLock);
         auto mftIter = find_if(m_mixFrameTasks.begin(), m_mixFrameTasks.end(), [frameIndex] (auto& t) {
             return t->frameIndex == frameIndex;
         });
         MixFrameTask::Holder hTask;
         if (mftIter == m_mixFrameTasks.end())
         {
+            bool needClearTaskList = false;
+            if (!m_mixFrameTasks.empty())
+            {
+                auto backTaskFrameIndex = m_mixFrameTasks.back()->frameIndex;
+                needClearTaskList = m_readForward ? frameIndex < backTaskFrameIndex : frameIndex > backTaskFrameIndex;
+            }
+            if (needClearTaskList)
+            {
+                ClearAllMixFrameTasks();
+            }
+
             list<VideoTrack::Holder> tracks;
             {
                 lock_guard<recursive_mutex> trackLk(m_trackLock);
@@ -923,7 +958,8 @@ private:
             hTask->frameIndex = frameIndex;
             for (auto& trk : tracks)
             {
-                auto rft = trk->CreateReadFrameTask(frameIndex, canDrop, needSeek);
+                auto rft = trk->CreateReadFrameTask(frameIndex, canDrop, needSeek || needClearTaskList, dynamic_cast<ReadFrameTask::Callback*>(hTask.get()));
+                rft->SetVisible(trk->IsVisible());
                 hTask->readFrameTaskTable.push_back({trk, rft});
             }
             m_logger->Log(DEBUG) << "++ AddMixFrameTask: frameIndex=" << frameIndex << ", canDrop=" << canDrop << endl;
@@ -941,7 +977,7 @@ private:
         if (m_mixFrameTasks.empty())
             return;
         m_logger->Log(DEBUG) << "------ Clear All MixFrameTasks" << endl;
-        lock_guard<mutex> lk(m_mixFrameTasksLock);
+        lock_guard<recursive_mutex> lk(m_mixFrameTasksLock);
         auto mftIter = m_mixFrameTasks.begin();
         while (mftIter != m_mixFrameTasks.end())
         {
@@ -995,7 +1031,7 @@ private:
             hTask->frameIndex = frameIndex;
             for (auto& trk : tracks)
             {
-                auto rft = trk->CreateReadFrameTask(frameIndex, true, true);
+                auto rft = trk->CreateReadFrameTask(frameIndex, true, true, dynamic_cast<ReadFrameTask::Callback*>(hTask.get()));
                 hTask->readFrameTaskTable.push_back({trk, rft});
             }
             m_logger->Log(DEBUG) << "++ AddSeekingTask: frameIndex=" << frameIndex << endl;
@@ -1027,6 +1063,28 @@ private:
         }
     }
 
+    void RemoveDiscardedTasks(list<MixFrameTask::Holder>& taskList)
+    {
+        auto iter = taskList.begin();
+        while (iter != taskList.end())
+        {
+            auto& mft = *iter;
+            if (mft->state == MixFrameTask::DROP_BIT)
+            {
+                for (auto& elem : mft->readFrameTaskTable)
+                {
+                    auto& rft = elem.second;
+                    rft->SetDiscarded();
+                }
+                iter = taskList.erase(iter);
+            }
+            else
+            {
+                iter++;
+            }
+        }
+    }
+
     void MixingThreadProc()
     {
         m_logger->Log(DEBUG) << "Enter MixingThreadProc(VIDEO)..." << endl;
@@ -1040,11 +1098,15 @@ private:
             if (m_inSeeking)
             {
                 lock_guard<mutex> lk(m_seekingTasksLock);
+                RemoveDiscardedTasks(m_seekingTasks);
                 mixFrameTasks = m_seekingTasks;
             }
             else
             {
-                lock_guard<mutex> lk(m_mixFrameTasksLock);
+                auto statusLog = PrintMixFrameTaskListStatus();
+                m_logger->Log(DEBUG) << statusLog << endl;
+                lock_guard<recursive_mutex> lk(m_mixFrameTasksLock);
+                RemoveDiscardedTasks(m_mixFrameTasks);
                 mixFrameTasks = m_mixFrameTasks;
             }
             auto mftIter = mixFrameTasks.begin();
@@ -1074,7 +1136,6 @@ private:
                     frames.push_back({CorrelativeFrame::PHASE_AFTER_MIXING, 0, 0, mixedFrame});
                     double timestamp = (double)mft->frameIndex*m_frameRate.den/m_frameRate.num;
                     auto rftIter = mft->readFrameTaskTable.begin();
-                    bool isFirstTrack = true;
                     while (rftIter != mft->readFrameTaskTable.end())
                     {
                         auto elem = *rftIter++;
@@ -1089,15 +1150,10 @@ private:
                                 mixedFrame = vmat;
                             else
                                 mixedFrame = m_hMixBlender->Blend(vmat, mixedFrame);
+                            if (timestamp != vmat.time_stamp)
+                                m_logger->Log(WARN) << "'vmat' read from track #" << trk->Id() << " has WRONG TIMESTAMP! timestamp("
+                                    << timestamp << ") != vmat(" << vmat.time_stamp << ")." << endl;
                         }
-                        if (isFirstTrack)
-                        {
-                            timestamp = vmat.time_stamp;
-                            isFirstTrack = false;
-                        }
-                        else if (timestamp != vmat.time_stamp)
-                            m_logger->Log(WARN) << "'vmat' got from non-1st track has DIFFERENT TIMESTAMP against the 1st track! "
-                                << timestamp << " != " << vmat.time_stamp << "." << endl;
                     }
 
                     if (mixedFrame.empty())
@@ -1128,6 +1184,56 @@ private:
         }
 
         m_logger->Log(DEBUG) << "Leave MixingThreadProc(VIDEO)." << endl;
+    }
+
+    string PrintMixFrameTaskListStatus()
+    {
+        lock_guard<recursive_mutex> lk(m_mixFrameTasksLock);
+        ostringstream oss;
+        oss << endl << "-----------------------------------------------------------------" << endl;
+        if (m_mixFrameTasks.empty())
+        {
+            oss << "(empty)" << endl;
+        }
+        else
+        {
+            int idx = 0;
+            for (auto& mft : m_mixFrameTasks)
+                oss << setw(6) << mft->frameIndex;
+            oss << endl;
+            while (true)
+            {
+                for (auto& mft : m_mixFrameTasks)
+                {
+                    string status = "";
+                    int i = 0;
+                    auto iter = mft->readFrameTaskTable.begin();
+                    while (iter != mft->readFrameTaskTable.end() && i++ < idx)
+                        iter++;
+                    if (iter != mft->readFrameTaskTable.end())
+                    {
+                        auto& rft = iter->second;
+                        if (rft->IsOutputFrameReady())
+                            status = "R2";
+                        else if (rft->IsSourceFrameReady())
+                            status = "R1";
+                        else if (rft->IsStarted())
+                            status = "ST";
+                        else if (rft->IsDiscarded())
+                            status = "XX";
+                        else
+                            status = "NEW";
+                    }
+                    oss << setw(6) << status;
+                }
+                oss << endl;
+                idx++;
+                if (idx >= m_tracks.size())
+                    break;
+            }
+        }
+        oss << "-----------------------------------------------------------------" << endl;
+        return oss.str();
     }
 
     ImGui::ImMat BlendSubtitle(ImGui::ImMat& vmat)
@@ -1179,7 +1285,7 @@ private:
     VideoBlender::Holder m_hMixBlender;
 
     list<MixFrameTask::Holder> m_mixFrameTasks;
-    mutex m_mixFrameTasksLock;
+    recursive_mutex m_mixFrameTasksLock;
     MixFrameTask::Holder m_prevOutFrame;
     bool m_inSeeking{false};
     list<MixFrameTask::Holder> m_seekingTasks;
@@ -1202,6 +1308,9 @@ private:
     bool m_started{false};
     bool m_quit{false};
 };
+
+const uint8_t MultiTrackVideoReader_Impl::MixFrameTask::DROP_BIT = 0x1;
+const uint8_t MultiTrackVideoReader_Impl::MixFrameTask::START_BIT = 0x2;
 
 static const auto MULTI_TRACK_VIDEO_READER_DELETER = [] (MultiTrackVideoReader* p) {
     MultiTrackVideoReader_Impl* ptr = dynamic_cast<MultiTrackVideoReader_Impl*>(p);

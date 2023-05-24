@@ -52,7 +52,7 @@ public:
 
     bool CanDrop() const
     {
-        return m_canDrop;
+        return m_discarded || (m_canDrop && (!m_pCb || m_pCb->TriggerDrop()));
     }
 
     bool NeedSeek() const
@@ -108,9 +108,27 @@ public:
         return m_outputReady;
     }
 
-    bool IsStarted() const
+    bool IsStarted() const override
     {
         return m_started;
+    }
+
+    bool Start()
+    {
+        if (m_discarded)
+            return false;
+        m_started = !m_pCb || m_pCb->TriggerStart();
+        return m_started;
+    }
+
+    bool IsVisible() const override
+    {
+        return m_visible;
+    }
+
+    void SetVisible(bool visible) override
+    {
+        m_visible = visible;
     }
 
     bool IsInited() const
@@ -132,11 +150,6 @@ public:
         }
     }
 
-    void SetStarted()
-    {
-        m_started = true;
-    }
-
     bool NeedProcess() const
     {
         return m_needProcess && !m_outputReady;
@@ -149,6 +162,11 @@ public:
 
     void DoReadSourceFrame()
     {
+        // if (!m_visible)
+        // {
+        //     m_src1Ready = m_src2Ready = true;
+        //     return;
+        // }
         if (m_hClip1 && !m_src1Ready)
         {
             auto clipPos = m_readPos-m_hClip1->Start();
@@ -169,6 +187,11 @@ public:
 
     void ProcessFrame()
     {
+        if (!m_visible)
+        {
+            m_outputReady = true;
+            return;
+        }
         if (!IsSourceFrameReady())
             return;
         if (m_hasOvlp)
@@ -183,6 +206,11 @@ public:
         m_outputReady = true;
     }
 
+    void SetCallback(Callback* pCallback) override
+    {
+        m_pCb = pCallback;
+    }
+
 private:
     int64_t m_frameIndex;
     int64_t m_readPos;
@@ -192,6 +220,7 @@ private:
     bool m_started{false};
     bool m_inited{false};
     bool m_needProcess{false};
+    bool m_visible{true};
     ImGui::ImMat m_srcVmat1;
     bool m_eof1{false};
     VideoClip::Holder m_hClip1;
@@ -206,6 +235,7 @@ private:
     ImGui::ImMat m_outMat;
     bool m_outputReady{false};
     bool m_discarded{false};
+    Callback* m_pCb{nullptr};
 };
 
 static const auto READ_FRAME_TASK_HOLDER_DELETER = [] (ReadFrameTask* p) {
@@ -227,6 +257,14 @@ public:
     VideoTrack_Impl(int64_t id, uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate)
         : m_id(id), m_outWidth(outWidth), m_outHeight(outHeight), m_frameRate(frameRate)
     {
+        ostringstream loggerNameOss;
+        loggerNameOss << id;
+        string idstr = loggerNameOss.str();
+        if (idstr.size() > 4)
+            idstr = idstr.substr(idstr.size()-4);
+        loggerNameOss.str(""); loggerNameOss << "VTrk#" << idstr;
+        m_logger = GetLogger(loggerNameOss.str());
+
         m_readClipIter = m_clips.begin();
         m_readThread = thread(&VideoTrack_Impl::ReadFrameProc, this);
     }
@@ -468,7 +506,7 @@ public:
         return m_readForward;
     }
 
-    ReadFrameTask::Holder CreateReadFrameTask(int64_t frameIndex, bool canDrop, bool needSeek)
+    ReadFrameTask::Holder CreateReadFrameTask(int64_t frameIndex, bool canDrop, bool needSeek, ReadFrameTask::Callback* pCb) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (frameIndex < 0)
@@ -476,6 +514,7 @@ public:
         const int64_t readPos = ReadPos(frameIndex);
         ReadFrameTask_Impl* pTask = new ReadFrameTask_Impl(frameIndex, readPos, canDrop, needSeek);
         ReadFrameTask::Holder hTask(pTask, READ_FRAME_TASK_HOLDER_DELETER);
+        if (pCb) pTask->SetCallback(pCb);
         {
             lock_guard<mutex> lk2(m_readFrameTasksLock);
             if (!m_readFrameTasks.empty())
@@ -575,6 +614,11 @@ public:
         m_needUpdateReadIter = true;
     }
 
+    void SetLogLevel(Logger::Level l) override
+    {
+        m_logger->SetShowLevels(l);
+    }
+
     friend ostream& operator<<(ostream& os, VideoTrack_Impl& track);
 
 private:
@@ -610,21 +654,28 @@ private:
                 }
                 if (!hTask)
                 {
+                    int index = 0;
                     iter = m_readFrameTasks.begin();
-                    while (iter != m_readFrameTasks.end())
+                    while (iter != m_readFrameTasks.end() && index < 4)
                     {
                         ReadFrameTask_Impl* pt = dynamic_cast<ReadFrameTask_Impl*>(iter->get());
                         if (!pt->IsSourceFrameReady())
                         {
-                            hTask = *iter;
-                            pTask = pt;
-                            break;
+                            if (!pt->IsStarted())
+                            {
+                                if (!pt->Start())
+                                    pt->SetDiscarded();
+                            }
+                            if (pt->IsStarted())
+                            {
+                                hTask = *iter;
+                                pTask = pt;
+                                break;
+                            }
                         }
-                        iter++;
+                        iter++; index++;
                     }
                 }
-                if (pTask)
-                    pTask->SetStarted();
             }
 
             // if clip changed, update m_clips
@@ -661,23 +712,30 @@ private:
                     }
                     pTask->DoReadSourceFrame();
                     if (pTask->IsSourceFrameReady())
+                    {
+                        // m_logger->Log(DEBUG) << "Track#" << m_id << ", frameIndex=" << pTask->FrameIndex() << "  SOURCE READY" << endl;
                         idleLoop = false;
+                    }
                 }
                 if (pTask->IsSourceFrameReady() && pTask->NeedProcess())
                 {
                     pTask->ProcessFrame();
+                    // m_logger->Log(DEBUG) << "Track#" << m_id << ", frameIndex=" << pTask->FrameIndex() << "  OUTPUT READY" << endl;
                     idleLoop = false;
                 }
             }
 
             if (idleLoop)
+            {
+                // m_logger->Log(DEBUG) << "Track#" << m_id << " slept" << endl;
                 this_thread::sleep_for(chrono::milliseconds(2));
+            }
         }
     }
 
     void SeekClipPos(int64_t readPos)
     {
-        Log(DEBUG) << "----> SeekClipPos(" << readPos << ")" << endl;
+        m_logger->Log(DEBUG) << "----> SeekClipPos(" << readPos << ")" << endl;
         for (auto& c : m_clips)
             c->SeekTo(readPos-c->Start());
     }
@@ -920,6 +978,7 @@ private:
     }
 
 private:
+    ALogger* m_logger;
     recursive_mutex m_apiLock;
     int64_t m_id;
     uint32_t m_outWidth;
