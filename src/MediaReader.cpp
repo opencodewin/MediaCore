@@ -653,6 +653,11 @@ public:
         return success;
     }
 
+    VideoFrame::Holder ReadVideoFrame(double pos, bool& eof, bool wait) override
+    {
+        throw std::runtime_error("This interface is NOT SUPPORTED!");
+    }
+
     bool ReadAudioSamples(uint8_t* buf, uint32_t& size, double& pos, bool& eof, bool wait) override
     {
         if (!m_started)
@@ -3298,5 +3303,46 @@ MediaReader::Holder MediaReader::CreateInstance(const string& loggerName)
 ALogger* MediaReader::GetDefaultLogger()
 {
     return Logger::GetLogger("MReader");
+}
+
+class VideoFrame_MatImpl : public MediaReader::VideoFrame
+{
+public:
+    VideoFrame_MatImpl(ImGui::ImMat& vmat) : m_vmat(vmat) {}
+    virtual ~VideoFrame_MatImpl() {}
+
+    bool GetMat(ImGui::ImMat& m) override
+    {
+        m = m_vmat;
+        return true;
+    }
+
+    double Pos() const override
+    {
+        return m_vmat.time_stamp;
+    }
+
+    int64_t Pts() const override
+    {
+        return 0;
+    }
+
+    int64_t Dur() const override
+    {
+        return 0;
+    }
+
+private:
+    ImGui::ImMat m_vmat;
+};
+
+static const auto MEDIA_READER_VIDEO_FRAME_MATIMPL_HOLDER_DELETER = [] (MediaReader::VideoFrame* p) {
+    VideoFrame_MatImpl* ptr = dynamic_cast<VideoFrame_MatImpl*>(p);
+    delete ptr;
+};
+
+MediaReader::VideoFrame::Holder MediaReader::VideoFrame::CreateMatInstance(ImGui::ImMat& m)
+{
+    return MediaReader::VideoFrame::Holder(new VideoFrame_MatImpl(m), MEDIA_READER_VIDEO_FRAME_MATIMPL_HOLDER_DELETER);
 }
 }

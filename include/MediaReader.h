@@ -35,6 +35,16 @@ struct MediaReader
     static MEDIACORE_API Logger::ALogger* GetDefaultLogger();
     static MEDIACORE_API Logger::ALogger* GetVideoLogger();
 
+    struct VideoFrame
+    {
+        using Holder = std::shared_ptr<VideoFrame>;
+        static Holder CreateMatInstance(ImGui::ImMat& m);
+        virtual bool GetMat(ImGui::ImMat& m) = 0;
+        virtual double Pos() const = 0;
+        virtual int64_t Pts() const = 0;
+        virtual int64_t Dur() const = 0;
+    };
+
     virtual bool Open(const std::string& url) = 0;
     virtual bool Open(MediaParser::Holder hParser) = 0;
     virtual bool ConfigVideoReader(
@@ -53,6 +63,7 @@ struct MediaReader
     virtual void Wakeup() = 0;
 
     virtual bool ReadVideoFrame(double pos, ImGui::ImMat& m, bool& eof, bool wait = true) = 0;
+    virtual VideoFrame::Holder ReadVideoFrame(double pos, bool& eof, bool wait = true) = 0;
     virtual bool ReadAudioSamples(uint8_t* buf, uint32_t& size, double& pos, bool& eof, bool wait = true) = 0;
     virtual bool ReadAudioSamples(ImGui::ImMat& m, uint32_t readSamples, bool& eof, bool wait = true) = 0;
 

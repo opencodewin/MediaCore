@@ -162,25 +162,20 @@ public:
 
     void DoReadSourceFrame()
     {
-        // if (!m_visible)
-        // {
-        //     m_src1Ready = m_src2Ready = true;
-        //     return;
-        // }
         if (m_hClip1 && !m_src1Ready)
         {
             auto clipPos = m_readPos-m_hClip1->Start();
             m_hClip1->NotifyReadPos(clipPos);
-            m_hClip1->ReadSourceFrame(clipPos, m_srcVmat1, m_eof1, false);
-            if (!m_srcVmat1.empty() || m_eof1)
+            m_srcVf1 = m_hClip1->ReadSourceFrame(clipPos, m_eof1, false);
+            if (m_srcVf1 || m_eof1)
                 m_src1Ready = true;
         }
         if (m_hClip2 && !m_src2Ready)
         {
             auto clipPos = m_readPos-m_hClip2->Start();
             m_hClip2->NotifyReadPos(clipPos);
-            m_hClip2->ReadSourceFrame(clipPos, m_srcVmat2, m_eof2, false);
-            if (!m_srcVmat2.empty() || m_eof2)
+            m_srcVf2 = m_hClip2->ReadSourceFrame(clipPos, m_eof2, false);
+            if (m_srcVf2 || m_eof2)
                 m_src2Ready = true;
         }
     }
@@ -196,11 +191,11 @@ public:
             return;
         if (m_hasOvlp)
         {
-            m_hOvlp->ProcessSourceFrame(m_readPos-m_hOvlp->Start(), m_outFrames, m_outMat, m_srcVmat1, m_srcVmat2);
+            m_hOvlp->ProcessSourceFrame(m_readPos-m_hOvlp->Start(), m_outFrames, m_outMat, m_srcVf1, m_srcVf2);
         }
         else if (m_hClip1)
         {
-            m_hClip1->ProcessSourceFrame(m_readPos-m_hClip1->Start(), m_outFrames, m_outMat, m_srcVmat1);
+            m_hClip1->ProcessSourceFrame(m_readPos-m_hClip1->Start(), m_outFrames, m_outMat, m_srcVf1);
         }
         m_outMat.time_stamp = (double)m_readPos/1000;
         m_outputReady = true;
@@ -221,12 +216,12 @@ private:
     bool m_inited{false};
     bool m_needProcess{false};
     bool m_visible{true};
-    ImGui::ImMat m_srcVmat1;
+    MediaReader::VideoFrame::Holder m_srcVf1;
     bool m_eof1{false};
     VideoClip::Holder m_hClip1;
     bool m_src1Ready{false};
     bool m_hasOvlp{false};
-    ImGui::ImMat m_srcVmat2;
+    MediaReader::VideoFrame::Holder m_srcVf2;
     bool m_eof2{false};
     VideoClip::Holder m_hClip2;
     bool m_src2Ready{false};

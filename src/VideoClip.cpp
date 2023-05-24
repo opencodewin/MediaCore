@@ -272,11 +272,13 @@ public:
         // string filename = SysUtils::ExtractFileBaseName(m_hInfo->url);
         // AddCheckPoint(filename+", t0");
         const double readPosTs = (double)(pos+m_startOffset)/1000;
-        if (!m_hReader->ReadVideoFrame(readPosTs, image, eof))
+        auto hVf = m_hReader->ReadVideoFrame(readPosTs, eof);
+        if (!hVf)
         {
             m_logger->Log(WARN) << "FAILED to read frame @ timeline-pos=" << pos << "ms, media-time=" << readPosTs << "s! Error is '" << m_hReader->GetError() << "'." << endl;
             return;
         }
+        hVf->GetMat(image);
         // AddCheckPoint(filename+", t1");
         // LogCheckPointsTimeInfo();
         frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, image});
@@ -293,28 +295,32 @@ public:
         out = image;
     }
 
-    void ReadSourceFrame(int64_t pos, ImGui::ImMat& out, bool& eof, bool wait) override
+    MediaReader::VideoFrame::Holder ReadSourceFrame(int64_t pos, bool& eof, bool wait) override
     {
         if (m_eof)
         {
             eof = true;
-            return;
+            return nullptr;
         }
         if (m_hReader->IsSuspended())
             m_hReader->Wakeup();
 
         const double readPosTs = (double)(pos+m_startOffset)/1000;
-        if (!m_hReader->ReadVideoFrame(readPosTs, out, eof, wait))
+        auto hVf = m_hReader->ReadVideoFrame(readPosTs, eof, wait);
+        if (!hVf)
         {
             m_failedRead.CountFailedRead(readPosTs);
             ostringstream oss;
             oss << "FAILED to read frame @ timeline-pos=" << pos << "ms, media-time=" << readPosTs << "s! Error is '" << m_hReader->GetError() << "'.";
             m_failedRead.LogAtInterval(5000, m_logger, DEBUG, oss.str());
         }
+        return hVf;
     }
 
-    void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, const ImGui::ImMat& in) override
+    void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, MediaReader::VideoFrame::Holder hInVf) override
     {
+        ImGui::ImMat in;
+        hInVf->GetMat(in);
         if (in.empty())
             return;
 
@@ -590,14 +596,21 @@ public:
         out = image;
     }
 
-    void ReadSourceFrame(int64_t pos, ImGui::ImMat& out, bool& eof, bool wait) override
+    MediaReader::VideoFrame::Holder ReadSourceFrame(int64_t pos, bool& eof, bool wait) override
     {
+        if (m_hVf)
+            return m_hVf;
+        ImGui::ImMat out;
         if (!m_hReader->ReadVideoFrame(0, out, eof, wait))
             throw runtime_error(m_hReader->GetError());
+        m_hVf = MediaReader::VideoFrame::CreateMatInstance(out);
+        return m_hVf;
     }
 
-    void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, const ImGui::ImMat& in) override
+    void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, MediaReader::VideoFrame::Holder hInVf) override
     {
+        ImGui::ImMat in;
+        hInVf->GetMat(in);
         if (in.empty())
             return;
 
@@ -653,6 +666,7 @@ private:
     int64_t m_trackId{-1};
     MediaInfo::Holder m_hInfo;
     MediaReader::Holder m_hReader;
+    MediaReader::VideoFrame::Holder m_hVf;
     int64_t m_srcDuration;
     int64_t m_start;
     VideoFilter::Holder m_hFilter;
@@ -817,7 +831,7 @@ public:
         frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSITION, m_hFrontClip->Id(), m_hFrontClip->TrackId(), out});
     }
 
-    void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, const ImGui::ImMat& in1, const ImGui::ImMat& in2) override
+    void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, MediaReader::VideoFrame::Holder hInVf1, MediaReader::VideoFrame::Holder hInVf2) override
     {
         if (pos < 0 || pos > Duration())
             throw invalid_argument("Argument 'pos' can NOT be NEGATIVE or larger than overlap duration!");
@@ -825,12 +839,12 @@ public:
         ImGui::ImMat vmat1;
         bool eof1{false};
         int64_t pos1 = pos+(Start()-m_hFrontClip->Start());
-        m_hFrontClip->ProcessSourceFrame(pos1, frames, vmat1, in1);
+        m_hFrontClip->ProcessSourceFrame(pos1, frames, vmat1, hInVf1);
 
         ImGui::ImMat vmat2;
         bool eof2{false};
         int64_t pos2 = pos+(Start()-m_hRearClip->Start());
-        m_hRearClip->ProcessSourceFrame(pos2, frames, vmat2, in2);
+        m_hRearClip->ProcessSourceFrame(pos2, frames, vmat2, hInVf2);
 
         if (vmat1.empty())
         {
