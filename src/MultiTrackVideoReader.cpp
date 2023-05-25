@@ -307,7 +307,7 @@ public:
         m_readForward = forward;
         for (auto& track : m_tracks)
             track->SetDirection(forward);
-        ClearAllMixFrameTasks();
+        SeekTo(ReadPos());
 
         StartMixingThread();
         return true;
