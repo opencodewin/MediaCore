@@ -61,6 +61,8 @@ public:
         int n;
         Level l = GetVideoLogger()->GetShowLevels(n);
         m_logger->SetShowLevels(l, n);
+
+        m_prevReadResult.first = 0.;
     }
 
     virtual ~VideoReader_Impl() {}
@@ -250,7 +252,7 @@ public:
         }
         m_vidAvStm = nullptr;
         m_readPos = 0;
-        m_prevReadResult = nullptr;
+        m_prevReadResult = {0., nullptr};
         m_readForward = true;
         m_seekPosUpdated = false;
         m_seekPosTs = 0;
@@ -286,7 +288,7 @@ public:
         m_hParser = nullptr;
         m_hMediaInfo = nullptr;
         m_readPos = 0;
-        m_prevReadResult = nullptr;
+        m_prevReadResult = {0., nullptr};
         m_readForward = true;
         m_seekPosUpdated = false;
         m_seekPosTs = 0;
@@ -433,9 +435,9 @@ public:
         lock_guard<recursive_mutex> lk(m_apiLock);
         eof = false;
         auto prevReadResult = m_prevReadResult;
-        if (prevReadResult && pos == prevReadResult->Pos())
+        if (prevReadResult.second && pos == prevReadResult.first)
         {
-            return prevReadResult;
+            return prevReadResult.second;
         }
         if (IsSuspended() && !m_isImage)
         {
@@ -504,7 +506,7 @@ public:
             eof = true;
         }
 
-        m_prevReadResult = hVfrm;
+        m_prevReadResult = {pos, hVfrm};
         return hVfrm;
     }
 
@@ -862,8 +864,8 @@ private:
     struct VideoFrame_Impl : public VideoFrame
     {
     public:
-        VideoFrame_Impl(VideoReader_Impl* _owner, SelfFreeAVFramePtr _frmPtr, double _ts, int64_t _pts, int64_t _dur)
-            : owner(_owner), frmPtr(_frmPtr), ts(_ts), pts(_pts), dur(_dur)
+        VideoFrame_Impl(VideoReader_Impl* _owner, SelfFreeAVFramePtr _frmPtr, double _ts, int64_t _pts, int64_t _dur, bool _isHwfrm)
+            : owner(_owner), frmPtr(_frmPtr), ts(_ts), pts(_pts), dur(_dur), isHwfrm(_isHwfrm)
         {}
 
         virtual ~VideoFrame_Impl() {}
@@ -880,9 +882,23 @@ private:
                 owner->m_logger->Log(Error) << "NULL avframe ptr at pos " << ts << "(" << pts << ")!" << endl;
                 return false;
             }
+
+            // acquire the lock of 'frmPtr'
+            while (!owner->m_quitThread)
+            {
+                bool testVal = false;
+                if (frmPtrInUse.compare_exchange_strong(testVal, true))
+                    break;
+                this_thread::sleep_for(chrono::milliseconds(5));
+            }
+
+            // avframe -> ImMat
             if (!owner->m_pFrmCvt->ConvertImage(frmPtr.get(), vmat, ts))
                 owner->m_logger->Log(Error) << "AVFrameToImMatConverter::ConvertImage() FAILED at pos " << ts << "(" << pts << ")!" << endl;
             frmPtr = nullptr;
+            isHwfrm = false;
+            frmPtrInUse = false;
+
             if (vmat.empty())
                 return false;
             m = vmat;
@@ -899,7 +915,9 @@ private:
         double ts;
         int64_t pts;
         int64_t dur{0};
+        bool isHwfrm{false};
         bool isEofFrame{false};
+        atomic_bool frmPtrInUse{false};
     };
 
     static const function<void (VideoFrame*)> VIDEO_READER_VIDEO_FRAME_HOLDER_DELETER;
@@ -1223,7 +1241,7 @@ private:
                     tailFramePts = pVf->pts;
                 }
             }
-            bool doDecode = !decoderEof && m_pendingVidfrmCnt < m_maxPendingVidfrmCnt
+            bool doDecode = !decoderEof && m_pendingHwfrmCnt <= m_maxPendingHwfrmCnt
                     && (tailFramePts < m_cacheRange.second || !m_readForward);
             if (doDecode)
             {
@@ -1232,11 +1250,23 @@ private:
                 if (fferr == 0)
                 {
                     m_logger->Log(VERBOSE) << "========== Get video frame: pts=" << pAvfrm->pts << ", ts=" << (double)CvtPtsToMts(pAvfrm->pts)/1000 << "." << endl;
-                    SelfFreeAVFramePtr frmPtr(pAvfrm, [this] (AVFrame* p) {
-                        av_frame_free(&p);
-                        m_pendingVidfrmCnt--;
-                    });
-                    m_pendingVidfrmCnt++;
+                    SelfFreeAVFramePtr frmPtr;
+                    bool isHwfrm = false;
+                    if (IsHwFrame(pAvfrm))
+                    {
+                        frmPtr = SelfFreeAVFramePtr(pAvfrm, [this] (AVFrame* p) {
+                            av_frame_free(&p);
+                            m_pendingHwfrmCnt--;
+                        });
+                        m_pendingHwfrmCnt++;
+                        isHwfrm = true;
+                    }
+                    else
+                    {
+                        frmPtr = SelfFreeAVFramePtr(pAvfrm, [this] (AVFrame* p) {
+                            av_frame_free(&p);
+                        });
+                    }
                     const int64_t pts = pAvfrm->pts;
 #if LIBAVUTIL_VERSION_MAJOR > 57 || (LIBAVUTIL_VERSION_MAJOR == 57 && LIBAVUTIL_VERSION_MINOR > 29)
                     const int64_t dur = pAvfrm->duration;
@@ -1244,7 +1274,7 @@ private:
                     const int64_t dur = pAvfrm->pkt_duration;
 #endif
                     pAvfrm = nullptr;
-                    auto pVf = new VideoFrame_Impl(this, frmPtr, (double)CvtPtsToMts(pts)/1000, pts, dur);
+                    auto pVf = new VideoFrame_Impl(this, frmPtr, (double)CvtPtsToMts(pts)/1000, pts, dur, isHwfrm);
                     VideoFrame::Holder hVfrm = CreateVideoFrameInstance(pVf);
                     hPrevFrm = hVfrm;
                     lock_guard<mutex> _lk(m_vfrmQLock);
@@ -1369,28 +1399,45 @@ private:
                         iter = m_vfrmQ.erase(iter);
                         continue;
                     }
-                    // if (!hVfrm && pVf->vmat.empty())
-                    //     hVfrm = vf;
+                    if (!hVfrm && pVf->isHwfrm)
+                        hVfrm = *iter;
                     iter++;
                 }
             }
 
-            // convert avframe to mat
-            // if (hVfrm)
-            // {
-            //     // AddCheckPoint("ConvImg0");
-            //     if (!m_pFrmCvt->ConvertImage(hVfrm->frmPtr.get(), hVfrm->vmat, hVfrm->ts))
-            //     {
-            //         m_logger->Log(Error) << "AVFrameToImMatConverter::ConvertImage() FAILED at pos " << hVfrm->ts << "(" << hVfrm->pts << ")! Discard this frame." << endl;
-            //         lock_guard<mutex> _lk(m_vfrmQLock);
-            //         auto iter = find(m_vfrmQ.begin(), m_vfrmQ.end(), hVfrm);
-            //         if (iter != m_vfrmQ.end()) m_vfrmQ.erase(iter);
-            //     }
-            //     // AddCheckPoint("ConvImg1");
-            //     // LogCheckPointsTimeInfo(m_logger, VERBOSE);
-            //     hVfrm->frmPtr = nullptr;
-            //     idleLoop = false;
-            // }
+            // transfer hardware frame to software frame, to reduce the count of frames referenced from decoder
+            if (hVfrm)
+            {
+                VideoFrame_Impl* pVf = dynamic_cast<VideoFrame_Impl*>(hVfrm.get());
+                // acquire the lock of 'frmPtr'
+                while (!m_quitThread)
+                {
+                    bool testVal = false;
+                    if (pVf->frmPtrInUse.compare_exchange_strong(testVal, true))
+                        break;
+                    this_thread::sleep_for(chrono::milliseconds(5));
+                }
+
+                if (!m_quitThread && pVf->frmPtr)
+                {
+                    SelfFreeAVFramePtr swfrm = AllocSelfFreeAVFramePtr();
+                    if (!TransferHwFrameToSwFrame(swfrm.get(), pVf->frmPtr.get()))
+                    {
+                        m_logger->Log(Error) << "TransferHwFrameToSwFrame() FAILED at pos " << pVf->ts << "(" << pVf->pts << ")! Discard this frame." << endl;
+                        pVf->frmPtr = nullptr;
+                        lock_guard<mutex> _lk(m_vfrmQLock);
+                        auto iter = find(m_vfrmQ.begin(), m_vfrmQ.end(), hVfrm);
+                        if (iter != m_vfrmQ.end()) m_vfrmQ.erase(iter);
+                    }
+                    else
+                    {
+                        pVf->frmPtr = swfrm;
+                    }
+                }
+                pVf->isHwfrm = false;
+                pVf->frmPtrInUse = false;
+                idleLoop = false;
+            }
 
             if (idleLoop)
                 this_thread::sleep_for(chrono::milliseconds(5));
@@ -1436,19 +1483,19 @@ private:
     bool m_decThdRunning{false};
     list<VideoFrame::Holder> m_vfrmQ;
     mutex m_vfrmQLock;
-    atomic_int32_t m_pendingVidfrmCnt{0};
-    int32_t m_maxPendingVidfrmCnt{3};
-    // convert avframe to mat thread
+    atomic_int32_t m_pendingHwfrmCnt{0};
+    int32_t m_maxPendingHwfrmCnt{2};
+    // convert hw frame to sw frame thread
     thread m_cnvMatThread;
     bool m_cnvThdRunning{false};
 
     int64_t m_readPos{0};
     pair<int64_t, int64_t> m_cacheRange;
     pair<int32_t, int32_t> m_forwardCacheFrameCount{1, 3};
-    pair<int32_t, int32_t> m_backwardCacheFrameCount{8, 2};
+    pair<int32_t, int32_t> m_backwardCacheFrameCount{8, 1};
     mutex m_cacheRangeLock;
     // pair<double, ImGui::ImMat> m_prevReadResult;
-    VideoFrame::Holder m_prevReadResult;
+    pair<double, VideoFrame::Holder> m_prevReadResult;
     bool m_readForward{true};
     bool m_seekPosUpdated{false};
     double m_seekPosTs{0};

@@ -55,6 +55,7 @@ MEDIACORE_API std::string TimestampToString(double timestamp);
 
 MEDIACORE_API bool IsHwFrame(const AVFrame* avfrm);
 MEDIACORE_API bool HwFrameToSwFrame(AVFrame* swfrm, const AVFrame* hwfrm);
+MEDIACORE_API bool TransferHwFrameToSwFrame(AVFrame* swfrm, const AVFrame* hwfrm);
 
 using SelfFreeAVFramePtr = std::shared_ptr<AVFrame>;
 MEDIACORE_API SelfFreeAVFramePtr AllocSelfFreeAVFramePtr();

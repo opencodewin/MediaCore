@@ -102,7 +102,8 @@ public:
             throw invalid_argument("This video stream is an IMAGE, it should be instantiated with a 'VideoClip_ImageImpl' instance!");
         loggerNameOss.str(""); loggerNameOss << "VRdr-" << fileName.substr(0, 4) << "-" << idstr;
         m_hReader = MediaReader::CreateVideoInstance(loggerNameOss.str());
-        // m_hReader->SetLogLevel(VERBOSE);
+        // if (id == 1673851129807725)
+        //     m_hReader->SetLogLevel(VERBOSE);
         m_hReader->EnableHwAccel(VideoClip::USE_HWACCEL);
         if (!m_hReader->Open(hParser))
             throw runtime_error(m_hReader->GetError());
@@ -350,9 +351,10 @@ public:
         m_eof = false;
     }
 
-    void NotifyReadPos(int64_t pos) override
+    void NotifyReadPos(int64_t trackPos) override
     {
-        if (pos < -m_wakeupRange || pos > Duration()+m_wakeupRange)
+        auto clipPos = trackPos-m_start;
+        if (clipPos < -m_wakeupRange || clipPos > Duration()+m_wakeupRange)
         {
             if (!m_hReader->IsSuspended())
             {
@@ -362,6 +364,9 @@ public:
         }
         else if (m_hReader->IsSuspended())
         {
+            const int64_t dur = Duration();
+            int64_t seekPos = clipPos < -m_wakeupRange ? 0 : (clipPos > dur ? dur : clipPos);
+            m_hReader->SeekTo((double)(seekPos+m_startOffset)/1000);
             m_hReader->Wakeup();
             // Log(DEBUG) << ">>>> Clip#" << m_id <<" is WAKEUP." << endl;
         }

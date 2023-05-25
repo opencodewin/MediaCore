@@ -307,6 +307,7 @@ public:
         m_readForward = forward;
         for (auto& track : m_tracks)
             track->SetDirection(forward);
+        ClearAllMixFrameTasks();
 
         StartMixingThread();
         return true;
@@ -339,7 +340,6 @@ public:
             return false;
         }
         m_logger->Log(DEBUG) << "======> ConsecutiveSeek pos=" << pos << endl;
-        ClearAllMixFrameTasks();
         m_prevOutFrame = nullptr;
         m_readFrameIdx = (int64_t)(floor((double)pos*m_frameRate.num/(m_frameRate.den*1000)));
         AddSeekingTask(m_readFrameIdx);
@@ -356,7 +356,6 @@ public:
             return false;
         }
         m_logger->Log(DEBUG) << "=======> StopConsecutiveSeek" << endl;
-        ClearAllSeekingTasks();
         m_inSeeking = false;
         int64_t step = m_readForward ? 1 : -1;
         AddMixFrameTask(m_readFrameIdx, false, true);
@@ -384,73 +383,6 @@ public:
         if (track)
             return track->IsVisible();
         return false;
-    }
-
-    bool ReadVideoFrameWithoutSubtitle(int64_t frameIndex, vector<CorrelativeFrame>& frames, bool nonblocking, bool precise)
-    {
-        m_readFrameIdx = frameIndex;
-        if (m_prevOutFrame && m_prevOutFrame->frameIndex == frameIndex)
-        {
-            frames = m_prevOutFrame->outputFrames;
-            return true;
-        }
-
-        MixFrameTask::Holder hCandiFrame;
-        if (m_inSeeking)
-        {
-            hCandiFrame = FindSeekingFlashAndRemoveDeprecatedTasks(frameIndex);
-            if (hCandiFrame)
-            {
-                m_prevOutFrame = hCandiFrame;
-                frames = hCandiFrame->outputFrames;
-            }
-            else if (!m_seekingFlash.empty())
-            {
-                frames = m_seekingFlash;
-            }
-        }
-        else
-        {
-            hCandiFrame = FindCandidateAndRemoveDeprecatedTasks(frameIndex, precise);
-            if (hCandiFrame && hCandiFrame->outputReady)
-            {
-                m_prevOutFrame = hCandiFrame;
-                frames = hCandiFrame->outputFrames;
-            }
-
-            int64_t step = m_readForward ? 1 : -1;
-            if (precise)
-            {
-                if (!hCandiFrame)
-                    AddMixFrameTask(frameIndex, false, false);
-                AddMixFrameTask(frameIndex+step, false, false);
-            }
-            else
-            {
-                AddMixFrameTask(frameIndex+step, true, false);
-            }
-
-            if (!nonblocking && precise)
-            {
-                while (!m_quit && !m_inSeeking)
-                {
-                    this_thread::sleep_for(chrono::milliseconds(5));
-                    hCandiFrame = FindCandidateAndRemoveDeprecatedTasks(frameIndex, precise);
-                    if (hCandiFrame)
-                        break;
-                }
-                if (hCandiFrame)
-                {
-                    m_prevOutFrame = hCandiFrame;
-                    frames = hCandiFrame->outputFrames;
-                    return true;
-                }
-            }
-        }
-
-        if (frames.empty())
-            return false;
-        return true;
     }
 
     bool ReadVideoFrameEx(int64_t pos, vector<CorrelativeFrame>& frames, bool nonblocking, bool precise) override
@@ -815,6 +747,73 @@ public:
     }
 
 private:
+    bool ReadVideoFrameWithoutSubtitle(int64_t frameIndex, vector<CorrelativeFrame>& frames, bool nonblocking, bool precise)
+    {
+        m_readFrameIdx = frameIndex;
+        if (m_prevOutFrame && m_prevOutFrame->frameIndex == frameIndex)
+        {
+            frames = m_prevOutFrame->outputFrames;
+            return true;
+        }
+
+        MixFrameTask::Holder hCandiFrame;
+        if (m_inSeeking)
+        {
+            hCandiFrame = FindSeekingFlashAndRemoveDeprecatedTasks(frameIndex);
+            if (hCandiFrame)
+            {
+                m_prevOutFrame = hCandiFrame;
+                frames = hCandiFrame->outputFrames;
+            }
+            else if (!m_seekingFlash.empty())
+            {
+                frames = m_seekingFlash;
+            }
+        }
+        else
+        {
+            hCandiFrame = FindCandidateAndRemoveDeprecatedTasks(frameIndex, precise);
+            if (hCandiFrame && hCandiFrame->outputReady)
+            {
+                m_prevOutFrame = hCandiFrame;
+                frames = hCandiFrame->outputFrames;
+            }
+
+            int64_t step = m_readForward ? 1 : -1;
+            if (precise)
+            {
+                if (!hCandiFrame)
+                    AddMixFrameTask(frameIndex, false, false);
+                AddMixFrameTask(frameIndex+step, false, false);
+            }
+            else
+            {
+                AddMixFrameTask(frameIndex+step, true, false);
+            }
+
+            if (!nonblocking && precise)
+            {
+                while (!m_quit && !m_inSeeking)
+                {
+                    this_thread::sleep_for(chrono::milliseconds(5));
+                    hCandiFrame = FindCandidateAndRemoveDeprecatedTasks(frameIndex, precise);
+                    if (hCandiFrame)
+                        break;
+                }
+                if (hCandiFrame)
+                {
+                    m_prevOutFrame = hCandiFrame;
+                    frames = hCandiFrame->outputFrames;
+                    return true;
+                }
+            }
+        }
+
+        if (frames.empty())
+            return false;
+        return true;
+    }
+
     void StartMixingThread()
     {
         m_quit = false;
@@ -834,6 +833,18 @@ private:
     struct MixFrameTask : public ReadFrameTask::Callback
     {
         using Holder = shared_ptr<MixFrameTask>;
+
+        ~MixFrameTask()
+        {
+            for (auto& elem : readFrameTaskTable)
+            {
+                auto& rft = elem.second;
+                rft->SetDiscarded();
+            }
+            readFrameTaskTable.clear();
+            outputFrames.clear();
+        }
+
         int64_t frameIndex;
         vector<pair<VideoTrack::Holder, ReadFrameTask::Holder>> readFrameTaskTable;
         bool outputReady{false};
@@ -922,7 +933,7 @@ private:
                     auto& rft = elem.second;
                     rft->SetDiscarded();
                 }
-                m_logger->Log(DEBUG) << "---- Remove mixed frame, frameIndex=" << delfrm->frameIndex << endl;
+                m_logger->Log(DEBUG) << "---- Remove mixframe task, frameIndex=" << delfrm->frameIndex << endl;
                 eraseIter = m_mixFrameTasks.erase(eraseIter);
             }
         }
@@ -1005,8 +1016,28 @@ private:
         if (hCandiFrame)
         {
             auto sktIter = m_seekingTasks.begin();
-            while (sktIter != m_seekingTasks.end() && (*sktIter)->frameIndex != hCandiFrame->frameIndex)
+            while (sktIter != m_seekingTasks.end())
             {
+                if ((*sktIter)->frameIndex == hCandiFrame->frameIndex)
+                {
+                    sktIter++;
+                    continue;
+                }
+                auto nextIter = sktIter; nextIter++;
+                if (nextIter == m_seekingTasks.end())
+                    break;
+                auto& delfrm = *sktIter;
+                if (!delfrm->outputReady)
+                {
+                    sktIter++;
+                    continue;
+                }
+                for (auto& elem : delfrm->readFrameTaskTable)
+                {
+                    auto& rft = elem.second;
+                    rft->SetDiscarded();
+                }
+                m_logger->Log(DEBUG) << "---- Remove seeking task, frameIndex=" << delfrm->frameIndex << endl;
                 sktIter = m_seekingTasks.erase(sktIter);
             }
         }
@@ -1090,6 +1121,7 @@ private:
         m_logger->Log(DEBUG) << "Enter MixingThreadProc(VIDEO)..." << endl;
 
         bool afterSeek = false;
+        bool prevInSeekingState = m_inSeeking;
         while (!m_quit)
         {
             bool idleLoop = true;
@@ -1097,15 +1129,27 @@ private:
             list<MixFrameTask::Holder> mixFrameTasks;
             if (m_inSeeking)
             {
+                if (prevInSeekingState != m_inSeeking)
+                {
+                    prevInSeekingState = m_inSeeking;
+                    ClearAllMixFrameTasks();
+                }
                 lock_guard<mutex> lk(m_seekingTasksLock);
+                // auto statusLog = PrintMixFrameTaskListStatus(m_seekingTasks, "SeekingTasks");
+                // m_logger->Log(DEBUG) << statusLog << endl;
                 RemoveDiscardedTasks(m_seekingTasks);
                 mixFrameTasks = m_seekingTasks;
             }
             else
             {
-                auto statusLog = PrintMixFrameTaskListStatus();
-                m_logger->Log(DEBUG) << statusLog << endl;
+                if (prevInSeekingState != m_inSeeking)
+                {
+                    prevInSeekingState = m_inSeeking;
+                    ClearAllSeekingTasks();
+                }
                 lock_guard<recursive_mutex> lk(m_mixFrameTasksLock);
+                // auto statusLog = PrintMixFrameTaskListStatus(m_mixFrameTasks, "MixFrameTasks");
+                // m_logger->Log(DEBUG) << statusLog << endl;
                 RemoveDiscardedTasks(m_mixFrameTasks);
                 mixFrameTasks = m_mixFrameTasks;
             }
@@ -1186,24 +1230,23 @@ private:
         m_logger->Log(DEBUG) << "Leave MixingThreadProc(VIDEO)." << endl;
     }
 
-    string PrintMixFrameTaskListStatus()
+    string PrintMixFrameTaskListStatus(list<MixFrameTask::Holder>& taskList, const string& listName)
     {
-        lock_guard<recursive_mutex> lk(m_mixFrameTasksLock);
         ostringstream oss;
-        oss << endl << "-----------------------------------------------------------------" << endl;
-        if (m_mixFrameTasks.empty())
+        oss << endl << "-------------------------  " << listName << "  ----------------------------" << endl;
+        if (taskList.empty())
         {
             oss << "(empty)" << endl;
         }
         else
         {
             int idx = 0;
-            for (auto& mft : m_mixFrameTasks)
+            for (auto& mft : taskList)
                 oss << setw(6) << mft->frameIndex;
             oss << endl;
             while (true)
             {
-                for (auto& mft : m_mixFrameTasks)
+                for (auto& mft : taskList)
                 {
                     string status = "";
                     int i = 0;

@@ -363,15 +363,25 @@ public:
     {
         amats.clear();
         eof = false;
-        lock_guard<recursive_mutex> lk(m_apiLock);
+
+        // make sure not in seeking state
+        m_apiLock.lock();
+        while (m_inSeeking && !m_quit)
+        {
+            m_apiLock.unlock();
+            this_thread::sleep_for(chrono::milliseconds(5));
+            m_apiLock.lock();
+        }
+        lock_guard<recursive_mutex> lk(m_apiLock, adopt_lock);
         if (!m_started)
         {
             m_errMsg = "This MultiTrackAudioReader instance is NOT started yet!";
             return false;
         }
-        while (m_inSeeking && !m_quit)
+        if (m_quit)
         {
-            this_thread::sleep_for(chrono::milliseconds(5));
+            m_errMsg = "This 'MultiTrackAudioReader' instance is quit.";
+            return false;
         }
 
         m_outputMatsLock.lock();
@@ -389,11 +399,6 @@ public:
             m_outputMatsLock.lock();
         }
         lock_guard<mutex> lk2(m_outputMatsLock, adopt_lock);
-        if (m_quit)
-        {
-            m_errMsg = "This 'MultiTrackAudioReader' instance is quit.";
-            return false;
-        }
 
         amats = m_outputMats.front();
         m_outputMats.pop_front();

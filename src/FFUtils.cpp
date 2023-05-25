@@ -462,6 +462,21 @@ bool HwFrameToSwFrame(AVFrame* swfrm, const AVFrame* hwfrm)
     return true;
 }
 
+bool TransferHwFrameToSwFrame(AVFrame* swfrm, const AVFrame* hwfrm)
+{
+    int fferr;
+    av_frame_unref(swfrm);
+    swfrm->format = (int)AV_PIX_FMT_NONE;
+    fferr = av_hwframe_transfer_data(swfrm, hwfrm, 0);
+    if (fferr < 0)
+    {
+        Log(Error) << "av_hwframe_transfer_data() FAILED! fferr=" << fferr << "." << endl;
+        return false;
+    }
+    av_frame_copy_props(swfrm, hwfrm);
+    return true;
+}
+
 bool MakeAVFrameCopy(AVFrame* dst, const AVFrame* src)
 {
     av_frame_unref(dst);

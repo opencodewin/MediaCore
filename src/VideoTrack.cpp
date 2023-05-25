@@ -165,7 +165,6 @@ public:
         if (m_hClip1 && !m_src1Ready)
         {
             auto clipPos = m_readPos-m_hClip1->Start();
-            m_hClip1->NotifyReadPos(clipPos);
             m_srcVf1 = m_hClip1->ReadSourceFrame(clipPos, m_eof1, false);
             if (m_srcVf1 || m_eof1)
                 m_src1Ready = true;
@@ -173,7 +172,6 @@ public:
         if (m_hClip2 && !m_src2Ready)
         {
             auto clipPos = m_readPos-m_hClip2->Start();
-            m_hClip2->NotifyReadPos(clipPos);
             m_srcVf2 = m_hClip2->ReadSourceFrame(clipPos, m_eof2, false);
             if (m_srcVf2 || m_eof2)
                 m_src2Ready = true;
@@ -278,13 +276,13 @@ public:
 
     VideoClip::Holder AddNewClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t startOffset, int64_t endOffset, int64_t readPos) override
     {
-        lock_guard<recursive_mutex> lk(m_clipChangeLock);
         VideoClip::Holder hClip;
         auto vidstream = hParser->GetBestVideoStream();
         if (vidstream->isImage)
             hClip = VideoClip::CreateImageInstance(clipId, hParser, m_outWidth, m_outHeight, start, startOffset);
         else
             hClip = VideoClip::CreateVideoInstance(clipId, hParser, m_outWidth, m_outHeight, m_frameRate, start, startOffset, endOffset, readPos-start, m_readForward);
+        lock_guard<recursive_mutex> lk(m_clipChangeLock);
         InsertClip(hClip);
         return hClip;
     }
@@ -705,6 +703,13 @@ private:
                         SeekClipPos(readPos);
                         pTask->SetSeeked();
                     }
+                    list<VideoClip::Holder> clips;
+                    {
+                        lock_guard<recursive_mutex> lk(m_clipChangeLock);
+                        clips = m_clips;
+                    }
+                    for (auto& c : clips)
+                        c->NotifyReadPos(readPos);
                     pTask->DoReadSourceFrame();
                     if (pTask->IsSourceFrameReady())
                     {
