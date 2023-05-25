@@ -797,7 +797,14 @@ private:
                 {
                     this_thread::sleep_for(chrono::milliseconds(5));
                     hCandiFrame = FindCandidateAndRemoveDeprecatedTasks(frameIndex, precise);
-                    if (hCandiFrame)
+                    if (!hCandiFrame)
+                    {
+                        ostringstream oss;
+                        oss << "CANNOT find corresponding MixFrameTask for frameIndex=" << frameIndex << "!";
+                        m_errMsg = oss.str();
+                        break;
+                    }
+                    else if (hCandiFrame->outputReady)
                         break;
                 }
                 if (hCandiFrame)
