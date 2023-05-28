@@ -80,7 +80,7 @@ public:
         m_needProcess = true;
     }
 
-    void Reprocess()
+    void Reprocess() override
     {
         m_outputReady = false;
     }
