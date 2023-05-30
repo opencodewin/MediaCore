@@ -949,6 +949,8 @@ private:
 
     MixFrameTask::Holder AddMixFrameTask(int64_t frameIndex, bool canDrop, bool needSeek)
     {
+        if (frameIndex < 0)
+            return nullptr;
         lock_guard<recursive_mutex> lk(m_mixFrameTasksLock);
         auto mftIter = find_if(m_mixFrameTasks.begin(), m_mixFrameTasks.end(), [frameIndex] (auto& t) {
             return t->frameIndex == frameIndex;
@@ -1053,6 +1055,8 @@ private:
 
     MixFrameTask::Holder AddSeekingTask(int64_t frameIndex)
     {
+        if (frameIndex < 0)
+            return nullptr;
         lock_guard<mutex> lk(m_seekingTasksLock);
         auto sktIter = find_if(m_seekingTasks.begin(), m_seekingTasks.end(), [frameIndex] (auto& t) {
             return t->frameIndex == frameIndex;

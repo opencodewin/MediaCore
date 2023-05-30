@@ -293,6 +293,7 @@ public:
         if (!CheckClipRangeValid(hClip->Id(), hClip->Start(), hClip->End()))
             throw invalid_argument("Invalid argument for inserting clip!");
 
+        // hClip->SetLogLevel(DEBUG);
         // add this clip into clip list 2
         hClip->SetDirection(m_readForward);
         hClip->SetTrackId(m_id);
@@ -695,6 +696,13 @@ private:
                         hClip1 = *m_readClipIter;
                     }
                     pTask->Initialize(hClip1, hClip2, hOvlp);
+                    list<VideoClip::Holder> clips;
+                    {
+                        lock_guard<recursive_mutex> lk(m_clipChangeLock);
+                        clips = m_clips;
+                    }
+                    for (auto& c : clips)
+                        c->NotifyReadPos(readPos);
                 }
                 if (!pTask->IsSourceFrameReady())
                 {
@@ -703,13 +711,6 @@ private:
                         SeekClipPos(readPos);
                         pTask->SetSeeked();
                     }
-                    list<VideoClip::Holder> clips;
-                    {
-                        lock_guard<recursive_mutex> lk(m_clipChangeLock);
-                        clips = m_clips;
-                    }
-                    for (auto& c : clips)
-                        c->NotifyReadPos(readPos);
                     pTask->DoReadSourceFrame();
                     if (pTask->IsSourceFrameReady())
                     {

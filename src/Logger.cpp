@@ -144,7 +144,8 @@ namespace Logger
             }
             if (m_showLevelName)
             {
-                oss << "[" << LEVEL_NAME[m_currLevel] << "]";
+                const string& levelName = LEVEL_NAME.at(m_currLevel);
+                oss << "[" << levelName << "]";
                 empty = false;
             }
             if (!empty) oss << " ";

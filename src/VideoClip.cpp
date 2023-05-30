@@ -102,7 +102,8 @@ public:
             throw invalid_argument("This video stream is an IMAGE, it should be instantiated with a 'VideoClip_ImageImpl' instance!");
         loggerNameOss.str(""); loggerNameOss << "VRdr-" << fileName.substr(0, 4) << "-" << idstr;
         m_hReader = MediaReader::CreateVideoInstance(loggerNameOss.str());
-        // if (id == 1673851129807725)
+        // m_hReader->SetLogLevel(DEBUG);
+        // if (id == 1683885307465914)
         //     m_hReader->SetLogLevel(VERBOSE);
         m_hReader->EnableHwAccel(VideoClip::USE_HWACCEL);
         if (!m_hReader->Open(hParser))
@@ -274,6 +275,7 @@ public:
         // AddCheckPoint(filename+", t0");
         const double readPosTs = (double)(pos+m_startOffset)/1000;
         auto hVf = m_hReader->ReadVideoFrame(readPosTs, eof);
+        // m_logger->Log(DEBUG) << ">> Read vf @" << readPosTs << ", sucess=" << (bool)hVf << endl;
         if (!hVf)
         {
             m_logger->Log(WARN) << "FAILED to read frame @ timeline-pos=" << pos << "ms, media-time=" << readPosTs << "s! Error is '" << m_hReader->GetError() << "'." << endl;
@@ -359,16 +361,16 @@ public:
             if (!m_hReader->IsSuspended())
             {
                 m_hReader->Suspend();
-                // Log(DEBUG) << ">>>> Clip#" << m_id <<" is SUSPENDED." << endl;
+                m_logger->Log(DEBUG) << ">>>> Clip#" << m_id <<" is SUSPENDED." << endl;
             }
         }
         else if (m_hReader->IsSuspended())
         {
             const int64_t dur = Duration();
-            int64_t seekPos = clipPos < -m_wakeupRange ? 0 : (clipPos > dur ? dur : clipPos);
+            int64_t seekPos = clipPos < 0 ? 0 : (clipPos > dur ? dur : clipPos);
             m_hReader->SeekTo((double)(seekPos+m_startOffset)/1000);
             m_hReader->Wakeup();
-            // Log(DEBUG) << ">>>> Clip#" << m_id <<" is WAKEUP." << endl;
+            m_logger->Log(DEBUG) << ">>>> Clip#" << m_id <<" is WAKEUP." << endl;
         }
     }
 
@@ -398,6 +400,11 @@ public:
     VideoTransformFilterHolder GetTransformFilter() override
     {
         return m_hWarpFilter;
+    }
+
+    void SetLogLevel(Level l) override
+    {
+        m_logger->SetShowLevels(l);
     }
 
 private:
@@ -664,6 +671,10 @@ public:
     VideoTransformFilterHolder GetTransformFilter() override
     {
         return m_hWarpFilter;
+    }
+
+    void SetLogLevel(Level l) override
+    {
     }
 
 private:

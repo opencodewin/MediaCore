@@ -2210,6 +2210,8 @@ private:
                 if (currTask)
                 {
                     currTask->decodeStopped = true;
+                    if (!currTask->afAry.empty())
+                        currTask->afAry.back().endOfGop = true;
                 }
                 currTask = FindNextDecoderTask();
                 if (currTask)

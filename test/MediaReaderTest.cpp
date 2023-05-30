@@ -268,6 +268,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                 g_vidrdr->SetDirection(notForward);
                 g_playStartPos = playPos;
                 g_playStartTp = Clock::now();
+                g_vidrdr->SeekTo(playPos);
             }
             if (g_audrdr->IsOpened())
             {
@@ -323,9 +324,11 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         {
             bool eof;
             ImGui::ImMat vmat;
-            if (g_vidrdr->ReadVideoFrame(playPos, vmat, eof))
+            auto hVf = g_vidrdr->ReadVideoFrame(playPos, eof);
+            if (hVf)
             {
                 Log(VERBOSE) << "Succeeded to read video frame @pos=" << playPos << "." << endl;
+                hVf->GetMat(vmat);
                 imgTag = TimestampToString(vmat.time_stamp);
                 bool imgValid = true;
                 if (vmat.empty())
