@@ -232,7 +232,7 @@ public:
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_started)
         {
-            m_errMsg = "This MultiTrackVideoReader instance is NOT started yet!";
+            m_errMsg = "This MultiTrackAudioReader instance is NOT started yet!";
             return nullptr;
         }
 
@@ -399,6 +399,11 @@ public:
             m_outputMatsLock.lock();
         }
         lock_guard<mutex> lk2(m_outputMatsLock, adopt_lock);
+        if (m_quit)
+        {
+            m_errMsg = "This MultiTrackAudioReader instance is quit!";
+            return false;
+        }
 
         amats = m_outputMats.front();
         m_outputMats.pop_front();
@@ -433,7 +438,7 @@ public:
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_started)
         {
-            m_errMsg = "This MultiTrackVideoReader instance is NOT started yet!";
+            m_errMsg = "This MultiTrackAudioReader instance is NOT started yet!";
             return false;
         }
 
