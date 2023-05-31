@@ -345,7 +345,7 @@ public:
                     {
                         planbuf[0] += amat.w*m_frameSize;
                     }
-                    m_readSamples += amat.w;
+                    m_readSamples -= amat.w;
                 }
                 if (eof)
                 {
@@ -682,7 +682,9 @@ private:
 
                 uint32_t readClipSamples = toReadSamples-readSamples;
                 eof = false;
+                // auto toReadSize = readClipSamples;
                 ImGui::ImMat amat = (*m_readClipIter)->ReadAudioSamples(readClipSamples, eof);
+                // m_logger->Log(DEBUG) << ">> [FW] toReadSize=" << toReadSize << ", returned=" << readClipSamples << ", amat.w=" << amat.w << endl;
                 if (!amat.empty())
                 {
                     uint32_t dstOffset = m_isPlanar ? readSamples*m_bytesPerSample : readSamples*m_frameSize;
@@ -724,6 +726,8 @@ private:
                         }
                         readSamples += skipSamples;
                         m_readSamples -= skipSamples;
+                        // m_logger->Log(DEBUG) << "---- skipSamples=" << skipSamples << ", readSamples=" << readSamples << ", readClip->End="  << (*m_readClipIter)->End()
+                        //         << ", readPos=" << readPos << ", m_readSamples=" << m_readSamples << endl;
                     }
                     if (readSamples >= toReadSamples || m_readSamples <= 0)
                         break;
@@ -745,13 +749,16 @@ private:
 
                 uint32_t readClipSamples = toReadSamples-readSamples;
                 eof = false;
+                // auto toReadSize = readClipSamples;
                 ImGui::ImMat amat = (*m_readClipIter)->ReadAudioSamples(readClipSamples, eof);
+                // m_logger->Log(DEBUG) << ">> [BW] toReadSize=" << toReadSize << "(" << toReadSamples << "-" << readSamples << "), returned=" << readClipSamples
+                //         << ", amat.w=" << amat.w << ", m_readSamples=" << m_readSamples << endl;
                 if (!amat.empty())
                 {
                     uint32_t dstOffset = m_isPlanar ? readSamples*m_bytesPerSample : readSamples*m_frameSize;
                     CopyMatData(buf, dstOffset, amat);
                     readSamples += readClipSamples;
-                    m_readSamples += readClipSamples;
+                    m_readSamples -= readClipSamples;
                 }
                 if (eof)
                 {

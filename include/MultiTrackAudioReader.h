@@ -48,7 +48,7 @@ struct MultiTrackAudioReader
     virtual bool ReadAudioSamplesEx(std::vector<CorrelativeFrame>& amats, bool& eof) = 0;
     virtual bool ReadAudioSamples(ImGui::ImMat& amat, bool& eof) = 0;
     virtual void UpdateDuration() = 0;
-    virtual bool Refresh() = 0;
+    virtual bool Refresh(bool updateDuration = true) = 0;
     virtual int64_t SizeToDuration(uint32_t sizeInByte) = 0;
 
     virtual int64_t Duration() const = 0;

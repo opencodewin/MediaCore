@@ -102,6 +102,8 @@ static void MultiTrackAudioReader_Initialize(void** handle)
         ->SetShowLevels(INFO);
     MultiTrackAudioReader::GetLogger()
         ->SetShowLevels(DEBUG);
+    AudioTrack::GetLogger()
+        ->SetShowLevels(DEBUG);
 
 #ifdef USE_BOOKMARK
 	// load bookmarks

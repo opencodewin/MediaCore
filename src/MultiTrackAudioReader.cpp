@@ -417,9 +417,9 @@ public:
 
     void UpdateDuration() override
     {
-        lock_guard<recursive_mutex> lk(m_trackLock);
+        auto tracks = m_tracks;
         int64_t dur = 0;
-        for (auto& track : m_tracks)
+        for (auto& track : tracks)
         {
             const int64_t trackDur = track->Duration();
             if (trackDur > dur)
@@ -428,7 +428,7 @@ public:
         m_duration = dur;
     }
 
-    bool Refresh() override
+    bool Refresh(bool updateDuration) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_started)
@@ -436,6 +436,9 @@ public:
             m_errMsg = "This MultiTrackVideoReader instance is NOT started yet!";
             return false;
         }
+
+        if (updateDuration)
+            UpdateDuration();
 
         SeekTo(ReadPos());
         return true;
