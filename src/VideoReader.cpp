@@ -1314,10 +1314,9 @@ private:
                             pVf->isStartFrame = true;
                             isStartFrame = false;
                         }
-                        if (hPrevFrm && hPrevFrm->Pts() >= pVf->pts)
-                        {
+                        if (m_readForward && hPrevFrm && hPrevFrm->Pts() >= pVf->pts)
                             m_logger->Log(WARN) << "!! Video decoder output is NON-MONOTONIC !! prev-pts=" << hPrevFrm->Pts() << " >= pts=" << pVf->pts << endl;
-                        }
+
                         VideoFrame::Holder hVfrm = CreateVideoFrameInstance(pVf);
                         hPrevFrm = hVfrm;
                         lock_guard<mutex> _lk(m_vfrmQLock);
