@@ -1106,6 +1106,7 @@ private:
                     int fferr = avcodec_receive_frame(m_viddecCtx, &avfrm);
                     if (fferr == 0)
                     {
+                        avfrm.pts = avfrm.best_effort_timestamp;
                         m_logger->Log(VERBOSE) << "<<< avcodec_receive_frame() pts=" << avfrm.pts << "(" << MillisecToString(CvtVidPtsToMts(avfrm.pts)) << ")." << endl;
                         avfrmLoaded = true;
                         idleLoop = false;

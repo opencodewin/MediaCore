@@ -859,6 +859,7 @@ private:
                     int fferr = avcodec_receive_frame(m_viddecCtx, &avfrm);
                     if (fferr == 0)
                     {
+                        avfrm.pts = avfrm.best_effort_timestamp;
                         m_logger->Log(DEBUG) << "<<< Get video frame pts=" << avfrm.pts << "(" << MillisecToString(av_rescale_q(avfrm.pts, m_vidAvStm->time_base, MILLISEC_TIMEBASE)) << ")." << endl;
                         avfrmLoaded = true;
                         idleLoop = idleLoop2 = false;

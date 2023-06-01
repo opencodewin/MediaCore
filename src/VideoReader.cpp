@@ -1272,56 +1272,64 @@ private:
             {
                 AVFrame* pAvfrm = av_frame_alloc();
                 fferr = avcodec_receive_frame(m_viddecCtx, pAvfrm);
-                if (fferr == 0 && pAvfrm->pts < m_vidStartTime || pAvfrm->pts > m_vidDurationPts)
+                if (fferr == 0)
                 {
-                    m_logger->Log(WARN) << "!! Got BAD video frame, pts=" << pAvfrm->pts << ", which is out of the video stream time range ["
-                            << m_vidStartTime << ", " << m_vidDurationPts << "]. DISCARD THIS FRAME." << endl;
-                    av_frame_free(&pAvfrm);
-                }
-                else if (fferr == 0)
-                {
-                    m_logger->Log(VERBOSE) << "========== Got video frame: pts=" << pAvfrm->pts << ", ts=" << (double)CvtPtsToMts(pAvfrm->pts)/1000 << "." << endl;
-                    SelfFreeAVFramePtr frmPtr;
-                    bool isHwfrm = false;
-                    if (IsHwFrame(pAvfrm))
+                    m_logger->Log(VERBOSE) << "========== Got video frame: pts=" << pAvfrm->pts << ", bets=" << pAvfrm->best_effort_timestamp
+                            << ", ts=" << (double)CvtPtsToMts(pAvfrm->pts)/1000 << "." << endl;
+                    pAvfrm->pts = pAvfrm->best_effort_timestamp;
+                    if (pAvfrm->pts < m_vidStartTime || pAvfrm->pts > m_vidDurationPts)
                     {
-                        frmPtr = SelfFreeAVFramePtr(pAvfrm, [this] (AVFrame* p) {
-                            av_frame_free(&p);
-                            m_pendingHwfrmCnt--;
-                        });
-                        m_pendingHwfrmCnt++;
-                        isHwfrm = true;
+                        m_logger->Log(WARN) << "!! Got BAD video frame, pts=" << pAvfrm->pts << ", which is out of the video stream time range ["
+                                << m_vidStartTime << ", " << m_vidDurationPts << "]. DISCARD THIS FRAME." << endl;
                     }
                     else
                     {
-                        frmPtr = SelfFreeAVFramePtr(pAvfrm, [this] (AVFrame* p) {
-                            av_frame_free(&p);
-                        });
-                    }
-                    const int64_t pts = pAvfrm->pts;
+                        SelfFreeAVFramePtr frmPtr;
+                        bool isHwfrm = false;
+                        if (IsHwFrame(pAvfrm))
+                        {
+                            frmPtr = SelfFreeAVFramePtr(pAvfrm, [this] (AVFrame* p) {
+                                av_frame_free(&p);
+                                m_pendingHwfrmCnt--;
+                            });
+                            m_pendingHwfrmCnt++;
+                            isHwfrm = true;
+                        }
+                        else
+                        {
+                            frmPtr = SelfFreeAVFramePtr(pAvfrm, [this] (AVFrame* p) {
+                                av_frame_free(&p);
+                            });
+                        }
+                        const int64_t pts = pAvfrm->pts;
 #if LIBAVUTIL_VERSION_MAJOR > 57 || (LIBAVUTIL_VERSION_MAJOR == 57 && LIBAVUTIL_VERSION_MINOR > 29)
-                    const int64_t dur = pAvfrm->duration;
+                        const int64_t dur = pAvfrm->duration;
 #else
-                    const int64_t dur = pAvfrm->pkt_duration;
+                        const int64_t dur = pAvfrm->pkt_duration;
 #endif
-                    pAvfrm = nullptr;
-                    auto pVf = new VideoFrame_Impl(this, frmPtr, (double)CvtPtsToMts(pts)/1000, pts, dur, isHwfrm);
-                    if (isStartFrame)
-                    {
-                        pVf->isStartFrame = true;
-                        isStartFrame = false;
+                        pAvfrm = nullptr;
+                        auto pVf = new VideoFrame_Impl(this, frmPtr, (double)CvtPtsToMts(pts)/1000, pts, dur, isHwfrm);
+                        if (isStartFrame)
+                        {
+                            pVf->isStartFrame = true;
+                            isStartFrame = false;
+                        }
+                        if (hPrevFrm && hPrevFrm->Pts() >= pVf->pts)
+                        {
+                            m_logger->Log(WARN) << "!! Video decoder output is NON-MONOTONIC !! prev-pts=" << hPrevFrm->Pts() << " >= pts=" << pVf->pts << endl;
+                        }
+                        VideoFrame::Holder hVfrm = CreateVideoFrameInstance(pVf);
+                        hPrevFrm = hVfrm;
+                        lock_guard<mutex> _lk(m_vfrmQLock);
+                        auto riter = find_if(m_vfrmQ.rbegin(), m_vfrmQ.rend(), [pts] (auto& vf) {
+                            return vf->Pts() < pts;
+                        });
+                        auto iter = riter.base();
+                        if (iter != m_vfrmQ.end() && (*iter)->Pts() == pts)
+                            m_logger->Log(DEBUG) << "DISCARD duplicated VF@" << hVfrm->Pos() << "(" << hVfrm->Pts() << ")." << endl;
+                        else
+                            m_vfrmQ.insert(iter, hVfrm);
                     }
-                    VideoFrame::Holder hVfrm = CreateVideoFrameInstance(pVf);
-                    hPrevFrm = hVfrm;
-                    lock_guard<mutex> _lk(m_vfrmQLock);
-                    auto riter = find_if(m_vfrmQ.rbegin(), m_vfrmQ.rend(), [pts] (auto& vf) {
-                        return vf->Pts() < pts;
-                    });
-                    auto iter = riter.base();
-                    if (iter != m_vfrmQ.end() && (*iter)->Pts() == pts)
-                        m_logger->Log(DEBUG) << "DISCARD duplicated VF@" << hVfrm->Pos() << "(" << hVfrm->Pts() << ")." << endl;
-                    else
-                        m_vfrmQ.insert(iter, hVfrm);
                     idleLoop = false;
                 }
                 else if (fferr == AVERROR_EOF)
