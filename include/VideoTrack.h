@@ -65,7 +65,8 @@ struct VideoTrack
     virtual bool IsVisible() const = 0;
     virtual ReadFrameTask::Holder CreateReadFrameTask(int64_t frameIndex, bool canDrop, bool needSeek, ReadFrameTask::Callback* pCb = nullptr) = 0;
 
-    virtual VideoClip::Holder AddNewClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t startOffset, int64_t endOffset, int64_t readPos) = 0;
+    virtual VideoClip::Holder AddVideoClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t end, int64_t startOffset, int64_t endOffset, int64_t readPos) = 0;
+    virtual VideoClip::Holder AddImageClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t length) = 0;
     virtual void InsertClip(VideoClip::Holder hClip) = 0;
     virtual void MoveClip(int64_t id, int64_t start) = 0;
     virtual void ChangeClipRange(int64_t id, int64_t startOffset, int64_t endOffset) = 0;

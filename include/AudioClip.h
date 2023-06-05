@@ -41,7 +41,7 @@ namespace MediaCore
         static MEDIACORE_API Holder CreateInstance(
             int64_t id, MediaParser::Holder hParser,
             uint32_t outChannels, uint32_t outSampleRate, const std::string& outSampleFormat,
-            int64_t start, int64_t startOffset, int64_t endOffset);
+            int64_t start, int64_t end, int64_t startOffset, int64_t endOffset);
 
         virtual Holder Clone(uint32_t outChannels, uint32_t outSampleRate, const std::string& outSampleFormat) const = 0;
         virtual MediaParser::Holder GetMediaParser() const = 0;

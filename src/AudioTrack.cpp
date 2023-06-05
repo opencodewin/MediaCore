@@ -60,10 +60,10 @@ public:
 
     Holder Clone(uint32_t outChannels, uint32_t outSampleRate, const string& outSampleFormat) override;
 
-    AudioClip::Holder AddNewClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t startOffset, int64_t endOffset) override
+    AudioClip::Holder AddNewClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t end, int64_t startOffset, int64_t endOffset) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
-        AudioClip::Holder hClip = AudioClip::CreateInstance(clipId, hParser, m_outChannels, m_outSampleRate, m_outSampleFormat, start, startOffset, endOffset);
+        AudioClip::Holder hClip = AudioClip::CreateInstance(clipId, hParser, m_outChannels, m_outSampleRate, m_outSampleFormat, start, end, startOffset, endOffset);
         InsertClip(hClip);
         return hClip;
     }

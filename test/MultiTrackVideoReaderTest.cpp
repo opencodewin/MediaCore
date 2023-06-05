@@ -576,10 +576,12 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
             }
             else
             {
+                int64_t clipStart = (int64_t)(s_addClipStart*1000);
+                int64_t clipEnd = clipStart+(int64_t)(hParser->GetMediaInfo()->duration*1000);
                 hClip = VideoClip::CreateVideoInstance(
                     clipId, hParser,
                     hTrack->OutWidth(), hTrack->OutHeight(), hTrack->FrameRate(),
-                    (int64_t)(s_addClipStart*1000), (int64_t)(s_addClipStartOffset*1000), (int64_t)(s_addClipEndOffset*1000),
+                    clipStart, clipEnd, (int64_t)(s_addClipStartOffset*1000), (int64_t)(s_addClipEndOffset*1000),
                     (int64_t)((playPos-s_addClipStart)*1000),
                     g_playForward);
             }

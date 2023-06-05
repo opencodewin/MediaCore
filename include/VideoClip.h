@@ -46,7 +46,7 @@ struct VideoClip
     static MEDIACORE_API Holder CreateVideoInstance(
         int64_t id, MediaParser::Holder hParser,
         uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate,
-        int64_t start, int64_t startOffset, int64_t endOffset, int64_t readpos, bool forward);
+        int64_t start, int64_t end, int64_t startOffset, int64_t endOffset, int64_t readpos, bool forward);
     static MEDIACORE_API Holder CreateImageInstance(
         int64_t id, MediaParser::Holder hParser,
         uint32_t outWidth, uint32_t outHeight, int64_t start, int64_t duration);

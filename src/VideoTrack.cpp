@@ -274,15 +274,22 @@ public:
 
     Holder Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) override;
 
-    VideoClip::Holder AddNewClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t startOffset, int64_t endOffset, int64_t readPos) override
+    VideoClip::Holder AddVideoClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t end, int64_t startOffset, int64_t endOffset, int64_t readPos) override
     {
         VideoClip::Holder hClip;
         auto vidstream = hParser->GetBestVideoStream();
-        if (vidstream->isImage)
-            hClip = VideoClip::CreateImageInstance(clipId, hParser, m_outWidth, m_outHeight, start, startOffset);
-        else
-            hClip = VideoClip::CreateVideoInstance(clipId, hParser, m_outWidth, m_outHeight, m_frameRate, start, startOffset, endOffset, readPos-start, m_readForward);
-        lock_guard<recursive_mutex> lk(m_clipChangeLock);
+        assert(!vidstream->isImage);
+        hClip = VideoClip::CreateVideoInstance(clipId, hParser, m_outWidth, m_outHeight, m_frameRate, start, end, startOffset, endOffset, readPos-start, m_readForward);
+        InsertClip(hClip);
+        return hClip;
+    }
+
+    VideoClip::Holder AddImageClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t length)
+    {
+        VideoClip::Holder hClip;
+        auto vidstream = hParser->GetBestVideoStream();
+        assert(vidstream->isImage);
+        hClip = VideoClip::CreateImageInstance(clipId, hParser, m_outWidth, m_outHeight, start, length);
         InsertClip(hClip);
         return hClip;
     }

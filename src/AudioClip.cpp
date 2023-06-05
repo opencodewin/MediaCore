@@ -35,7 +35,7 @@ public:
     AudioClip_AudioImpl(
         int64_t id, MediaParser::Holder hParser,
         uint32_t outChannels, uint32_t outSampleRate, const string& outSampleFormat,
-        int64_t start, int64_t startOffset, int64_t endOffset, bool exclusiveLogger = false)
+        int64_t start, int64_t end, int64_t startOffset, int64_t endOffset, bool exclusiveLogger = false)
         : m_id(id), m_start(start)
     {
         m_hInfo = hParser->GetMediaInfo();
@@ -59,11 +59,11 @@ public:
             throw invalid_argument("Argument 'startOffset' can NOT be NEGATIVE!");
         if (endOffset < 0)
             throw invalid_argument("Argument 'endOffset' can NOT be POSITIVE!");
-        if (startOffset+endOffset >= m_srcDuration)
-            throw invalid_argument("Argument 'startOffset/endOffset', clip duration is NOT LARGER than 0!");
-        m_start = start;
+        if (end <= start)
+            throw invalid_argument("Invalid arguments 'start/end', clip duration is NOT LARGER than 0!");
         m_startOffset = startOffset;
         m_endOffset = endOffset;
+        m_padding = (end-start)+startOffset+endOffset-m_srcDuration;
         m_totalSamples = Duration()*outSampleRate/1000;
         if (!m_srcReader->Start())
             throw runtime_error(m_srcReader->GetError());
@@ -112,7 +112,7 @@ public:
 
     int64_t Duration() const override
     {
-        return m_srcDuration-m_startOffset-m_endOffset;
+        return m_srcDuration+m_padding-m_startOffset-m_endOffset;
     }
 
     int64_t ReadPos() const override
@@ -264,6 +264,7 @@ private:
     int64_t m_start;
     int64_t m_startOffset;
     int64_t m_endOffset;
+    int64_t m_padding;
     uint32_t m_pcmSizePerSec{0};
     uint32_t m_pcmFrameSize{0};
     int64_t m_readSamples{0};
@@ -279,14 +280,14 @@ static const function<void(AudioClip*)> AUDIO_CLIP_HOLDER_DELETER = [] (AudioCli
 AudioClip::Holder AudioClip::CreateInstance(
     int64_t id, MediaParser::Holder hParser,
     uint32_t outChannels, uint32_t outSampleRate, const string& outSampleFormat,
-    int64_t start, int64_t startOffset, int64_t endOffset)
+    int64_t start, int64_t end, int64_t startOffset, int64_t endOffset)
 {
-    return AudioClip::Holder(new AudioClip_AudioImpl(id, hParser, outChannels, outSampleRate, outSampleFormat, start, startOffset, endOffset), AUDIO_CLIP_HOLDER_DELETER);
+    return AudioClip::Holder(new AudioClip_AudioImpl(id, hParser, outChannels, outSampleRate, outSampleFormat, start, end, startOffset, endOffset), AUDIO_CLIP_HOLDER_DELETER);
 }
 
 AudioClip::Holder AudioClip_AudioImpl::Clone(uint32_t outChannels, uint32_t outSampleRate, const string& outSampleFormat) const
 {
-    return AudioClip::Holder(new AudioClip_AudioImpl(m_id, m_srcReader->GetMediaParser(), outChannels, outSampleRate, outSampleFormat, m_start, m_startOffset, m_endOffset),
+    return AudioClip::Holder(new AudioClip_AudioImpl(m_id, m_srcReader->GetMediaParser(), outChannels, outSampleRate, outSampleFormat, m_start, End(), m_startOffset, m_endOffset),
             AUDIO_CLIP_HOLDER_DELETER);
 }
 

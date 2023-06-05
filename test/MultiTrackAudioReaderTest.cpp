@@ -669,9 +669,11 @@ static bool MultiTrackAudioReader_Frame(void * handle, bool app_will_quit)
             if (!hParser->Open(filePathName))
                 throw std::runtime_error(hParser->GetError());
             int64_t clipId = g_idIndex++;
+            int64_t clipStart = (int64_t)(s_addClipStart*1000);
+            int64_t clipEnd = clipStart+(int64_t)(hParser->GetMediaInfo()->duration*1000);
             hTrack->AddNewClip(
                 clipId, hParser,
-                (int64_t)(s_addClipStart*1000), (int64_t)(s_addClipStartOffset*1000), (int64_t)(s_addClipEndOffset*1000));
+                clipStart, clipEnd, (int64_t)(s_addClipStartOffset*1000), (int64_t)(s_addClipEndOffset*1000));
             g_mtAudReader->Refresh();
             s_addClipOptSelIdx = g_mtAudReader->TrackCount();
             s_addClipStart = 0;

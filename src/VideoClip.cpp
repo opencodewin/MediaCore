@@ -82,7 +82,7 @@ public:
     VideoClip_VideoImpl(
         int64_t id, MediaParser::Holder hParser,
         uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate,
-        int64_t start, int64_t startOffset, int64_t endOffset, int64_t readpos, bool forward)
+        int64_t start, int64_t end, int64_t startOffset, int64_t endOffset, int64_t readpos, bool forward)
         : m_id(id), m_start(start)
     {
         string fileName = SysUtils::ExtractFileName(hParser->GetUrl());
@@ -134,10 +134,11 @@ public:
             throw invalid_argument("Argument 'startOffset' can NOT be NEGATIVE!");
         if (endOffset < 0)
             throw invalid_argument("Argument 'endOffset' can NOT be NEGATIVE!");
-        if (startOffset+endOffset >= m_srcDuration*1000)
-            throw invalid_argument("Argument 'startOffset/endOffset', clip duration is NOT LARGER than 0!");
+        if (end <= start)
+            throw invalid_argument("Invalid arguments 'start/end', clip duration is NOT LARGER than 0!");
         m_startOffset = startOffset;
         m_endOffset = endOffset;
+        m_padding = (end-start)+startOffset+endOffset-m_srcDuration;
         m_hReader->SetDirection(forward);
         if (!m_hReader->SeekTo((double)startOffset/1000))
             throw runtime_error(m_hReader->GetError());
@@ -197,7 +198,7 @@ public:
 
     int64_t Duration() const override
     {
-        return m_srcDuration-m_startOffset-m_endOffset;
+        return m_srcDuration+m_padding-m_startOffset-m_endOffset;
     }
 
     uint32_t SrcWidth() const override
@@ -236,7 +237,7 @@ public:
             return;
         if (startOffset < 0)
             throw invalid_argument("Argument 'startOffset' can NOT be NEGATIVE!");
-        if (startOffset+m_endOffset >= m_srcDuration)
+        if (startOffset+m_endOffset >= m_srcDuration+m_padding)
             throw invalid_argument("Argument 'startOffset/endOffset', clip duration is NOT LARGER than 0!");
         m_startOffset = startOffset;
     }
@@ -247,7 +248,7 @@ public:
             return;
         if (endOffset < 0)
             throw invalid_argument("Argument 'endOffset' can NOT be NEGATIVE!");
-        if (m_startOffset+endOffset >= m_srcDuration)
+        if (m_startOffset+endOffset >= m_srcDuration+m_padding)
             throw invalid_argument("Argument 'startOffset/endOffset', clip duration is NOT LARGER than 0!");
         m_endOffset = endOffset;
     }
@@ -417,6 +418,7 @@ private:
     int64_t m_start;
     int64_t m_startOffset;
     int64_t m_endOffset;
+    int32_t m_padding;
     bool m_eof{false};
     Ratio m_frameRate;
     uint32_t m_frameIndex{0};
@@ -434,16 +436,16 @@ static const auto VIDEO_CLIP_HOLDER_VIDEOIMPL_DELETER = [] (VideoClip* p) {
 VideoClip::Holder VideoClip::CreateVideoInstance(
         int64_t id, MediaParser::Holder hParser,
         uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate,
-        int64_t start, int64_t startOffset, int64_t endOffset, int64_t readpos, bool forward)
+        int64_t start, int64_t end, int64_t startOffset, int64_t endOffset, int64_t readpos, bool forward)
 {
-    return VideoClip::Holder(new VideoClip_VideoImpl(id, hParser, outWidth, outHeight, frameRate, start, startOffset, endOffset, readpos, true),
+    return VideoClip::Holder(new VideoClip_VideoImpl(id, hParser, outWidth, outHeight, frameRate, start, end, startOffset, endOffset, readpos, true),
             VIDEO_CLIP_HOLDER_VIDEOIMPL_DELETER);
 }
 
 VideoClip::Holder VideoClip_VideoImpl::Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) const
 {
     VideoClip_VideoImpl* newInstance = new VideoClip_VideoImpl(
-        m_id, m_hReader->GetMediaParser(), outWidth, outHeight, frameRate, m_start, m_startOffset, m_endOffset, 0, true);
+        m_id, m_hReader->GetMediaParser(), outWidth, outHeight, frameRate, m_start, End(), m_startOffset, m_endOffset, 0, true);
     if (m_hFilter) newInstance->SetFilter(m_hFilter->Clone());
     newInstance->m_hWarpFilter = m_hWarpFilter->Clone(outWidth, outHeight);
     return VideoClip::Holder(newInstance, VIDEO_CLIP_HOLDER_VIDEOIMPL_DELETER);
