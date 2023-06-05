@@ -140,7 +140,9 @@ public:
         m_endOffset = endOffset;
         m_padding = (end-start)+startOffset+endOffset-m_srcDuration;
         m_hReader->SetDirection(forward);
-        if (!m_hReader->SeekTo((double)startOffset/1000))
+        auto seekPos = startOffset;
+        if (seekPos >= m_srcDuration) seekPos = m_srcDuration-1;
+        if (!m_hReader->SeekTo((double)seekPos/1000))
             throw runtime_error(m_hReader->GetError());
         bool suspend = readpos < -m_wakeupRange || readpos > Duration()+m_wakeupRange;
         if (!m_hReader->Start(suspend))
@@ -345,11 +347,11 @@ public:
 
     void SeekTo(int64_t pos) override
     {
-        if (pos > Duration())
+        if (pos < 0 || pos > Duration())
             return;
-        if (pos < 0)
-            pos = 0;
-        if (!m_hReader->SeekTo((double)(pos+m_startOffset)/1000))
+        auto seekPos = pos+m_startOffset;
+        if (seekPos >= m_srcDuration) seekPos = m_srcDuration-1;
+        if (!m_hReader->SeekTo((double)seekPos/1000))
             throw runtime_error(m_hReader->GetError());
         m_eof = false;
     }

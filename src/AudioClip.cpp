@@ -178,12 +178,11 @@ public:
 
     void SeekTo(int64_t pos) override
     {
-        if (pos < 0)
-            pos = 0;
-        else if (pos >= Duration())
-            pos = Duration()-1;
-        const double p = (double)(pos+m_startOffset)/1000;
-        if (!m_srcReader->SeekTo(p))
+        if (pos < 0 || pos > Duration())
+            return;
+        auto seekPos = pos+m_startOffset;
+        if (seekPos >= m_srcDuration) seekPos = m_srcDuration-1;
+        if (!m_srcReader->SeekTo((double)seekPos/1000))
             throw runtime_error(m_srcReader->GetError());
         m_readSamples = pos*m_srcReader->GetAudioOutSampleRate()/1000;
         m_eof = false;
