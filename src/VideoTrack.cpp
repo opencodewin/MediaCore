@@ -22,6 +22,7 @@
 #include <cassert>
 #include "VideoTrack.h"
 #include "MediaCore.h"
+#include "SysUtils.h"
 #include "DebugHelper.h"
 #include "Logger.h"
 
@@ -256,10 +257,12 @@ public:
         if (idstr.size() > 4)
             idstr = idstr.substr(idstr.size()-4);
         loggerNameOss.str(""); loggerNameOss << "VTrk#" << idstr;
-        m_logger = GetLogger(loggerNameOss.str());
+        string tag = loggerNameOss.str();
+        m_logger = GetLogger(tag);
 
         m_readClipIter = m_clips.begin();
         m_readThread = thread(&VideoTrack_Impl::ReadFrameProc, this);
+        SysUtils::SetThreadName(m_readThread, tag);
     }
 
     ~VideoTrack_Impl()

@@ -456,8 +456,8 @@ public:
         VideoFrame::Holder hVfrm;
         while (!m_quitThread)
         {
-            if (pts < m_cacheRange.first || pts > m_cacheRange.second)
-                break;
+            // if (pts < m_cacheRange.first || pts > m_cacheRange.second)
+            //     break;
             if (!m_inSeeking)
             {
                 lock_guard<mutex> _lk(m_vfrmQLock);

@@ -325,7 +325,7 @@ public:
         ClearAllMixFrameTasks();
         m_prevOutFrame = nullptr;
         m_readFrameIdx = (int64_t)(floor((double)pos*m_frameRate.num/(m_frameRate.den*1000)));
-        int64_t step = m_readForward ? 1 : -1;
+        int step = m_readForward ? 1 : -1;
         AddMixFrameTask(m_readFrameIdx, false, true);
         AddMixFrameTask(m_readFrameIdx+step, false, false);
         return true;
@@ -357,7 +357,7 @@ public:
         }
         m_logger->Log(DEBUG) << "=======> StopConsecutiveSeek" << endl;
         m_inSeeking = false;
-        int64_t step = m_readForward ? 1 : -1;
+        int step = m_readForward ? 1 : -1;
         AddMixFrameTask(m_readFrameIdx, false, true);
         AddMixFrameTask(m_readFrameIdx+step, false, false);
         return true;
@@ -428,7 +428,8 @@ public:
             return false;
         }
 
-        int64_t targetIndex = m_readFrameIdx+1;
+        int step = m_readForward ? 1 : -1;
+        int64_t targetIndex = m_readFrameIdx+step;
         bool ret = ReadVideoFrameWithoutSubtitle(targetIndex, frames, false, true);
         if (ret && !m_subtrks.empty())
         {
@@ -779,7 +780,7 @@ private:
                 frames = hCandiFrame->outputFrames;
             }
 
-            int64_t step = m_readForward ? 1 : -1;
+            int step = m_readForward ? 1 : -1;
             if (precise)
             {
                 if (!hCandiFrame)
