@@ -1238,6 +1238,7 @@ bool ImMatToAVFrameConverter::SetResizeInterpolateMode(ImInterpolateMode interp)
 bool ImMatToAVFrameConverter::ConvertImage(const ImGui::ImMat& vmat, AVFrame* avfrm, int64_t pts)
 {
     ImGui::ImMat inMat = vmat;
+    ImDataType outDtype = m_outBitsPerPix > 8 ? IM_DT_INT16 : IM_DT_INT8;
     if (m_useVulkanComponents)
     {
 #if IMGUI_VULKAN_SHADER
@@ -1258,7 +1259,7 @@ bool ImMatToAVFrameConverter::ConvertImage(const ImGui::ImMat& vmat, AVFrame* av
         if (isSrcRgb && isDstYuv)
         {
             ImGui::ImMat yuvMat;
-            yuvMat.type = IM_DT_FLOAT32;
+            yuvMat.type = outDtype;
             yuvMat.color_format = m_outMatClrfmt;
             yuvMat.color_space = m_outMatClrspc;
             yuvMat.color_range = m_outMatClrrng;
@@ -1276,18 +1277,7 @@ bool ImMatToAVFrameConverter::ConvertImage(const ImGui::ImMat& vmat, AVFrame* av
 #endif
     }
 
-    // ImMat -> AVFrame
-    AVPixelFormat cvtPixfmt = ConvertColorFormatToPixelFormat(inMat.color_format, inMat.type);
-    if (cvtPixfmt < 0)
-    {
-        ostringstream oss;
-        oss << "FAILED to convert ImColorFormat " << inMat.color_format << " and ImDataType " << inMat.type << " to AVPixelFormat!";
-        m_errMsg = oss.str();
-        return false;
-    }
-
 #if IMGUI_VULKAN_SHADER
-    ImDataType outDtype = m_outBitsPerPix > 8 ? IM_DT_INT16 : IM_DT_INT8;
     if (inMat.device == IM_DD_VULKAN)
     {
         ImGui::VkMat vkMat = inMat;
@@ -1304,6 +1294,16 @@ bool ImMatToAVFrameConverter::ConvertImage(const ImGui::ImMat& vmat, AVFrame* av
         inMat = outMat;
     }
 #endif
+
+    // ImMat -> AVFrame
+    AVPixelFormat cvtPixfmt = ConvertColorFormatToPixelFormat(inMat.color_format, inMat.type);
+    if (cvtPixfmt < 0)
+    {
+        ostringstream oss;
+        oss << "FAILED to convert ImColorFormat " << inMat.color_format << " and ImDataType " << inMat.type << " to AVPixelFormat!";
+        m_errMsg = oss.str();
+        return false;
+    }
 
     int outWidth = m_outWidth>0 ? m_outWidth : inMat.w;
     int outHeight = m_outHeight>0 ? m_outHeight : inMat.h;

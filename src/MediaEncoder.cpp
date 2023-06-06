@@ -257,6 +257,10 @@ public:
             m_errMsg = "Video stream has already reaches EOF!";
             return false;
         }
+        if (m_encErr)
+        {
+            return false;
+        }
 
         if (vmat.empty())
         {
@@ -303,6 +307,10 @@ public:
         if (m_audinpEof)
         {
             m_errMsg = "Audio stream has already reaches EOF!";
+            return false;
+        }
+        if (m_encErr)
+        {
             return false;
         }
 
@@ -1078,7 +1086,10 @@ private:
                     }
                     else if (fferr != AVERROR(EAGAIN))
                     {
-                        m_logger->Log(Error) << "Video encoder ERROR! avcodec_send_frame(EOF) returns " << fferr << "." << endl;
+                        ostringstream oss; oss << "Video encoder ERROR! avcodec_send_frame(EOF) returns " << fferr << ".";
+                        m_errMsg = oss.str();
+                        m_logger->Log(Error) << m_errMsg << endl;
+                        m_encErr = true;
                         break;
                     }
                 }
@@ -1103,7 +1114,10 @@ private:
                 {
                     if (fferr != AVERROR(EAGAIN))
                     {
-                        m_logger->Log(Error) << "Video encoder ERROR! avcodec_send_frame() returns " << fferr << "." << endl;
+                        ostringstream oss; oss << "Video encoder ERROR! avcodec_send_frame() returns " << fferr << ".";
+                        m_errMsg = oss.str();
+                        m_logger->Log(Error) << m_errMsg << endl;
+                        m_encErr = true;
                         break;
                     }
                 }
@@ -1150,7 +1164,10 @@ private:
                     }
                     else if (fferr != AVERROR(EAGAIN))
                     {
-                        m_logger->Log(Error) << "Audio encoder ERROR! avcodec_send_frame(EOF) returns " << fferr << "." << endl;
+                        ostringstream oss; oss << "Audio encoder ERROR! avcodec_send_frame(EOF) returns " << fferr << ".";
+                        m_errMsg = oss.str();
+                        m_logger->Log(Error) << m_errMsg << endl;
+                        m_encErr = true;
                         break;
                     }
                 }
@@ -1174,7 +1191,10 @@ private:
                 }
                 else if (fferr != AVERROR(EAGAIN))
                 {
-                    m_logger->Log(Error) << "Audio encoder ERROR! avcodec_send_frame() returns " << fferr << "." << endl;
+                    ostringstream oss; oss << "Audio encoder ERROR! avcodec_send_frame() returns " << fferr << ".";
+                    m_errMsg = oss.str();
+                    m_logger->Log(Error) << m_errMsg << endl;
+                    m_encErr = true;
                     break;
                 }
             }
@@ -1285,7 +1305,7 @@ private:
                     break;
                 }
             }
-            else if ((!HasVideo() || m_videncEof) && (!HasAudio() || m_audencEof))
+            else if (((!HasVideo() || m_videncEof) && (!HasAudio() || m_audencEof)) || m_encErr)
             {
                 break;
             }
@@ -1357,6 +1377,7 @@ private:
     list<AVPacket*> m_audpktQ;
     mutex m_audpktQLock;
     bool m_muxEof{false};
+    bool m_encErr{false};
 };
 
 static const auto MEDIA_ENCODER_HOLDER_DELETER = [] (MediaEncoder* p) {
