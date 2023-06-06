@@ -570,8 +570,7 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
                 int64_t duration = (int64_t)(s_addClipStartOffset*1000);
                 if (duration <= 0) duration = 20000;
                 hClip = VideoClip::CreateImageInstance(
-                    clipId, hParser,
-                    hTrack->OutWidth(), hTrack->OutHeight(),
+                    clipId, hParser, g_mtVidReader->GetSharedSettings(),
                     (int64_t)(s_addClipStart*1000), duration);
             }
             else
@@ -579,8 +578,7 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
                 int64_t clipStart = (int64_t)(s_addClipStart*1000);
                 int64_t clipEnd = clipStart+(int64_t)(hParser->GetMediaInfo()->duration*1000);
                 hClip = VideoClip::CreateVideoInstance(
-                    clipId, hParser,
-                    hTrack->OutWidth(), hTrack->OutHeight(), hTrack->FrameRate(),
+                    clipId, hParser, g_mtVidReader->GetSharedSettings(),
                     clipStart, clipEnd, (int64_t)(s_addClipStartOffset*1000), (int64_t)(s_addClipEndOffset*1000),
                     (int64_t)((playPos-s_addClipStart)*1000),
                     g_playForward);

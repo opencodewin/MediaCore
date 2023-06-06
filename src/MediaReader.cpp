@@ -127,7 +127,7 @@ public:
 
     bool ConfigVideoReader(
             uint32_t outWidth, uint32_t outHeight,
-            ImColorFormat outClrfmt, ImInterpolateMode rszInterp) override
+            ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_opened)
@@ -172,7 +172,7 @@ public:
 
     bool ConfigVideoReader(
             float outWidthFactor, float outHeightFactor,
-            ImColorFormat outClrfmt, ImInterpolateMode rszInterp) override
+            ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp) override
     {
         if (!m_opened)
         {

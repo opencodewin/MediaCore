@@ -824,6 +824,20 @@ bool AVFrameToImMatConverter::SetOutColorFormat(ImColorFormat clrfmt)
     return true;
 }
 
+bool AVFrameToImMatConverter::SetOutDataType(ImDataType dtype)
+{
+    if (dtype != IM_DT_INT8 && dtype != IM_DT_FLOAT16 && dtype != IM_DT_FLOAT32)
+    {
+        m_errMsg = string("Do NOT SUPPORT output color format ")+to_string((int)dtype)+"!";
+        return false;
+    }
+    if (m_outDataType == dtype)
+        return true;
+
+    m_outDataType = dtype;
+    return true;
+}
+
 bool AVFrameToImMatConverter::SetResizeInterpolateMode(ImInterpolateMode interp)
 {
     if (m_resizeInterp == interp)
@@ -882,18 +896,17 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
             m_errMsg = "Failed to invoke 'ConvertAVFrameToImMat()'!";
             return false;
         }
-
+        // if AVFrame contains a packed rgb picture, return directly
         if (inMat[0].color_format == IM_CF_ABGR || inMat[0].color_format == IM_CF_ARGB ||
             inMat[0].color_format == IM_CF_RGBA || inMat[0].color_format == IM_CF_BGRA)
         {
-            // TODO::Dicky RGB planar
-            //outMat = inMat;
+            outMat = inMat[0];
             outMat.time_stamp = timestamp;
             return false;
         }
         // YUV -> RGB
         ImGui::VkMat rgbMat;
-        rgbMat.type = IM_DT_INT8;
+        rgbMat.type = m_outDataType;
         rgbMat.color_format = IM_CF_ABGR;
         rgbMat.w = m_outWidth;
         rgbMat.h = m_outHeight;
@@ -904,7 +917,7 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
         }
         if (m_outputCpuMat && rgbMat.device == IM_DD_VULKAN)
         {
-            outMat.type = IM_DT_INT8;
+            outMat.type = m_outDataType;
             m_imgClrCvt->Conv(rgbMat, outMat);
         }
         else
@@ -1234,7 +1247,7 @@ bool ImMatToAVFrameConverter::ConvertImage(const ImGui::ImMat& vmat, AVFrame* av
         if (outWidth != inMat.w || outHeight != inMat.h)
         {
             ImGui::VkMat rszMat;
-            rszMat.type = m_outBitsPerPix > 8 ? IM_DT_INT16 : IM_DT_INT8;
+            rszMat.type = IM_DT_FLOAT32;
             m_imgRsz->Resize(inMat, rszMat, (float)outWidth/inMat.w, (float)outHeight/inMat.h, m_resizeInterp);
             inMat = rszMat;
         }
@@ -1245,7 +1258,7 @@ bool ImMatToAVFrameConverter::ConvertImage(const ImGui::ImMat& vmat, AVFrame* av
         if (isSrcRgb && isDstYuv)
         {
             ImGui::ImMat yuvMat;
-            yuvMat.type = inMat.type;
+            yuvMat.type = IM_DT_FLOAT32;
             yuvMat.color_format = m_outMatClrfmt;
             yuvMat.color_space = m_outMatClrspc;
             yuvMat.color_range = m_outMatClrrng;
@@ -1274,13 +1287,21 @@ bool ImMatToAVFrameConverter::ConvertImage(const ImGui::ImMat& vmat, AVFrame* av
     }
 
 #if IMGUI_VULKAN_SHADER
+    ImDataType outDtype = m_outBitsPerPix > 8 ? IM_DT_INT16 : IM_DT_INT8;
     if (inMat.device == IM_DD_VULKAN)
     {
         ImGui::VkMat vkMat = inMat;
         ImGui::ImMat cpuMat;
-        cpuMat.type = IM_DT_INT8;
+        cpuMat.type = outDtype;
         m_imgClrCvt->Conv(vkMat, cpuMat);
         inMat = cpuMat;
+    }
+    else if (inMat.type != outDtype)
+    {
+        ImGui::ImMat outMat;
+        outMat.type = outDtype;
+        m_imgClrCvt->Conv(inMat, outMat);
+        inMat = outMat;
     }
 #endif
 

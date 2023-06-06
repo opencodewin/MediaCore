@@ -22,6 +22,7 @@
 #include <string>
 #include "immat.h"
 #include "MediaCore.h"
+#include "SharedSettings.h"
 #include "VideoTrack.h"
 #include "SubtitleTrack.h"
 #include "Logger.h"
@@ -34,8 +35,12 @@ struct MultiTrackVideoReader
     static MEDIACORE_API Holder CreateInstance();
     static MEDIACORE_API Logger::ALogger* GetLogger();
 
-    virtual bool Configure(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) = 0;
-    virtual Holder CloneAndConfigure(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) = 0;
+    virtual bool Configure(SharedSettings::Holder hSettings) = 0;
+    virtual bool Configure(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate, ImDataType outDtype = IM_DT_FLOAT32) = 0;
+    virtual Holder CloneAndConfigure(SharedSettings::Holder hSettings) = 0;
+    virtual Holder CloneAndConfigure(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate, ImDataType outDtype = IM_DT_FLOAT32) = 0;
+    virtual SharedSettings::Holder GetSharedSettings() = 0;
+
     virtual bool Start() = 0;
     virtual void Close() = 0;
     virtual VideoTrack::Holder AddTrack(int64_t trackId, int64_t insertAfterId = -1) = 0;  // insertAfterId: -1, insert after the tail; -2, insert before the head

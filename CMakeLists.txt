@@ -70,7 +70,7 @@ endif(MEDIACORE_STATIC)
 
 set(MEDIACORE_VERSION_MAJOR 1)
 set(MEDIACORE_VERSION_MINOR 3)
-set(MEDIACORE_VERSION_PATCH 4)
+set(MEDIACORE_VERSION_PATCH 5)
 string(TIMESTAMP MEDIACORE_VERSION_BUILD "%y%m%d")
 set(MEDIACORE_VERSION_STRING ${MEDIACORE_VERSION_MAJOR}.${MEDIACORE_VERSION_MINOR}.${MEDIACORE_VERSION_PATCH})
 add_definitions(-DMEDIACORE_VERSION_MAJOR=${MEDIACORE_VERSION_MAJOR})
@@ -95,6 +95,7 @@ add_library(MediaCore ${LIBRARY}
     ${LIB_SRC_DIR}/MultiTrackAudioReader.cpp
     ${LIB_SRC_DIR}/MultiTrackVideoReader.cpp
     ${LIB_SRC_DIR}/Overview.cpp
+    ${LIB_SRC_DIR}/SharedSettings.cpp
     ${LIB_SRC_DIR}/Snapshot.cpp
     ${LIB_SRC_DIR}/SubtitleClip_AssImpl.cpp
     ${LIB_SRC_DIR}/SubtitleTrack_AssImpl.cpp

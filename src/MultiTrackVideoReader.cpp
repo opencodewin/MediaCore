@@ -45,7 +45,7 @@ public:
     MultiTrackVideoReader_Impl(MultiTrackVideoReader_Impl&&) = delete;
     MultiTrackVideoReader_Impl& operator=(const MultiTrackVideoReader_Impl&) = delete;
 
-    bool Configure(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) override
+    bool Configure(SharedSettings::Holder hSettings) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (m_started)
@@ -53,14 +53,47 @@ public:
             m_errMsg = "This MultiTrackVideoReader instance is already started!";
             return false;
         }
+        const auto outWidth = hSettings->VideoOutWidth();
+        if (outWidth == 0 || outWidth > 16384)
+        {
+            ostringstream oss; oss << "INVALID argument! VideoOutWidth=" << outWidth << " is not supported. Valid range is (0, 16384].";
+            m_errMsg = oss.str();
+            return false;
+        }
+        const auto outHeight = hSettings->VideoOutHeight();
+        if (outHeight == 0 || outHeight > 16384)
+        {
+            ostringstream oss; oss << "INVALID argument! VideoOutHeight=" << outHeight << " is not supported. Valid range is (0, 16384].";
+            m_errMsg = oss.str();
+            return false;
+        }
+        const auto frameRate = hSettings->VideoOutFrameRate();
+        if (!Ratio::IsValid(frameRate))
+        {
+            ostringstream oss; oss << "INVALID argument! VideoOutFrameRate={" << frameRate.num << "/" << frameRate.den << "} is invalid.";
+            m_errMsg = oss.str();
+            return false;
+        }
+        const auto colorFormat = hSettings->VideoOutColorFormat();
+        if (colorFormat != IM_CF_RGBA)
+        {
+            ostringstream oss; oss << "INVALID argument! VideoOutColorFormat=" << colorFormat << "is not supported. ONLY support output RGBA format.";
+            m_errMsg = oss.str();
+            return false;
+        }
+        const auto dataType = hSettings->VideoOutDataType();
+        if (dataType != IM_DT_INT8 && dataType != IM_DT_FLOAT32)
+        {
+            ostringstream oss; oss << "INVALID argument! VideoOutDataType=" << dataType << "is not supported. ONLY support output INT8 & FLOAT32 data type.";
+            m_errMsg = oss.str();
+            return false;
+        }
 
         Close();
 
-        m_outWidth = outWidth;
-        m_outHeight = outHeight;
-        m_frameRate = frameRate;
+        m_hSettings = hSettings;
         m_readFrameIdx = 0;
-        m_frameInterval = (double)m_frameRate.den/m_frameRate.num;
+        m_frameInterval = (double)frameRate.den/frameRate.num;
 
         m_hMixBlender = VideoBlender::CreateInstance();
         if (!m_hMixBlender)
@@ -93,7 +126,34 @@ public:
         return true;
     }
 
-    Holder CloneAndConfigure(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) override;
+    bool Configure(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate, ImDataType outDtype) override
+    {
+        auto hSettings = SharedSettings::CreateInstance();
+        hSettings->SetVideoOutWidth(outWidth);
+        hSettings->SetVideoOutHeight(outHeight);
+        hSettings->SetVideoOutFrameRate(frameRate);
+        hSettings->SetVideoOutColorFormat(IM_CF_RGBA);
+        hSettings->SetVideoOutDataType(outDtype);
+        return Configure(hSettings);
+    }
+
+    Holder CloneAndConfigure(SharedSettings::Holder hSettings) override;
+
+    Holder CloneAndConfigure(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate, ImDataType outDtype) override
+    {
+        auto hSettings = SharedSettings::CreateInstance();
+        hSettings->SetVideoOutWidth(outWidth);
+        hSettings->SetVideoOutHeight(outHeight);
+        hSettings->SetVideoOutFrameRate(frameRate);
+        hSettings->SetVideoOutColorFormat(IM_CF_RGBA);
+        hSettings->SetVideoOutDataType(outDtype);
+        return CloneAndConfigure(hSettings);
+    }
+
+    SharedSettings::Holder GetSharedSettings() override
+    {
+        return m_hSettings;
+    }
 
     bool Start() override
     {
@@ -126,10 +186,8 @@ public:
         m_prevOutFrame = nullptr;
         m_configured = false;
         m_started = false;
-        m_outWidth = 0;
-        m_outHeight = 0;
-        m_frameRate = { 0, 0 };
         m_frameInterval = 0;
+        m_hSettings = nullptr;
     }
 
     VideoTrack::Holder AddTrack(int64_t trackId, int64_t insertAfterId) override
@@ -143,7 +201,7 @@ public:
 
         TerminateMixingThread();
 
-        VideoTrack::Holder hNewTrack = VideoTrack::CreateInstance(trackId, m_outWidth, m_outHeight, m_frameRate);
+        VideoTrack::Holder hNewTrack = VideoTrack::CreateInstance(trackId, m_hSettings);
         // hNewTrack->SetLogLevel(DEBUG);
         hNewTrack->SetDirection(m_readForward);
         {
@@ -324,7 +382,8 @@ public:
         m_logger->Log(DEBUG) << "------> SeekTo pos=" << pos << endl;
         ClearAllMixFrameTasks();
         m_prevOutFrame = nullptr;
-        m_readFrameIdx = (int64_t)(floor((double)pos*m_frameRate.num/(m_frameRate.den*1000)));
+        const auto frameRate = m_hSettings->VideoOutFrameRate();
+        m_readFrameIdx = (int64_t)(floor((double)pos*frameRate.num/(frameRate.den*1000)));
         int step = m_readForward ? 1 : -1;
         AddMixFrameTask(m_readFrameIdx, false, true);
         AddMixFrameTask(m_readFrameIdx+step, false, false);
@@ -341,7 +400,8 @@ public:
         }
         m_logger->Log(DEBUG) << "======> ConsecutiveSeek pos=" << pos << endl;
         m_prevOutFrame = nullptr;
-        m_readFrameIdx = (int64_t)(floor((double)pos*m_frameRate.num/(m_frameRate.den*1000)));
+        const auto frameRate = m_hSettings->VideoOutFrameRate();
+        m_readFrameIdx = (int64_t)(floor((double)pos*frameRate.num/(frameRate.den*1000)));
         AddSeekingTask(m_readFrameIdx);
         m_inSeeking = true;
         return true;
@@ -399,7 +459,8 @@ public:
             return false;
         }
 
-        int64_t targetIndex = (int64_t)(floor((double)pos*m_frameRate.num/(m_frameRate.den*1000)));
+        const auto frameRate = m_hSettings->VideoOutFrameRate();
+        int64_t targetIndex = (int64_t)(floor((double)pos*frameRate.num/(frameRate.den*1000)));
         bool ret = ReadVideoFrameWithoutSubtitle(targetIndex, frames, nonblocking, precise);
         if (ret && !m_subtrks.empty())
         {
@@ -595,15 +656,18 @@ public:
 
     int64_t ReadPos() const override
     {
-        return m_readFrameIdx*1000*m_frameRate.den/m_frameRate.num;
+        const auto frameRate = m_hSettings->VideoOutFrameRate();
+        return m_readFrameIdx*1000*frameRate.den/frameRate.num;
     }
 
     SubtitleTrackHolder BuildSubtitleTrackFromFile(int64_t id, const string& url, int64_t insertAfterId) override
     {
+        const auto outWidth = m_hSettings->VideoOutWidth();
+        const auto outHeight = m_hSettings->VideoOutHeight();
         SubtitleTrackHolder newSubTrack = SubtitleTrack::BuildFromFile(id, url);
-        newSubTrack->SetFrameSize(m_outWidth, m_outHeight);
+        newSubTrack->SetFrameSize(outWidth, outHeight);
         newSubTrack->SetAlignment(5);
-        newSubTrack->SetOffsetCompensationV((int32_t)((double)m_outHeight*0.43));
+        newSubTrack->SetOffsetCompensationV((int32_t)((double)outHeight*0.43));
         newSubTrack->SetOffsetCompensationV(0.43f);
         newSubTrack->EnableFullSizeOutput(false);
         lock_guard<mutex> lk(m_subtrkLock);
@@ -635,10 +699,12 @@ public:
 
     SubtitleTrackHolder NewEmptySubtitleTrack(int64_t id, int64_t insertAfterId) override
     {
+        const auto outWidth = m_hSettings->VideoOutWidth();
+        const auto outHeight = m_hSettings->VideoOutHeight();
         SubtitleTrackHolder newSubTrack = SubtitleTrack::NewEmptyTrack(id);
-        newSubTrack->SetFrameSize(m_outWidth, m_outHeight);
+        newSubTrack->SetFrameSize(outWidth, outHeight);
         newSubTrack->SetAlignment(5);
-        newSubTrack->SetOffsetCompensationV((int32_t)((double)m_outHeight*0.43));
+        newSubTrack->SetOffsetCompensationV((int32_t)((double)outHeight*0.43));
         newSubTrack->SetOffsetCompensationV(0.43f);
         newSubTrack->EnableFullSizeOutput(false);
         lock_guard<mutex> lk(m_subtrkLock);
@@ -1132,6 +1198,10 @@ private:
     {
         m_logger->Log(DEBUG) << "Enter MixingThreadProc(VIDEO)..." << endl;
 
+        const auto outWidth = m_hSettings->VideoOutWidth();
+        const auto outHeight = m_hSettings->VideoOutHeight();
+        const auto frameRate = m_hSettings->VideoOutFrameRate();
+        const auto matDtype = m_hSettings->VideoOutDataType();
         bool afterSeek = false;
         bool prevInSeekingState = m_inSeeking;
         while (!m_quit)
@@ -1190,7 +1260,7 @@ private:
                     ImGui::ImMat mixedFrame;
                     vector<CorrelativeFrame> frames;
                     frames.push_back({CorrelativeFrame::PHASE_AFTER_MIXING, 0, 0, mixedFrame});
-                    double timestamp = (double)mft->frameIndex*m_frameRate.den/m_frameRate.num;
+                    double timestamp = (double)mft->frameIndex*frameRate.den/frameRate.num;
                     auto rftIter = mft->readFrameTaskTable.begin();
                     while (rftIter != mft->readFrameTaskTable.end())
                     {
@@ -1214,7 +1284,7 @@ private:
 
                     if (mixedFrame.empty())
                     {
-                        mixedFrame.create_type(m_outWidth, m_outHeight, 4, IM_DT_INT8);
+                        mixedFrame.create_type(outWidth, outHeight, 4, matDtype);
                         memset(mixedFrame.data, 0, mixedFrame.total()*mixedFrame.elemsize);
                         mixedFrame.time_stamp = timestamp;
                     }
@@ -1347,9 +1417,7 @@ private:
     mutex m_seekingTasksLock;
     vector<CorrelativeFrame> m_seekingFlash;
 
-    uint32_t m_outWidth{0};
-    uint32_t m_outHeight{0};
-    Ratio m_frameRate;
+    SharedSettings::Holder m_hSettings;
     double m_frameInterval{0};
     int64_t m_duration{0};
     int64_t m_readFrameIdx{0};
@@ -1378,11 +1446,11 @@ MultiTrackVideoReader::Holder MultiTrackVideoReader::CreateInstance()
     return MultiTrackVideoReader::Holder(new MultiTrackVideoReader_Impl(), MULTI_TRACK_VIDEO_READER_DELETER);
 }
 
-MultiTrackVideoReader::Holder MultiTrackVideoReader_Impl::CloneAndConfigure(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate)
+MultiTrackVideoReader::Holder MultiTrackVideoReader_Impl::CloneAndConfigure(SharedSettings::Holder hSettings)
 {
     lock_guard<recursive_mutex> lk(m_apiLock);
     MultiTrackVideoReader_Impl* newInstance = new MultiTrackVideoReader_Impl();
-    if (!newInstance->Configure(outWidth, outHeight, frameRate))
+    if (!newInstance->Configure(hSettings))
     {
         m_errMsg = newInstance->GetError();
         newInstance->Close(); delete newInstance;
@@ -1394,7 +1462,7 @@ MultiTrackVideoReader::Holder MultiTrackVideoReader_Impl::CloneAndConfigure(uint
         lock_guard<recursive_mutex> lk2(m_trackLock);
         for (auto track : m_tracks)
         {
-            newInstance->m_tracks.push_back(track->Clone(outWidth, outHeight, frameRate));
+            newInstance->m_tracks.push_back(track->Clone(hSettings));
         }
     }
     newInstance->UpdateDuration();
@@ -1406,7 +1474,7 @@ MultiTrackVideoReader::Holder MultiTrackVideoReader_Impl::CloneAndConfigure(uint
         {
             if (!subtrk->IsVisible())
                 continue;
-            newInstance->m_subtrks.push_back(subtrk->Clone(outWidth, outHeight));
+            newInstance->m_subtrks.push_back(subtrk->Clone(hSettings->VideoOutWidth(), hSettings->VideoOutHeight()));
         }
     }
 

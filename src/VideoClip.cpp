@@ -80,10 +80,9 @@ class VideoClip_VideoImpl : public VideoClip
 {
 public:
     VideoClip_VideoImpl(
-        int64_t id, MediaParser::Holder hParser,
-        uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate,
+        int64_t id, MediaParser::Holder hParser, SharedSettings::Holder hSettings,
         int64_t start, int64_t end, int64_t startOffset, int64_t endOffset, int64_t readpos, bool forward)
-        : m_id(id), m_start(start)
+        : m_id(id), m_hSettings(hSettings), m_start(start)
     {
         string fileName = SysUtils::ExtractFileName(hParser->GetUrl());
         ostringstream loggerNameOss;
@@ -108,6 +107,9 @@ public:
         m_hReader->EnableHwAccel(VideoClip::USE_HWACCEL);
         if (!m_hReader->Open(hParser))
             throw runtime_error(m_hReader->GetError());
+        const auto outWidth = hSettings->VideoOutWidth();
+        const auto outHeight = hSettings->VideoOutHeight();
+        const auto frameRate = hSettings->VideoOutFrameRate();
         uint32_t readerWidth, readerHeight;
         if (outWidth*vidStm->height > outHeight*vidStm->width)
         {
@@ -124,7 +126,7 @@ public:
         ImInterpolateMode interpMode = IM_INTERPOLATE_BICUBIC;
         if (readerWidth*readerHeight < vidStm->width*vidStm->height)
             interpMode = IM_INTERPOLATE_AREA;
-        if (!m_hReader->ConfigVideoReader(readerWidth, readerHeight, IM_CF_RGBA, interpMode))
+        if (!m_hReader->ConfigVideoReader(readerWidth, readerHeight, m_outClrfmt, m_outDtype, interpMode))
             throw runtime_error(m_hReader->GetError());
         if (frameRate.num <= 0 || frameRate.den <= 0)
             throw invalid_argument("Invalid argument value for 'frameRate'!");
@@ -156,7 +158,7 @@ public:
     {
     }
 
-    Holder Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) const override;
+    Holder Clone(SharedSettings::Holder hSettings) const override;
 
     MediaParser::Holder GetMediaParser() const override
     {
@@ -414,6 +416,7 @@ private:
     ALogger* m_logger;
     int64_t m_id;
     int64_t m_trackId{-1};
+    SharedSettings::Holder m_hSettings;
     MediaInfo::Holder m_hInfo;
     MediaReader::Holder m_hReader;
     int64_t m_srcDuration;
@@ -427,6 +430,8 @@ private:
     VideoFilter::Holder m_hFilter;
     VideoTransformFilterHolder m_hWarpFilter;
     int64_t m_wakeupRange{1000};
+    ImColorFormat m_outClrfmt{IM_CF_RGBA};
+    ImDataType m_outDtype{IM_DT_FLOAT32};
     FailedRead m_failedRead;
 };
 
@@ -436,20 +441,19 @@ static const auto VIDEO_CLIP_HOLDER_VIDEOIMPL_DELETER = [] (VideoClip* p) {
 };
 
 VideoClip::Holder VideoClip::CreateVideoInstance(
-        int64_t id, MediaParser::Holder hParser,
-        uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate,
+        int64_t id, MediaParser::Holder hParser, SharedSettings::Holder hSettings,
         int64_t start, int64_t end, int64_t startOffset, int64_t endOffset, int64_t readpos, bool forward)
 {
-    return VideoClip::Holder(new VideoClip_VideoImpl(id, hParser, outWidth, outHeight, frameRate, start, end, startOffset, endOffset, readpos, true),
+    return VideoClip::Holder(new VideoClip_VideoImpl(id, hParser, hSettings, start, end, startOffset, endOffset, readpos, true),
             VIDEO_CLIP_HOLDER_VIDEOIMPL_DELETER);
 }
 
-VideoClip::Holder VideoClip_VideoImpl::Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) const
+VideoClip::Holder VideoClip_VideoImpl::Clone(SharedSettings::Holder hSettings) const
 {
     VideoClip_VideoImpl* newInstance = new VideoClip_VideoImpl(
-        m_id, m_hReader->GetMediaParser(), outWidth, outHeight, frameRate, m_start, End(), m_startOffset, m_endOffset, 0, true);
+        m_id, m_hReader->GetMediaParser(), hSettings, m_start, End(), m_startOffset, m_endOffset, 0, true);
     if (m_hFilter) newInstance->SetFilter(m_hFilter->Clone());
-    newInstance->m_hWarpFilter = m_hWarpFilter->Clone(outWidth, outHeight);
+    newInstance->m_hWarpFilter = m_hWarpFilter->Clone(hSettings->VideoOutWidth(), hSettings->VideoOutHeight());
     return VideoClip::Holder(newInstance, VIDEO_CLIP_HOLDER_VIDEOIMPL_DELETER);
 }
 
@@ -457,9 +461,9 @@ class VideoClip_ImageImpl : public VideoClip
 {
 public:
     VideoClip_ImageImpl(
-        int64_t id, MediaParser::Holder hParser,
-        uint32_t outWidth, uint32_t outHeight, int64_t start, int64_t duration)
-        : m_id(id), m_start(start)
+        int64_t id, MediaParser::Holder hParser, SharedSettings::Holder hSettings,
+        int64_t start, int64_t duration)
+        : m_id(id), m_hSettings(hSettings), m_start(start)
     {
         m_hInfo = hParser->GetMediaInfo();
         if (hParser->GetBestVideoStreamIndex() < 0)
@@ -470,6 +474,8 @@ public:
         m_hReader = MediaReader::CreateInstance();
         if (!m_hReader->Open(hParser))
             throw runtime_error(m_hReader->GetError());
+        const auto outWidth = hSettings->VideoOutWidth();
+        const auto outHeight = hSettings->VideoOutHeight();
         uint32_t readerWidth, readerHeight;
         if (outWidth*vidStm->height > outHeight*vidStm->width)
         {
@@ -486,7 +492,7 @@ public:
         ImInterpolateMode interpMode = IM_INTERPOLATE_BICUBIC;
         if (readerWidth*readerHeight < vidStm->width*vidStm->height)
             interpMode = IM_INTERPOLATE_AREA;
-        if (!m_hReader->ConfigVideoReader(readerWidth, readerHeight, IM_CF_RGBA, interpMode))
+        if (!m_hReader->ConfigVideoReader(readerWidth, readerHeight, m_outClrfmt, m_outDtype, interpMode))
             throw runtime_error(m_hReader->GetError());
         if (duration <= 0)
             throw invalid_argument("Argument 'duration' must be positive!");
@@ -503,7 +509,7 @@ public:
     {
     }
 
-    Holder Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) const override;
+    Holder Clone(SharedSettings::Holder hSettings) const override;
 
     MediaParser::Holder GetMediaParser() const override
     {
@@ -684,6 +690,7 @@ public:
 private:
     int64_t m_id;
     int64_t m_trackId{-1};
+    SharedSettings::Holder m_hSettings;
     MediaInfo::Holder m_hInfo;
     MediaReader::Holder m_hReader;
     MediaReader::VideoFrame::Holder m_hVf;
@@ -691,6 +698,8 @@ private:
     int64_t m_start;
     VideoFilter::Holder m_hFilter;
     VideoTransformFilterHolder m_hWarpFilter;
+    ImColorFormat m_outClrfmt{IM_CF_RGBA};
+    ImDataType m_outDtype{IM_DT_FLOAT32};
 };
 
 static const auto VIDEO_CLIP_HOLDER_IMAGEIMPL_DELETER = [] (VideoClip* p) {
@@ -699,19 +708,19 @@ static const auto VIDEO_CLIP_HOLDER_IMAGEIMPL_DELETER = [] (VideoClip* p) {
 };
 
 VideoClip::Holder VideoClip::CreateImageInstance(
-        int64_t id, MediaParser::Holder hParser,
-        uint32_t outWidth, uint32_t outHeight, int64_t start, int64_t duration)
+        int64_t id, MediaParser::Holder hParser, SharedSettings::Holder hSettings,
+        int64_t start, int64_t duration)
 {
-    return VideoClip::Holder(new VideoClip_ImageImpl(id, hParser, outWidth, outHeight, start, duration),
+    return VideoClip::Holder(new VideoClip_ImageImpl(id, hParser, hSettings, start, duration),
             VIDEO_CLIP_HOLDER_IMAGEIMPL_DELETER);
 }
 
-VideoClip::Holder VideoClip_ImageImpl::Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) const
+VideoClip::Holder VideoClip_ImageImpl::Clone(SharedSettings::Holder hSettings) const
 {
     VideoClip_ImageImpl* newInstance = new VideoClip_ImageImpl(
-        m_id, m_hReader->GetMediaParser(), outWidth, outHeight, m_start, m_srcDuration);
+        m_id, m_hReader->GetMediaParser(), hSettings, m_start, m_srcDuration);
     if (m_hFilter) newInstance->SetFilter(m_hFilter->Clone());
-    newInstance->m_hWarpFilter = m_hWarpFilter->Clone(outWidth, outHeight);
+    newInstance->m_hWarpFilter = m_hWarpFilter->Clone(hSettings->VideoOutWidth(), hSettings->VideoOutHeight());
     return VideoClip::Holder(newInstance, VIDEO_CLIP_HOLDER_IMAGEIMPL_DELETER);
 }
 

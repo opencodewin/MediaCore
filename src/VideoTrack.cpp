@@ -248,8 +248,8 @@ static const auto OVERLAP_SORT_CMP = [] (const VideoOverlap::Holder& a, const Vi
 class VideoTrack_Impl : public VideoTrack
 {
 public:
-    VideoTrack_Impl(int64_t id, uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate)
-        : m_id(id), m_outWidth(outWidth), m_outHeight(outHeight), m_frameRate(frameRate)
+    VideoTrack_Impl(int64_t id, SharedSettings::Holder hSettings)
+        : m_id(id), m_hSettings(hSettings)
     {
         ostringstream loggerNameOss;
         loggerNameOss << id;
@@ -275,14 +275,14 @@ public:
         m_readFrameTasks.clear();
     }
 
-    Holder Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) override;
+    Holder Clone(SharedSettings::Holder hSettings) override;
 
     VideoClip::Holder AddVideoClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t end, int64_t startOffset, int64_t endOffset, int64_t readPos) override
     {
         VideoClip::Holder hClip;
         auto vidstream = hParser->GetBestVideoStream();
         assert(!vidstream->isImage);
-        hClip = VideoClip::CreateVideoInstance(clipId, hParser, m_outWidth, m_outHeight, m_frameRate, start, end, startOffset, endOffset, readPos-start, m_readForward);
+        hClip = VideoClip::CreateVideoInstance(clipId, hParser, m_hSettings, start, end, startOffset, endOffset, readPos-start, m_readForward);
         InsertClip(hClip);
         return hClip;
     }
@@ -292,7 +292,7 @@ public:
         VideoClip::Holder hClip;
         auto vidstream = hParser->GetBestVideoStream();
         assert(vidstream->isImage);
-        hClip = VideoClip::CreateImageInstance(clipId, hParser, m_outWidth, m_outHeight, start, length);
+        hClip = VideoClip::CreateImageInstance(clipId, hParser, m_hSettings, start, length);
         InsertClip(hClip);
         return hClip;
     }
@@ -480,17 +480,17 @@ public:
 
     uint32_t OutWidth() const override
     {
-        return m_outWidth;
+        return m_hSettings->VideoOutWidth();
     }
 
     uint32_t OutHeight() const override
     {
-        return m_outHeight;
+        return m_hSettings->VideoOutHeight();
     }
 
     Ratio FrameRate() const override
     {
-        return m_frameRate;
+        return m_hSettings->VideoOutFrameRate();
     }
 
     int64_t Duration() const override
@@ -502,7 +502,8 @@ public:
 
     int64_t ReadPos(int64_t frameIndex) const
     {
-        return frameIndex*1000*m_frameRate.den/m_frameRate.num;
+        const auto frameRate = m_hSettings->VideoOutFrameRate();
+        return frameIndex*1000*frameRate.den/frameRate.num;
     }
 
     bool Direction() const override
@@ -992,9 +993,7 @@ private:
     ALogger* m_logger;
     recursive_mutex m_apiLock;
     int64_t m_id;
-    uint32_t m_outWidth;
-    uint32_t m_outHeight;
-    Ratio m_frameRate;
+    SharedSettings::Holder m_hSettings;
     list<VideoClip::Holder> m_clips;
     list<VideoClip::Holder>::iterator m_readClipIter;
     list<VideoClip::Holder> m_clips2;
@@ -1018,22 +1017,22 @@ static const auto VIDEO_TRACK_HOLDER_DELETER = [] (VideoTrack* p) {
     delete ptr;
 };
 
-VideoTrack::Holder VideoTrack::CreateInstance(int64_t id, uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate)
+VideoTrack::Holder VideoTrack::CreateInstance(int64_t id, SharedSettings::Holder hSettings)
 {
-    return VideoTrack::Holder(new VideoTrack_Impl(id, outWidth, outHeight, frameRate), VIDEO_TRACK_HOLDER_DELETER);
+    return VideoTrack::Holder(new VideoTrack_Impl(id, hSettings), VIDEO_TRACK_HOLDER_DELETER);
 }
 
-VideoTrack::Holder VideoTrack_Impl::Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate)
+VideoTrack::Holder VideoTrack_Impl::Clone(SharedSettings::Holder hSettings)
 {
     lock_guard<recursive_mutex> lk(m_apiLock);
     if (m_clipChanged)
         UpdateClipState();
 
-    VideoTrack_Impl* newInstance = new VideoTrack_Impl(m_id, outWidth, outHeight, frameRate);
+    VideoTrack_Impl* newInstance = new VideoTrack_Impl(m_id, hSettings);
     // duplicate the clips
     for (auto clip : m_clips)
     {
-        auto newClip = clip->Clone(outWidth, outHeight, frameRate);
+        auto newClip = clip->Clone(hSettings);
         newClip->SetTrackId(m_id);
         newInstance->m_clips2.push_back(newClip);
         newInstance->m_clipChanged = true;

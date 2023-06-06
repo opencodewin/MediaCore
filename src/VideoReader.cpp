@@ -121,7 +121,7 @@ public:
 
     bool ConfigVideoReader(
             uint32_t outWidth, uint32_t outHeight,
-            ImColorFormat outClrfmt, ImInterpolateMode rszInterp) override
+            ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_opened)
@@ -146,6 +146,7 @@ public:
         m_outHeight = outHeight;
         m_useSizeFactor = false;
         m_outClrFmt = outClrfmt;
+        m_outDtype = outDtype;
         m_interpMode = rszInterp;
 
         m_vidDurTs = vidStream->duration;
@@ -165,7 +166,7 @@ public:
 
     bool ConfigVideoReader(
             float outWidthFactor, float outHeightFactor,
-            ImColorFormat outClrfmt, ImInterpolateMode rszInterp) override
+            ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp) override
     {
         if (!m_opened)
         {
@@ -190,6 +191,7 @@ public:
         m_ssHFactor = outHeightFactor;
         m_useSizeFactor = true;
         m_outClrFmt = outClrfmt;
+        m_outDtype = outDtype;
         m_interpMode = rszInterp;
 
         m_vidDurTs = vidStream->duration;
@@ -773,6 +775,11 @@ private:
                 return false;
             }
             if (!m_pFrmCvt->SetOutColorFormat(m_outClrFmt))
+            {
+                m_errMsg = m_pFrmCvt->GetError();
+                return false;
+            }
+            if (!m_pFrmCvt->SetOutDataType(m_outDtype))
             {
                 m_errMsg = m_pFrmCvt->GetError();
                 return false;
@@ -1555,6 +1562,7 @@ private:
     float m_ssWFactor{1.f}, m_ssHFactor{1.f};
     bool m_useSizeFactor{false};
     ImColorFormat m_outClrFmt;
+    ImDataType m_outDtype;
     ImInterpolateMode m_interpMode;
     AVFrameToImMatConverter* m_pFrmCvt{nullptr};
 };

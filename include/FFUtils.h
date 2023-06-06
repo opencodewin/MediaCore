@@ -85,6 +85,7 @@ public:
 
     bool SetOutSize(uint32_t width, uint32_t height);
     bool SetOutColorFormat(ImColorFormat clrfmt);
+    bool SetOutDataType(ImDataType dtype);
     bool SetResizeInterpolateMode(ImInterpolateMode interp);
     bool ConvertImage(const AVFrame* avfrm, ImGui::ImMat& outMat, double timestamp);
 
@@ -100,6 +101,7 @@ public:
 private:
     uint32_t m_outWidth{0}, m_outHeight{0};
     ImColorFormat m_outClrFmt{IM_CF_RGBA};
+    ImDataType m_outDataType{IM_DT_INT8};
     ImInterpolateMode m_resizeInterp{IM_INTERPOLATE_AREA};
 #if IMGUI_VULKAN_SHADER
     ImGui::ColorConvert_vulkan* m_imgClrCvt{nullptr};

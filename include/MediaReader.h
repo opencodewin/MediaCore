@@ -49,10 +49,10 @@ struct MediaReader
     virtual bool Open(MediaParser::Holder hParser) = 0;
     virtual bool ConfigVideoReader(
             uint32_t outWidth, uint32_t outHeight,
-            ImColorFormat outClrfmt = IM_CF_RGBA, ImInterpolateMode rszInterp = IM_INTERPOLATE_BICUBIC) = 0;
+            ImColorFormat outClrfmt = IM_CF_RGBA, ImDataType outDtype = IM_DT_INT8, ImInterpolateMode rszInterp = IM_INTERPOLATE_BICUBIC) = 0;
     virtual bool ConfigVideoReader(
             float outWidthFactor, float outHeightFactor,
-            ImColorFormat outClrfmt = IM_CF_RGBA, ImInterpolateMode rszInterp = IM_INTERPOLATE_BICUBIC) = 0;
+            ImColorFormat outClrfmt = IM_CF_RGBA, ImDataType outDtype = IM_DT_INT8, ImInterpolateMode rszInterp = IM_INTERPOLATE_BICUBIC) = 0;
     virtual bool ConfigAudioReader(uint32_t outChannels, uint32_t outSampleRate, const std::string& outPcmFormat = "fltp", uint32_t audioStreamIndex = 0) = 0;
     virtual bool Start(bool suspend = false) = 0;
     virtual bool Stop() = 0;

@@ -19,9 +19,9 @@
 #include <cstdint>
 #include <string>
 #include <memory>
-#include "Logger.h"
-#include "SubtitleClip.h"
 #include "MediaCore.h"
+#include "SubtitleClip.h"
+#include "Logger.h"
 
 namespace MediaCore
 {

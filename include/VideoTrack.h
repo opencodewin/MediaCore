@@ -15,12 +15,13 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#pragma
+#pragma once
 #include <functional>
 #include <mutex>
 #include <list>
-#include "VideoClip.h"
 #include "MediaCore.h"
+#include "SharedSettings.h"
+#include "VideoClip.h"
 
 namespace MediaCore
 {
@@ -51,8 +52,8 @@ struct ReadFrameTask
 struct VideoTrack
 {
     using Holder = std::shared_ptr<VideoTrack>;
-    static MEDIACORE_API Holder CreateInstance(int64_t id, uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate);
-    virtual Holder Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) = 0;
+    static MEDIACORE_API Holder CreateInstance(int64_t id, SharedSettings::Holder hSettings);
+    virtual Holder Clone(SharedSettings::Holder hSettings) = 0;
 
     virtual int64_t Id() const = 0;
     virtual uint32_t OutWidth() const = 0;

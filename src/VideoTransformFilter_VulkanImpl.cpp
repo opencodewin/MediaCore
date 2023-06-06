@@ -229,7 +229,7 @@ namespace MediaCore
             outMat = inMat;
         else
         {
-            ImGui::VkMat vkmat; vkmat.type = IM_DT_INT8;
+            ImGui::VkMat vkmat; vkmat.type = inMat.type;
             vkmat.w = m_outWidth; vkmat.h = m_outHeight;
             if (!m_pWarpAffine)
                 m_pWarpAffine = new ImGui::warpAffine_vulkan();
