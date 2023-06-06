@@ -327,6 +327,9 @@ public:
 
     void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, MediaReader::VideoFrame::Holder hInVf) override
     {
+        if (!hInVf)
+            return;
+
         ImGui::ImMat in;
         hInVf->GetMat(in);
         if (in.empty())
@@ -631,6 +634,9 @@ public:
 
     void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, MediaReader::VideoFrame::Holder hInVf) override
     {
+        if (!hInVf)
+            return;
+
         ImGui::ImMat in;
         hInVf->GetMat(in);
         if (in.empty())
