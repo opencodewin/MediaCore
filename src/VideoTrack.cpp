@@ -287,7 +287,7 @@ public:
         return hClip;
     }
 
-    VideoClip::Holder AddImageClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t length)
+    VideoClip::Holder AddImageClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t length) override
     {
         VideoClip::Holder hClip;
         auto vidstream = hParser->GetBestVideoStream();
