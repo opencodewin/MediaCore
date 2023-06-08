@@ -149,7 +149,7 @@ public:
         m_outDtype = outDtype;
         m_interpMode = rszInterp;
 
-        m_vidDurTs = vidStream->duration;
+        m_vidDurMts = (int64_t)(vidStream->duration*1000);
         AVRational timebase = { vidStream->timebase.num, vidStream->timebase.den };
         AVRational frameRate;
         if (Ratio::IsValid(vidStream->avgFrameRate))
@@ -158,7 +158,6 @@ public:
             frameRate = { vidStream->realFrameRate.num, vidStream->realFrameRate.den };
         else
             frameRate = av_inv_q(timebase);
-        m_vidfrmIntvMts = av_q2d(av_inv_q(frameRate))*1000.;
 
         m_configured = true;
         return true;
@@ -194,7 +193,7 @@ public:
         m_outDtype = outDtype;
         m_interpMode = rszInterp;
 
-        m_vidDurTs = vidStream->duration;
+        m_vidDurMts = (int64_t)(vidStream->duration*1000);
         AVRational timebase = { vidStream->timebase.num, vidStream->timebase.den };
         AVRational frameRate;
         if (Ratio::IsValid(vidStream->avgFrameRate))
@@ -203,7 +202,6 @@ public:
             frameRate = { vidStream->realFrameRate.num, vidStream->realFrameRate.den };
         else
             frameRate = av_inv_q(timebase);
-        m_vidfrmIntvMts = av_q2d(av_inv_q(frameRate))*1000.;
 
         m_configured = true;
         return true;
@@ -257,9 +255,8 @@ public:
         m_prevReadResult = {0., nullptr};
         m_readForward = true;
         m_seekPosUpdated = false;
-        m_seekPosTs = 0;
-        m_vidfrmIntvMts = 0;
-        m_vidDurTs = 0;
+        m_seekPos = 0;
+        m_vidDurMts = 0;
 
         m_prepared = false;
         m_started = false;
@@ -293,9 +290,8 @@ public:
         m_prevReadResult = {0., nullptr};
         m_readForward = true;
         m_seekPosUpdated = false;
-        m_seekPosTs = 0;
-        m_vidfrmIntvMts = 0;
-        m_vidDurTs = 0;
+        m_seekPos = 0;
+        m_vidDurMts = 0;
         if (m_pFrmCvt)
         {
             delete m_pFrmCvt;
@@ -309,27 +305,27 @@ public:
         m_errMsg = "";
     }
 
-    bool SeekTo(double ts) override
+    bool SeekTo(int64_t pos) override
     {
         if (!m_configured)
         {
             m_errMsg = "Can NOT use 'SeekTo' until the 'VideoReader' obj is configured!";
             return false;
         }
-        if (ts < 0 || ts > m_vidDurTs)
+        if (pos < 0 || pos > m_vidDurMts)
         {
-            m_errMsg = "INVALID argument 'ts'! Can NOT be negative or exceed the duration.";
+            m_errMsg = "INVALID argument 'pos'! Can NOT be negative or exceed the duration.";
             return false;
         }
 
-        m_logger->Log(DEBUG) << "--> Seek[0]: Set seek pos " << ts << endl;
+        m_logger->Log(DEBUG) << "--> Seek[0]: Set seek pos " << pos << endl;
         lock_guard<mutex> lk(m_seekPosLock);
-        m_seekPosTs = ts;
+        m_seekPos = pos;
         m_inSeeking = true;
         m_seekPosUpdated = true;
         if (m_prepared)
         {
-            int64_t seekPts = CvtMtsToPts(ts*1000);
+            int64_t seekPts = CvtMtsToPts(pos);
             UpdateReadPos(seekPts);
         }
         return true;
@@ -376,13 +372,13 @@ public:
         if (!m_quitThread || m_isImage)
             return;
 
-        double readPos = m_seekPosUpdated ? m_seekPosTs : (double)CvtPtsToMts(m_readPos)/1000;
+        int64_t readPos = m_seekPosUpdated ? m_seekPos : CvtPtsToMts(m_readPos);
         if (!OpenMedia(m_hParser))
         {
             m_logger->Log(Error) << "FAILED to re-open media when waking up this MediaReader!" << endl;
             return;
         }
-        m_seekPosTs = readPos;
+        m_seekPos = readPos;
         m_seekPosUpdated = true;
         m_inSeeking = true;
         StartAllThreads();
@@ -403,19 +399,19 @@ public:
         return m_readForward;
     }
 
-    bool ReadVideoFrame(double pos, ImGui::ImMat& m, bool& eof, bool wait) override
+    bool ReadVideoFrame(int64_t pos, ImGui::ImMat& m, bool& eof, bool wait) override
     {
         throw std::runtime_error("This interface is NOT SUPPORTED!");
     }
 
-    VideoFrame::Holder ReadVideoFrame(double pos, bool& eof, bool wait) override
+    VideoFrame::Holder ReadVideoFrame(int64_t pos, bool& eof, bool wait) override
     {
         if (!m_started)
         {
             m_errMsg = "This 'VideoReader' instance is NOT STARTED yet!";
             return nullptr;
         }
-        if (pos < 0 || (!m_isImage && pos >= m_vidDurTs))
+        if (pos < 0 || (!m_isImage && pos >= m_vidDurMts))
         {
             m_errMsg = "Invalid argument! 'pos' can NOT be negative or larger than video's duration.";
             eof = true;
@@ -447,7 +443,7 @@ public:
             return nullptr;
         }
 
-        int64_t pts = CvtMtsToPts(pos*1000);
+        int64_t pts = CvtMtsToPts(pos);
         if (m_readForward && pts > m_readPos || !m_readForward && pts < m_readPos)
             UpdateReadPos(pts);
         m_logger->Log(VERBOSE) << ">> TO READ frame: pts=" << pts << ", ts=" << pos << "." << endl;
@@ -512,7 +508,7 @@ public:
         return hVfrm;
     }
 
-    bool ReadAudioSamples(uint8_t* buf, uint32_t& size, double& pos, bool& eof, bool wait) override
+    bool ReadAudioSamples(uint8_t* buf, uint32_t& size, int64_t& pos, bool& eof, bool wait) override
     {
         throw runtime_error("VideoReader does NOT SUPPORT method ReadAudioSamples()!");
     }
@@ -535,6 +531,11 @@ public:
     bool IsVideoReader() const override
     {
         return true;
+    }
+
+    int64_t GetReadPos() const override
+    {
+        return m_readPos;
     }
 
     bool SetCacheDuration(double forwardDur, double backwardDur) override
@@ -730,7 +731,7 @@ private:
         m_vidAvStm = m_avfmtCtx->streams[m_vidStmIdx];
         m_vidStartTime = m_vidAvStm->start_time != AV_NOPTS_VALUE ? m_vidAvStm->start_time : 0;
         m_vidTimeBase = m_vidAvStm->time_base;
-        m_vidDurationPts = m_vidAvStm->duration != AV_NOPTS_VALUE ? m_vidAvStm->duration : CvtMtsToPts(m_vidDurTs*1000);
+        m_vidDurationPts = m_vidAvStm->duration != AV_NOPTS_VALUE ? m_vidAvStm->duration : CvtMtsToPts(m_vidDurMts);
         m_vidfrmIntvPts = av_rescale_q(1, av_inv_q(m_vidAvStm->r_frame_rate), m_vidAvStm->time_base);
 
         m_viddecOpenOpts.onlyUseSoftwareDecoder = !m_vidPreferUseHw;
@@ -794,7 +795,7 @@ private:
         m_prepared = true;
         {
             lock_guard<mutex> lk(m_seekPosLock);
-            int64_t readPos = !m_seekPosUpdated ? m_vidStartTime : CvtMtsToPts(m_seekPosTs*1000);
+            int64_t readPos = !m_seekPosUpdated ? m_vidStartTime : CvtMtsToPts(m_seekPos);
             UpdateReadPos(readPos);
         }
         return true;
@@ -873,8 +874,8 @@ private:
     struct VideoFrame_Impl : public VideoFrame
     {
     public:
-        VideoFrame_Impl(VideoReader_Impl* _owner, SelfFreeAVFramePtr _frmPtr, double _ts, int64_t _pts, int64_t _dur, bool _isHwfrm)
-            : owner(_owner), frmPtr(_frmPtr), ts(_ts), pts(_pts), dur(_dur), isHwfrm(_isHwfrm)
+        VideoFrame_Impl(VideoReader_Impl* _owner, SelfFreeAVFramePtr _frmPtr, int64_t _pos, int64_t _pts, int64_t _dur, bool _isHwfrm)
+            : owner(_owner), frmPtr(_frmPtr), pos(_pos), pts(_pts), dur(_dur), isHwfrm(_isHwfrm)
         {}
 
         virtual ~VideoFrame_Impl() {}
@@ -888,7 +889,7 @@ private:
             }
             if (!frmPtr)
             {
-                owner->m_logger->Log(Error) << "NULL avframe ptr at pos " << ts << "(" << pts << ")!" << endl;
+                owner->m_logger->Log(Error) << "NULL avframe ptr at pos " << pos << "(" << pts << ")!" << endl;
                 return false;
             }
 
@@ -902,8 +903,9 @@ private:
             }
 
             // avframe -> ImMat
+            double ts = (double)pos/1000;
             if (!owner->m_pFrmCvt->ConvertImage(frmPtr.get(), vmat, ts))
-                owner->m_logger->Log(Error) << "AVFrameToImMatConverter::ConvertImage() FAILED at pos " << ts << "(" << pts << ")!" << endl;
+                owner->m_logger->Log(Error) << "AVFrameToImMatConverter::ConvertImage() FAILED at pos " << pos << "(" << pts << ")!" << endl;
             frmPtr = nullptr;
             isHwfrm = false;
             frmPtrInUse = false;
@@ -914,14 +916,14 @@ private:
             return true;
         }
 
-        double Pos() const override { return ts; }
+        int64_t Pos() const override { return pos; }
         int64_t Pts() const override { return pts; }
         int64_t Dur() const override { return dur; }
 
         VideoReader_Impl* owner;
         SelfFreeAVFramePtr frmPtr;
         ImGui::ImMat vmat;
-        double ts;
+        int64_t pos;
         int64_t pts;
         int64_t dur{0};
         bool isHwfrm{false};
@@ -1015,7 +1017,7 @@ private:
                 {
                     seekOpTriggered = true;
                     needSeek = needFlushVfrmQ = true;
-                    seekPts = CvtMtsToPts(m_seekPosTs*1000);
+                    seekPts = CvtMtsToPts(m_seekPos);
                     m_seekPosUpdated = false;
                 }
             }
@@ -1107,7 +1109,7 @@ private:
                         if (seekPts < m_vidStartTime) seekPts = m_vidStartTime;
                         m_logger->Log(WARN) << "try to seek to earlier position " << seekPts << "!" << endl;
                         lock_guard<mutex> _lk(m_seekPosLock);
-                        m_seekPosTs = (double)CvtPtsToMts(seekPts)/1000;
+                        m_seekPos = CvtPtsToMts(seekPts);
                         m_inSeeking = true;
                         m_seekPosUpdated = true;
                         idleLoop = false;
@@ -1315,7 +1317,7 @@ private:
                         const int64_t dur = pAvfrm->pkt_duration;
 #endif
                         pAvfrm = nullptr;
-                        auto pVf = new VideoFrame_Impl(this, frmPtr, (double)CvtPtsToMts(pts)/1000, pts, dur, isHwfrm);
+                        auto pVf = new VideoFrame_Impl(this, frmPtr, CvtPtsToMts(pts), pts, dur, isHwfrm);
                         if (isStartFrame)
                         {
                             pVf->isStartFrame = true;
@@ -1447,7 +1449,7 @@ private:
                     }
                     if (remove)
                     {
-                        m_logger->Log(VERBOSE) << "   --------- Remove video frame: pts=" << pVf->pts << ", ts=" << pVf->ts << "." << endl;
+                        m_logger->Log(VERBOSE) << "   --------- Remove video frame: pts=" << pVf->pts << ", pos=" << pVf->pos << "." << endl;
                         iter = m_vfrmQ.erase(iter);
                         continue;
                     }
@@ -1475,7 +1477,7 @@ private:
                     SelfFreeAVFramePtr swfrm = AllocSelfFreeAVFramePtr();
                     if (!TransferHwFrameToSwFrame(swfrm.get(), pVf->frmPtr.get()))
                     {
-                        m_logger->Log(Error) << "TransferHwFrameToSwFrame() FAILED at pos " << pVf->ts << "(" << pVf->pts << ")! Discard this frame." << endl;
+                        m_logger->Log(Error) << "TransferHwFrameToSwFrame() FAILED at pos " << pVf->pos << "(" << pVf->pts << ")! Discard this frame." << endl;
                         pVf->frmPtr = nullptr;
                         lock_guard<mutex> _lk(m_vfrmQLock);
                         auto iter = find(m_vfrmQ.begin(), m_vfrmQ.end(), hVfrm);
@@ -1548,15 +1550,14 @@ private:
     pair<int32_t, int32_t> m_backwardCacheFrameCount{8, 1};
     mutex m_cacheRangeLock;
     // pair<double, ImGui::ImMat> m_prevReadResult;
-    pair<double, VideoFrame::Holder> m_prevReadResult;
+    pair<int64_t, VideoFrame::Holder> m_prevReadResult;
     bool m_readForward{true};
     bool m_seekPosUpdated{false};
-    double m_seekPosTs{0};
+    int64_t m_seekPos{0};
     bool m_inSeeking{false};
     mutex m_seekPosLock;
-    double m_vidfrmIntvMts{0};
     int64_t m_vidfrmIntvPts{0};
-    double m_vidDurTs{0};
+    int64_t m_vidDurMts{0};
 
     uint32_t m_outWidth{0}, m_outHeight{0};
     float m_ssWFactor{1.f}, m_ssHFactor{1.f};

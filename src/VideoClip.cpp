@@ -34,11 +34,11 @@ namespace MediaCore
 // Utility class 'FailedRead' is a helper class for counting and logging failed read
 struct FailedRead
 {
-    double pos{-1};
+    int64_t pos{-1};
     TimePoint t0, prevLogTp;
     int32_t failedCnt;
 
-    void CountFailedRead(double _pos)
+    void CountFailedRead(int64_t _pos)
     {
         if (pos != _pos)
             Reset(_pos);
@@ -46,7 +46,7 @@ struct FailedRead
             IncrCount();
     }
 
-    void Reset(double _pos)
+    void Reset(int64_t _pos)
     {
         pos = _pos;
         t0 = SysClock::now();
@@ -143,8 +143,8 @@ public:
         m_padding = (end-start)+startOffset+endOffset-m_srcDuration;
         m_hReader->SetDirection(forward);
         auto seekPos = startOffset;
-        if (seekPos >= m_srcDuration) seekPos = m_srcDuration-1;
-        if (!m_hReader->SeekTo((double)seekPos/1000))
+        if (seekPos >= m_srcDuration) seekPos = m_srcDuration;
+        if (!m_hReader->SeekTo(seekPos))
             throw runtime_error(m_hReader->GetError());
         bool suspend = readpos < -m_wakeupRange || readpos > Duration()+m_wakeupRange;
         if (!m_hReader->Start(suspend))
@@ -278,12 +278,12 @@ public:
         ImGui::ImMat image;
         // string filename = SysUtils::ExtractFileBaseName(m_hInfo->url);
         // AddCheckPoint(filename+", t0");
-        const double readPosTs = (double)(pos+m_startOffset)/1000;
-        auto hVf = m_hReader->ReadVideoFrame(readPosTs, eof);
+        const int64_t readPos = pos+m_startOffset;
+        auto hVf = m_hReader->ReadVideoFrame(readPos, eof);
         // m_logger->Log(DEBUG) << ">> Read vf @" << readPosTs << ", sucess=" << (bool)hVf << endl;
         if (!hVf)
         {
-            m_logger->Log(WARN) << "FAILED to read frame @ timeline-pos=" << pos << "ms, media-time=" << readPosTs << "s! Error is '" << m_hReader->GetError() << "'." << endl;
+            m_logger->Log(WARN) << "FAILED to read frame @ timeline-pos=" << pos << "ms, media-time=" << readPos << "ms! Error is '" << m_hReader->GetError() << "'." << endl;
             return;
         }
         hVf->GetMat(image);
@@ -313,13 +313,13 @@ public:
         if (m_hReader->IsSuspended())
             m_hReader->Wakeup();
 
-        const double readPosTs = (double)(pos+m_startOffset)/1000;
-        auto hVf = m_hReader->ReadVideoFrame(readPosTs, eof, wait);
+        const int64_t readPos = pos+m_startOffset;
+        auto hVf = m_hReader->ReadVideoFrame(readPos, eof, wait);
         if (!hVf)
         {
-            m_failedRead.CountFailedRead(readPosTs);
+            m_failedRead.CountFailedRead(readPos);
             ostringstream oss;
-            oss << "FAILED to read frame @ timeline-pos=" << pos << "ms, media-time=" << readPosTs << "s! Error is '" << m_hReader->GetError() << "'.";
+            oss << "FAILED to read frame @ timeline-pos=" << pos << "ms, media-time=" << readPos << "ms! Error is '" << m_hReader->GetError() << "'.";
             m_failedRead.LogAtInterval(5000, m_logger, DEBUG, oss.str());
         }
         return hVf;
@@ -353,10 +353,14 @@ public:
     void SeekTo(int64_t pos) override
     {
         if (pos < 0 || pos > Duration())
+        {
+            m_logger->Log(DEBUG) << "!! INVALID seek, pos=" << pos << " is out of the valid range [0, " << Duration() << "] !!" << endl;
             return;
+        }
         auto seekPos = pos+m_startOffset;
-        if (seekPos >= m_srcDuration) seekPos = m_srcDuration-1;
-        if (!m_hReader->SeekTo((double)seekPos/1000))
+        if (seekPos > m_srcDuration) seekPos = m_srcDuration;
+        m_logger->Log(DEBUG) << "-> VidClip.SeekTo(" << seekPos << ")" << endl;
+        if (!m_hReader->SeekTo(seekPos))
             throw runtime_error(m_hReader->GetError());
         m_eof = false;
     }
@@ -376,7 +380,9 @@ public:
         {
             const int64_t dur = Duration();
             int64_t seekPos = clipPos < 0 ? 0 : (clipPos > dur ? dur : clipPos);
-            m_hReader->SeekTo((double)(seekPos+m_startOffset)/1000);
+            seekPos += m_startOffset;
+            if (seekPos > m_srcDuration) seekPos = m_srcDuration;
+            m_hReader->SeekTo(seekPos);
             m_hReader->Wakeup();
             m_logger->Log(DEBUG) << ">>>> Clip#" << m_id <<" is WAKEUP." << endl;
         }

@@ -213,12 +213,6 @@ public:
         m_readSamples = pos*m_outSampleRate/1000;
         // update read iterators
         UpdateReadIterator(pos);
-        // seek clip position
-        for (auto hClip : m_clips)
-        {
-            auto clipPos = pos-hClip->Start();
-            hClip->SeekTo(clipPos);
-        }
     }
 
     AudioEffectFilter::Holder GetAudioEffectFilter() override
@@ -249,7 +243,7 @@ public:
             while (readSamples < toReadSamples && m_readOverlapIter != m_overlaps.end() && (*m_readOverlapIter)->Start() < readPosEnd)
             {
                 auto& ovlp = *m_readOverlapIter;
-                if (ovlp->Start() > readPosBegin)
+                if (readPosBegin < ovlp->Start())
                 {
                     toReadSamples2 = (ovlp->Start()-readPosBegin)*m_outSampleRate/1000;
                     if (toReadSamples2 > toReadSamples-readSamples)
@@ -268,6 +262,8 @@ public:
                 }
                 if (readSamples >= toReadSamples)
                     break;
+                if (readPosBegin <= ovlp->Start())
+                    ovlp->RearClip()->SeekTo(0);
 
                 bool eof = false;
                 toReadSamples2 = toReadSamples-readSamples;
@@ -328,6 +324,8 @@ public:
                 }
                 if (readSamples >= toReadSamples)
                     break;
+                if (readPosBegin >= ovlp->Start())
+                    ovlp->FrontClip()->SeekTo(ovlp->FrontClip()->Duration());
 
                 bool eof = false;
                 toReadSamples2 = toReadSamples-readSamples;
@@ -636,13 +634,13 @@ private:
     uint32_t ReadClipData(uint8_t** buf, uint32_t toReadSamples)
     {
         uint32_t readSamples = 0;
+        const int64_t readPos = m_readSamples*1000/m_outSampleRate;
         if (m_readForward)
         {
             if (m_readClipIter == m_clips.end())
                 return 0;
 
             do {
-                int64_t readPos = m_readSamples*1000/m_outSampleRate;
                 if (readPos < (*m_readClipIter)->Start())
                 {
                     int64_t skipSamples = (*m_readClipIter)->Start()*m_outSampleRate/1000-m_readSamples;
@@ -668,9 +666,11 @@ private:
                 }
 
                 bool eof = false;
+                bool iterChanged = false;
                 while (readPos >= (*m_readClipIter)->End())
                 {
                     m_readClipIter++;
+                    iterChanged = true;
                     if (m_readClipIter == m_clips.end())
                     {
                         eof = true;
@@ -679,6 +679,13 @@ private:
                 }
                 if (eof)
                     break;
+                if (iterChanged)
+                {
+                    auto& hClip = *m_readClipIter;
+                    auto seekPos = readPos-hClip->Start();
+                    if (seekPos < 0) seekPos = 0;
+                    hClip->SeekTo(seekPos);
+                }
 
                 uint32_t readClipSamples = toReadSamples-readSamples;
                 eof = false;
@@ -693,7 +700,16 @@ private:
                     m_readSamples += readClipSamples;
                 }
                 if (eof)
+                {
                     m_readClipIter++;
+                    if (m_readClipIter != m_clips.end())
+                    {
+                        auto& hClip = *m_readClipIter;
+                        auto seekPos = readPos-hClip->Start();
+                        if (seekPos < 0) seekPos = 0;
+                        hClip->SeekTo(seekPos);
+                    }
+                }
             }
             while (readSamples < toReadSamples && m_readClipIter != m_clips.end());
         }
@@ -701,12 +717,15 @@ private:
         {
             if (m_readSamples <= 0 || m_clips.empty())
                 return 0;
-            if (m_readClipIter == m_clips.end())
-                m_readClipIter--;
 
+            bool iterChanged = false;
+            if (m_readClipIter == m_clips.end())
+            {
+                m_readClipIter--;
+                iterChanged = true;
+            }
             do
             {
-                int64_t readPos = m_readSamples*1000/m_outSampleRate;
                 if (readPos > (*m_readClipIter)->End())
                 {
                     int64_t skipSamples = m_readSamples-(*m_readClipIter)->End()*m_outSampleRate/1000;
@@ -737,7 +756,10 @@ private:
                 while (readPos <= (*m_readClipIter)->Start())
                 {
                     if (m_readClipIter != m_clips.begin())
+                    {
                         m_readClipIter--;
+                        iterChanged = true;
+                    }
                     else
                     {
                         eof = true;
@@ -746,6 +768,13 @@ private:
                 }
                 if (eof)
                     break;
+                if (iterChanged)
+                {
+                    auto& hClip = *m_readClipIter;
+                    auto seekPos = readPos-hClip->Start();
+                    if (seekPos > hClip->Duration()) seekPos = hClip->Duration();
+                    hClip->SeekTo(seekPos);
+                }
 
                 uint32_t readClipSamples = toReadSamples-readSamples;
                 eof = false;
@@ -763,7 +792,13 @@ private:
                 if (eof)
                 {
                     if (m_readClipIter != m_clips.begin())
+                    {
                         m_readClipIter--;
+                        auto& hClip = *m_readClipIter;
+                        auto seekPos = readPos-hClip->Start();
+                        if (seekPos > hClip->Duration()) seekPos = hClip->Duration();
+                        hClip->SeekTo(seekPos);
+                    }
                     else
                         break;
                 }
@@ -786,7 +821,15 @@ private:
                     const AudioClip::Holder& hClip = *iter;
                     int64_t clipPos = pos-hClip->Start();
                     if (m_readClipIter == m_clips.end() && clipPos < hClip->Duration())
+                    {
                         m_readClipIter = iter;
+                        if (clipPos < 0) clipPos = 0;
+                        hClip->SeekTo(clipPos);
+                    }
+                    else if (clipPos >= 0 && clipPos <= hClip->Duration())
+                    {
+                        hClip->SeekTo(clipPos);
+                    }
                     iter++;
                 }
             }
@@ -816,9 +859,17 @@ private:
                 {
                     const AudioClip::Holder& hClip = *riter;
                     int64_t clipPos = pos-hClip->Start();
-                    hClip->SeekTo(clipPos);
                     if (m_readClipIter == m_clips.end() && clipPos >= 0)
+                    {
                         m_readClipIter = riter.base();
+                        m_readClipIter--;
+                        if (clipPos > hClip->Duration()) clipPos = hClip->Duration();
+                        hClip->SeekTo(clipPos);
+                    }
+                    else if (clipPos >= 0 && clipPos <= hClip->Duration())
+                    {
+                        hClip->SeekTo(clipPos);
+                    }
                     riter++;
                 }
             }
@@ -830,7 +881,10 @@ private:
                     const AudioOverlap::Holder& hOverlap = *riter;
                     int64_t overlapPos = pos-hOverlap->Start();
                     if (m_readOverlapIter == m_overlaps.end() && overlapPos >= 0)
+                    {
                         m_readOverlapIter = riter.base();
+                        m_readOverlapIter--;
+                    }
                     riter++;
                 }
             }

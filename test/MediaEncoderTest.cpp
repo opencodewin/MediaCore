@@ -50,7 +50,7 @@ int main(int argc, const char* argv[])
     uint32_t outAudChannels = 2;
     uint32_t outSampleRate = 44100;
     uint64_t outAudBitRate = 128*1000;
-    double maxEncodeDuration = 60;
+    int64_t maxEncodeDuration = 60*1000;
     bool videoOnly{false}, audioOnly{false};
 
     MediaParser::Holder hParser = MediaParser::CreateInstance();
@@ -125,7 +125,7 @@ int main(int argc, const char* argv[])
 
     bool vidInputEof = hVidReader ? false : true;
     bool audInputEof = hAudReader ? false : true;
-    double audpos = 0, vidpos = 0;
+    int64_t audpos = 0, vidpos = 0;
     uint32_t vidFrameCount = 0;
     ImGui::ImMat vmat, amat;
     while (!vidInputEof || !audInputEof)
@@ -133,7 +133,7 @@ int main(int argc, const char* argv[])
         if ((!vidInputEof && vidpos <= audpos) || audInputEof)
         {
             bool eof;
-            vidpos = (double)vidFrameCount*outFrameRate.den/outFrameRate.num;
+            vidpos = (int64_t)((double)vidFrameCount*outFrameRate.den/outFrameRate.num*1000);
             if (!hVidReader->ReadVideoFrame(vidpos, vmat, eof) && !eof)
             {
                 Log(Error) << "FAILED to read video frame! Error is '" << hVidReader->GetError() << "'." << endl;
@@ -144,7 +144,7 @@ int main(int argc, const char* argv[])
                 eof = true;
             if (!eof)
             {
-                vmat.time_stamp = vidpos;
+                vmat.time_stamp = (double)vidpos/1000;
                 if (!hEncoder->EncodeVideoFrame(vmat))
                 {
                     Log(Error) << "FAILED to encode video frame! Error is '" << hEncoder->GetError() << "'." << endl;

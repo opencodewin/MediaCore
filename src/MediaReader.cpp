@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <chrono>
 #include <list>
+#include <cmath>
 #include "MediaReader.h"
 #include "FFUtils.h"
 #include "SysUtils.h"
@@ -154,7 +155,7 @@ public:
         m_outClrFmt = outClrfmt;
         m_interpMode = rszInterp;
 
-        m_vidDurTs = vidStream->duration;
+        m_vidDurMts = (int64_t)(vidStream->duration*1000);
         AVRational timebase = { vidStream->timebase.num, vidStream->timebase.den };
         AVRational frameRate;
         if (Ratio::IsValid(vidStream->avgFrameRate))
@@ -199,7 +200,7 @@ public:
         m_outClrFmt = outClrfmt;
         m_interpMode = rszInterp;
 
-        m_vidDurTs = vidStream->duration;
+        m_vidDurMts = (int64_t)(vidStream->duration*1000);
         AVRational timebase = { vidStream->timebase.num, vidStream->timebase.den };
         AVRational frameRate;
         if (Ratio::IsValid(vidStream->avgFrameRate))
@@ -278,7 +279,7 @@ public:
         if (m_audStmIdx >= 0)
         {
             AudioStream* audStream = dynamic_cast<AudioStream*>(m_hMediaInfo->streams[m_audStmIdx].get());
-            m_audDurTs = audStream->duration;
+            m_audDurMts = (int64_t)(audStream->duration*1000);
             m_audFrmSize = (audStream->bitDepth>>3)*audStream->channels;
         }
 
@@ -361,11 +362,11 @@ public:
         m_prevReadImg.release();
         m_readForward = true;
         m_seekPosUpdated = false;
-        m_seekPosTs = 0;
+        m_seekPos = 0;
         m_vidfrmIntvMts = 0;
         m_hSeekPoints = nullptr;
-        m_vidDurTs = 0;
-        m_audDurTs = 0;
+        m_vidDurMts = 0;
+        m_audDurMts = 0;
         m_audFrmSize = 0;
         m_audReadTask = nullptr;
         m_audReadOffset = -1;
@@ -435,11 +436,11 @@ public:
         m_prevReadImg.release();
         m_readForward = true;
         m_seekPosUpdated = false;
-        m_seekPosTs = 0;
+        m_seekPos = 0;
         m_vidfrmIntvMts = 0;
         m_hSeekPoints = nullptr;
-        m_vidDurTs = 0;
-        m_audDurTs = 0;
+        m_vidDurMts = 0;
+        m_audDurMts = 0;
         m_audFrmSize = 0;
         m_audReadTask = nullptr;
         m_audReadOffset = -1;
@@ -468,7 +469,7 @@ public:
         }
     }
 
-    bool SeekTo(double ts) override
+    bool SeekTo(int64_t pos) override
     {
         if (!m_configured)
         {
@@ -476,14 +477,14 @@ public:
             return false;
         }
 
-        double stmdur = m_isVideoReader ? m_vidDurTs : m_audDurTs;
-        if (ts < 0 || ts > stmdur)
+        int64_t stmdur = m_isVideoReader ? m_vidDurMts : m_audDurMts;
+        if (pos < 0 || pos > stmdur)
         {
-            m_errMsg = "INVALID argument 'ts'! Can NOT be negative or exceed the duration.";
+            m_errMsg = "INVALID argument 'pos'! Can NOT be negative or exceed the duration.";
             return false;
         }
 
-        m_logger->Log(DEBUG) << "--> seek pos: " << ts << endl;
+        m_logger->Log(DEBUG) << "--> seek pos: " << pos << endl;
         if (m_isVideoReader)
         {
             bool deferred = true;
@@ -491,7 +492,7 @@ public:
             {
                 if (m_prepared)
                 {
-                    UpdateCacheWindow(ts);
+                    UpdateCacheWindow(pos);
                     deferred = false;
                 }
                 m_apiLock.unlock();
@@ -499,7 +500,7 @@ public:
             if (deferred)
             {
                 lock_guard<mutex> lk(m_seekPosLock);
-                m_seekPosTs = ts;
+                m_seekPos = pos;
                 m_seekPosUpdated = true;
             }
         }
@@ -508,14 +509,14 @@ public:
             lock_guard<recursive_mutex> lk(m_apiLock);
             if (m_prepared)
             {
-                UpdateCacheWindow(ts);
+                UpdateCacheWindow(pos);
                 m_audReadTask = nullptr;
                 m_audReadEof = false;
                 m_audReadNextTaskSeekPts0 = INT64_MIN;
             }
             else
             {
-                m_seekPosTs = ts;
+                m_seekPos = pos;
                 m_seekPosUpdated = true;
             }
         }
@@ -566,9 +567,9 @@ public:
         if (!m_quitThread || !m_isVideoReader || m_isImage)
             return;
 
-        double readPos = m_prevReadPos;
+        int64_t readPos = m_prevReadPos;
         if (m_seekPosUpdated)
-            readPos = m_seekPosTs;
+            readPos = m_seekPos;
 
         if (!OpenMedia(m_hParser))
         {
@@ -576,7 +577,7 @@ public:
             return;
         }
 
-        m_seekPosTs = readPos;
+        m_seekPos = readPos;
         m_seekPosUpdated = true;
 
         StartAllThreads();
@@ -597,7 +598,7 @@ public:
         return m_readForward;
     }
 
-    bool ReadVideoFrame(double pos, ImGui::ImMat& m, bool& eof, bool wait) override
+    bool ReadVideoFrame(int64_t pos, ImGui::ImMat& m, bool& eof, bool wait) override
     {
         m.release();
         if (!m_started)
@@ -605,7 +606,7 @@ public:
             m_errMsg = "This 'MediaReader' instance is NOT STARTED yet!";
             return false;
         }
-        if (pos < 0 || (!m_isImage && pos >= m_vidDurTs))
+        if (pos < 0 || (!m_isImage && pos >= m_vidDurMts))
         {
             m_errMsg = "Invalid argument! 'pos' can NOT be negative or larger than video's duration.";
             eof = true;
@@ -646,19 +647,19 @@ public:
         if (m_seekPosUpdated)
         {
             lock_guard<mutex> lk(m_seekPosLock);
-            UpdateCacheWindow(m_seekPosTs);
+            UpdateCacheWindow(m_seekPos);
             m_seekPosUpdated = false;
         }
 
         return success;
     }
 
-    VideoFrame::Holder ReadVideoFrame(double pos, bool& eof, bool wait) override
+    VideoFrame::Holder ReadVideoFrame(int64_t pos, bool& eof, bool wait) override
     {
         throw std::runtime_error("This interface is NOT SUPPORTED!");
     }
 
-    bool ReadAudioSamples(uint8_t* buf, uint32_t& size, double& pos, bool& eof, bool wait) override
+    bool ReadAudioSamples(uint8_t* buf, uint32_t& size, int64_t& pos, bool& eof, bool wait) override
     {
         if (!m_started)
         {
@@ -684,22 +685,22 @@ public:
         }
 
         bool success = ReadAudioSamples_Internal(buf, size, pos, wait);
-        double readDur = (double)size/m_outFrmSize/m_swrOutSampleRate;
-        double nextReadPos = pos+(m_readForward ? readDur : -readDur);
+        int64_t readDur = (int64_t)((double)size/m_outFrmSize/m_swrOutSampleRate*1000);
+        int64_t nextReadPos = pos+(m_readForward ? readDur : -readDur);
         if (nextReadPos < 0)
         {
             m_audReadEof = true;
             nextReadPos = 0;
         }
-        else if (nextReadPos > m_audDurTs)
+        else if (nextReadPos > m_audDurMts)
         {
             m_audReadEof = true;
-            nextReadPos = m_audDurTs;
+            nextReadPos = m_audDurMts;
         }
         UpdateCacheWindow(nextReadPos);
         eof = m_audReadEof;
         if (eof && size == 0)
-            pos = m_readForward ? m_audDurTs : 0;
+            pos = m_readForward ? m_audDurMts : 0;
 
         // m_logger->Log(WARN) << "> " << pos << endl;
         return success;
@@ -726,11 +727,11 @@ public:
         }
         uint32_t matBufSize = m.w*m.c*m.elemsize;
         uint32_t readSize = matBufSize;
-        double pos;
+        int64_t pos;
         bool ret = ReadAudioSamples((uint8_t*)m.data, readSize, pos, eof, wait);
         if (ret)
         {
-            m.time_stamp = pos;
+            m.time_stamp = (double)pos/1000;
             m.elempack = m_isOutFmtPlanar ? 1 : outCh;
             m.rate.num = m_swrOutSampleRate;
             m.rate.den = 1;
@@ -773,6 +774,11 @@ public:
             ResetBuildTask();
         }
         return true;
+    }
+
+    int64_t GetReadPos() const override
+    {
+        return m_cacheWnd.readPos;
     }
 
     pair<double, double> GetCacheDuration() const override
@@ -948,7 +954,7 @@ private:
             return false;
         }
 
-        m_seekPosTs = 0;
+        m_seekPos = 0;
         m_seekPosUpdated = true;
 
         return true;
@@ -1084,7 +1090,7 @@ private:
             m_audAvStm = m_avfmtCtx->streams[m_audStmIdx];
             if (m_audAvStm->start_time == INT64_MIN)
                 m_audAvStm->start_time = 0;
-            m_audDurPts = CvtAudMtsToPts((int64_t)(m_audDurTs*1000));
+            m_audDurPts = CvtAudMtsToPts(m_audDurMts);
             m_audioTaskPtsGap = av_rescale_q(1000, MILLISEC_TIMEBASE, m_audAvStm->time_base);  // set 1-second long task duration
 
             m_auddec = avcodec_find_decoder(m_audAvStm->codecpar->codec_id);
@@ -1104,7 +1110,7 @@ private:
         if (m_seekPosUpdated)
         {
             lock_guard<mutex> lk(m_seekPosLock);
-            UpdateCacheWindow(m_seekPosTs, true);
+            UpdateCacheWindow(m_seekPos, true);
             m_seekPosUpdated = false;
         }
         else
@@ -1266,18 +1272,18 @@ private:
         m_bldtskTimeOrder.clear();
     }
 
-    bool ReadVideoFrame_Internal(double ts, ImGui::ImMat& m, bool wait)
+    bool ReadVideoFrame_Internal(int64_t pos, ImGui::ImMat& m, bool wait)
     {
-        UpdateCacheWindow(ts);
+        UpdateCacheWindow(pos);
 
         bool foundBestFrame = false;
         VideoFrame* pBestCandidate = nullptr;
-        int64_t pts = CvtMtsToPts(ts*1000);
+        int64_t pts = CvtMtsToPts(pos);
         while (!m_close)
         {
             // check if the readPos has been changed by another operation, such as Seek.
             // if so, abort this read operation
-            if (m_cacheWnd.readPos != ts)
+            if (m_cacheWnd.readPos != pos)
                 return false;
 
             bool isBadTs = false;
@@ -1292,7 +1298,7 @@ private:
                     if (task->frmPtsRange.first <= pts && pts <= task->frmPtsRange.second )
                         targetTasks.push_back(task);
                     else if ((task->isFileBegin && task->demuxStopped && pts < task->frmPtsRange.first) ||
-                            (task->isFileEnd && task->demuxStopped && (int64_t)(ts*1000) >= CvtPtsToMts(task->frmPtsRange.second)+m_vidfrmIntvMts))
+                            (task->isFileEnd && task->demuxStopped && pos >= CvtPtsToMts(task->frmPtsRange.second)+m_vidfrmIntvMts))
                         isBadTs = true;
                 }
             }
@@ -1309,8 +1315,8 @@ private:
                 auto& vfAry = task->vfAry;
                 if (vfAry.empty())
                     continue;
-                auto iter = find_if(vfAry.begin(), vfAry.end(), [ts](auto& frm) {
-                    return frm.ts > ts;
+                auto iter = find_if(vfAry.begin(), vfAry.end(), [pos](auto& frm) {
+                    return frm.pos > pos;
                 });
                 if (iter != vfAry.end() && iter != vfAry.begin())
                 {
@@ -1322,14 +1328,14 @@ private:
                 else if (iter != vfAry.begin())
                 {
                     iter--;
-                    if (ts >= iter->ts && ts-iter->ts < m_vidfrmIntvMts/1000)
+                    if (pos >= iter->pos && pos-iter->pos < m_vidfrmIntvMts)
                     {
                         pBestCandidate = &(*iter);
                         foundBestFrame = true;
                         break;
                     }
                 }
-                if (!pBestCandidate || iter->ts >= ts && pBestCandidate->ts < ts || fabs(iter->ts-ts) < fabs(pBestCandidate->ts-ts))
+                if (!pBestCandidate || iter->pos >= pos && pBestCandidate->pos < pos || abs(iter->pos-pos) < abs(pBestCandidate->pos-pos))
                     pBestCandidate = &(*iter);
             }
 
@@ -1350,16 +1356,16 @@ private:
             if (!pBestCandidate->vmat.empty())
                 m = pBestCandidate->vmat;
             else
-                m.time_stamp = pBestCandidate->ts;
+                m.time_stamp = (double)pBestCandidate->pos/1000;
         }
         else
         {
-            m.time_stamp = ts;
+            m.time_stamp = (double)pos/1000;
         }
         return true;
     }
 
-    bool ReadAudioSamples_Internal(uint8_t* buf, uint32_t& size, double& pos, bool wait)
+    bool ReadAudioSamples_Internal(uint8_t* buf, uint32_t& size, int64_t& pos, bool wait)
     {
         uint8_t* dstptr = buf;
         const uint32_t outChannels = GetAudioOutChannels();
@@ -1408,9 +1414,9 @@ private:
                             CacheWindow currwnd = m_cacheWnd;
                             auto blockAlign = IsPlanar() ? m_outFrmSize/GetAudioOutChannels() : m_outFrmSize;
                             if (m_readForward)
-                                m_audReadOffset = (int)((currwnd.readPos-(double)CvtSwrPtsToMts(readfrm->pts)/1000)*m_swrOutSampleRate)*blockAlign;
+                                m_audReadOffset = (int)((double)(currwnd.readPos-CvtSwrPtsToMts(readfrm->pts))/1000*m_swrOutSampleRate)*blockAlign;
                             else
-                                m_audReadOffset = (int)(((double)CvtAudPtsToMts(readfrm->pts)/1000-currwnd.readPos)*m_swrOutSampleRate)*blockAlign;
+                                m_audReadOffset = (int)((double)(CvtAudPtsToMts(readfrm->pts)-currwnd.readPos)/1000*m_swrOutSampleRate)*blockAlign;
                             if (m_audReadOffset < 0)
                             {
                                 m_logger->Log(DEBUG) << "m_audReadOffset=" << m_audReadOffset << " < 0, WRONG!" << endl;
@@ -1421,10 +1427,10 @@ private:
                         }
                         if (!isPosSet)
                         {
-                            double startts = (double)CvtSwrPtsToMts(readfrm->pts)/1000;
-                            double offset = (double)m_audReadOffset/m_outFrmSize/m_swrOutSampleRate;
-                            if (IsPlanar()) offset *= outChannels;
-                            pos = m_readForward ? startts+offset : startts-offset;
+                            int64_t startPos = CvtSwrPtsToMts(readfrm->pts);
+                            auto blockAlign = IsPlanar() ? m_outFrmSize/GetAudioOutChannels() : m_outFrmSize;
+                            int64_t offset = (int64_t)((double)m_audReadOffset/blockAlign/m_swrOutSampleRate*1000);
+                            pos = m_readForward ? startPos+offset : startPos-offset;
                             isPosSet = true;
                         }
                         uint32_t dataSizePerPlan = readfrm->nb_samples*GetAudioOutFrameSize();
@@ -1531,7 +1537,7 @@ private:
     {
         SelfFreeAVFramePtr decfrm;
         ImGui::ImMat vmat;
-        double ts;
+        int64_t pos;
     };
 
     struct AudioFrame
@@ -1539,7 +1545,7 @@ private:
         SelfFreeAVFramePtr decfrm;
         SelfFreeAVFramePtr fwdfrm;
         SelfFreeAVFramePtr bwdfrm;
-        double ts;
+        int64_t pos;
         int64_t pts;
         bool endOfGop{false};
         // int64_t frmDur;
@@ -1547,9 +1553,9 @@ private:
 
     struct CacheWindow
     {
-        double readPos;
-        double cacheBeginTs;
-        double cacheEndTs;
+        int64_t readPos;
+        int64_t cacheBeginMts;
+        int64_t cacheEndMts;
         int64_t seekPosShow;
         int64_t seekPos00;
         int64_t seekPos10;
@@ -1826,7 +1832,7 @@ private:
 
     bool EnqueueSnapshotAVFrame(AVFrame* frm)
     {
-        double ts = (double)CvtPtsToMts(frm->pts)/1000;
+        int64_t pos = CvtPtsToMts(frm->pts);
         lock_guard<mutex> lk(m_bldtskByPriLock);
         GopDecodeTaskHolder enqTask;
         bool foundMatchPacket = false;
@@ -1844,12 +1850,12 @@ private:
         }
         if (!enqTask)
         {
-            m_logger->Log(DEBUG) << "Dropping VF ts=" << ts << ", pts=" << frm->pts << " due to no matching task is found." << endl;
+            m_logger->Log(DEBUG) << "Dropping VF pos=" << pos << ", pts=" << frm->pts << " due to no matching task is found." << endl;
             return false;
         }
         if (!foundMatchPacket)
         {
-            m_logger->Log(WARN) << "VF ts=" << ts << ", pts=" << frm->pts << " can fit into task startPts=[" 
+            m_logger->Log(WARN) << "VF pos=" << pos << ", pts=" << frm->pts << " can fit into task startPts=[" 
                     << enqTask->seekPts.first << "(" << MillisecToString(CvtPtsToMts(enqTask->seekPts.first)) << ")"
                     << ", endPts=" << enqTask->seekPts.second << "(" << MillisecToString(CvtPtsToMts(enqTask->seekPts.second)) << ")]"
                     << ", frmPtsRnage=[" << enqTask->frmPtsRange.first << ", " << enqTask->frmPtsRange.second << "]"
@@ -1857,7 +1863,7 @@ private:
         }
 
         VideoFrame vf;
-        vf.ts = ts;
+        vf.pos = pos;
         vf.decfrm = CloneSelfFreeAVFramePtr(frm);
         if (!vf.decfrm)
         {
@@ -1873,12 +1879,12 @@ private:
         }
         else
         {
-            auto vfRvsIter = find_if(enqTask->vfAry.rbegin(), enqTask->vfAry.rend(), [ts] (auto& vf) {
-                return vf.ts <= ts;
+            auto vfRvsIter = find_if(enqTask->vfAry.rbegin(), enqTask->vfAry.rend(), [pos] (auto& vf) {
+                return vf.pos <= pos;
             });
-            if (vfRvsIter != enqTask->vfAry.rend() && vfRvsIter->ts == ts)
+            if (vfRvsIter != enqTask->vfAry.rend() && vfRvsIter->pos == pos)
             {
-                m_logger->Log(DEBUG) << "Found duplicated VF#" << ts << ", dropping this VF. pts=" << frm->pts
+                m_logger->Log(DEBUG) << "Found duplicated VF#" << pos << ", dropping this VF. pts=" << frm->pts
                     << ", t=" << MillisecToString(CvtPtsToMts(frm->pts)) << "." << endl;
             }
             else
@@ -2091,8 +2097,8 @@ private:
                 {
                     if (vf.decfrm)
                     {
-                        if (!m_pFrmCvt->ConvertImage(vf.decfrm.get(), vf.vmat, vf.ts))
-                            m_logger->Log(Error) << "FAILED to convert AVFrame to ImGui::ImMat for '" << m_hParser->GetUrl() << "' @pos " << vf.ts << "sec! Error is '" << m_pFrmCvt->GetError() << "'." << endl;
+                        if (!m_pFrmCvt->ConvertImage(vf.decfrm.get(), vf.vmat, (double)vf.pos/1000))
+                            m_logger->Log(Error) << "FAILED to convert AVFrame to ImGui::ImMat for '" << m_hParser->GetUrl() << "' @pos " << vf.pos << "sec! Error is '" << m_pFrmCvt->GetError() << "'." << endl;
                         vf.decfrm = nullptr;
                         currTask->frmCnt--;
                         if (currTask->frmCnt < 0)
@@ -2115,7 +2121,7 @@ private:
 
     bool EnqueueAudioAVFrame(AVFrame* frm)
     {
-        double ts = (double)CvtPtsToMts(frm->pts)/1000;
+        int64_t pos = CvtPtsToMts(frm->pts);
         lock_guard<mutex> lk(m_bldtskByPriLock);
         auto iter = find_if(m_bldtskPriOrder.begin(), m_bldtskPriOrder.end(), [frm](const GopDecodeTaskHolder& task) {
             return frm->pts >= task->seekPts.first && frm->pts < task->seekPts.second;
@@ -2123,7 +2129,7 @@ private:
         if (iter != m_bldtskPriOrder.end())
         {
             AudioFrame af;
-            af.ts = ts;
+            af.pos = pos;
             af.pts = frm->pts;
             af.decfrm = CloneSelfFreeAVFramePtr(frm);
             if (!af.decfrm)
@@ -2154,12 +2160,12 @@ private:
             }
             else
             {
-                auto afRvsIter = find_if(task->afAry.rbegin(), task->afAry.rend(), [ts](const AudioFrame& af) {
-                    return af.ts <= ts;
+                auto afRvsIter = find_if(task->afAry.rbegin(), task->afAry.rend(), [pos](const AudioFrame& af) {
+                    return af.pos <= pos;
                 });
-                if (afRvsIter != task->afAry.rend() && afRvsIter->ts == ts)
+                if (afRvsIter != task->afAry.rend() && afRvsIter->pos == pos)
                 {
-                    m_logger->Log(DEBUG) << "Found duplicated AF#" << ts << ", dropping this AF. pts=" << frm->pts
+                    m_logger->Log(DEBUG) << "Found duplicated AF#" << pos << ", dropping this AF. pts=" << frm->pts
                         << ", t=" << MillisecToString(CvtPtsToMts(frm->pts)) << "." << endl;
                 }
                 else
@@ -2173,7 +2179,7 @@ private:
         }
         else
         {
-            m_logger->Log(DEBUG) << "Dropping AF#" << ts << " due to no matching task is found." << endl;
+            m_logger->Log(DEBUG) << "Dropping AF#" << pos << " due to no matching task is found." << endl;
         }
         return false;
     }
@@ -2562,9 +2568,9 @@ private:
         return bwdfrm;
     }
 
-    pair<int64_t, int64_t> GetSeekPosByTs(double ts)
+    pair<int64_t, int64_t> GetSeekPtsByMts(int64_t pos)
     {
-        int64_t targetPts = CvtMtsToPts((int64_t)(ts*1000));
+        int64_t targetPts = CvtMtsToPts(pos);
         auto iter = find_if(m_hSeekPoints->begin(), m_hSeekPoints->end(),
             [targetPts](int64_t keyPts) { return keyPts > targetPts; });
         if (iter != m_hSeekPoints->begin())
@@ -2574,41 +2580,41 @@ private:
         return { first, second };
     }
 
-    void UpdateCacheWindow(double readPos, bool forceUpdate = false)
+    void UpdateCacheWindow(int64_t readPos, bool forceUpdate = false)
     {
         if (readPos == m_cacheWnd.readPos && !forceUpdate)
             return;
 
-        const double beforeCacheDur = m_readForward ? m_backwardCacheDur : m_forwardCacheDur;
-        const double afterCacheDur = m_readForward ? m_forwardCacheDur : m_backwardCacheDur;
-        double cacheBeginTs, cacheEndTs;
+        const int64_t beforeCacheDur = m_readForward ? (int64_t)(m_backwardCacheDur*1000) : (int64_t)(m_forwardCacheDur*1000);
+        const int64_t afterCacheDur = m_readForward ? (int64_t)(m_forwardCacheDur*1000) : (int64_t)(m_backwardCacheDur*1000);
+        int64_t cacheBeginMts, cacheEndMts;
         int64_t seekPosRead, seekPos00, seekPos10;
         if (m_isVideoReader)
         {
-            cacheBeginTs = readPos > beforeCacheDur ? readPos-beforeCacheDur : 0;
-            cacheEndTs = readPos+afterCacheDur < m_vidDurTs ? readPos+afterCacheDur : m_vidDurTs;
-            seekPosRead = GetSeekPosByTs(readPos).first;
-            seekPos00 = GetSeekPosByTs(cacheBeginTs).first;
-            seekPos10 = GetSeekPosByTs(cacheEndTs).first;
+            cacheBeginMts = readPos > beforeCacheDur ? readPos-beforeCacheDur : 0;
+            cacheEndMts = readPos+afterCacheDur < m_vidDurMts ? readPos+afterCacheDur : m_vidDurMts;
+            seekPosRead = GetSeekPtsByMts(readPos).first;
+            seekPos00 = GetSeekPtsByMts(cacheBeginMts).first;
+            seekPos10 = GetSeekPtsByMts(cacheEndMts).first;
         }
         else
         {
-            cacheBeginTs = floor(readPos-beforeCacheDur);
-            if (cacheBeginTs < 0) cacheBeginTs = 0;
-            cacheEndTs = ceil(readPos+afterCacheDur);
-            if (cacheEndTs > m_audDurTs) cacheEndTs = ceil(m_audDurTs);
-            seekPosRead = CvtMtsToPts(floor(readPos)*1000);
-            seekPos00 = CvtMtsToPts(cacheBeginTs*1000);
-            seekPos10 = CvtMtsToPts((cacheEndTs-1)*1000);
+            cacheBeginMts = floor((double)(readPos-beforeCacheDur)/1000)*1000;
+            if (cacheBeginMts < 0) cacheBeginMts = 0;
+            cacheEndMts = ceil((double)(readPos+afterCacheDur)/1000)*1000;
+            if (cacheEndMts > m_audDurMts) cacheEndMts = ceil(m_audDurMts);
+            seekPosRead = CvtMtsToPts(readPos);
+            seekPos00 = CvtMtsToPts(cacheBeginMts);
+            seekPos10 = CvtMtsToPts(cacheEndMts-1000);
         }
         CacheWindow cacheWnd = m_cacheWnd;
         if (seekPosRead != cacheWnd.seekPosShow || seekPos00 != cacheWnd.seekPos00 || seekPos10 != cacheWnd.seekPos10 || forceUpdate)
         {
-            m_cacheWnd = { readPos, cacheBeginTs, cacheEndTs, seekPosRead, seekPos00, seekPos10 };
+            m_cacheWnd = { readPos, cacheBeginMts, cacheEndMts, seekPosRead, seekPos00, seekPos10 };
             m_needUpdateBldtsk = true;
         }
         m_cacheWnd.readPos = readPos;
-        m_logger->Log(VERBOSE) << "Cache window updated: { readPos=" << readPos << ", cacheBeginTs=" << m_cacheWnd.cacheBeginTs << ", cacheEndTs=" << m_cacheWnd.cacheEndTs
+        m_logger->Log(VERBOSE) << "Cache window updated: { readPos=" << readPos << ", cacheBeginTs=" << m_cacheWnd.cacheBeginMts << ", cacheEndTs=" << m_cacheWnd.cacheEndMts
                 << ", seekPosShow=" << m_cacheWnd.seekPosShow << ", seekPos00=" << m_cacheWnd.seekPos00 << ", seekPos10=" << m_cacheWnd.seekPos10 << " }" << endl;
     }
 
@@ -2639,7 +2645,7 @@ private:
             m_bldtskTimeOrder.clear();
         }
 
-        int64_t searchPts = CvtMtsToPts((int64_t)(currwnd.cacheBeginTs*1000));
+        int64_t searchPts = CvtMtsToPts(currwnd.cacheBeginMts);
         auto iter = find_if(m_hSeekPoints->begin(), m_hSeekPoints->end(),
             [searchPts](int64_t keyPts) { return keyPts > searchPts; });
         if (iter != m_hSeekPoints->begin())
@@ -2652,10 +2658,10 @@ private:
             task->seekPts = { first, second };
             m_bldtskTimeOrder.push_back(task);
             searchPts = second;
-        } while (searchPts < INT64_MAX && (double)CvtPtsToMts(searchPts)/1000 <= currwnd.cacheEndTs);
+        } while (searchPts < INT64_MAX && CvtPtsToMts(searchPts) <= currwnd.cacheEndMts);
         m_bldtskSnapWnd = currwnd;
-        m_logger->Log(DEBUG) << "^^^ Initialized build task, pos = " << TimestampToString(m_bldtskSnapWnd.readPos) << ", window = ["
-            << TimestampToString(m_bldtskSnapWnd.cacheBeginTs) << " ~ " << TimestampToString(m_bldtskSnapWnd.cacheEndTs) << "]." << endl;
+        m_logger->Log(DEBUG) << "^^^ Initialized build task, pos = " << MillisecToString(m_bldtskSnapWnd.readPos) << ", window = ["
+            << MillisecToString(m_bldtskSnapWnd.cacheBeginMts) << " ~ " << MillisecToString(m_bldtskSnapWnd.cacheEndMts) << "]." << endl;
 
         UpdateBuildTaskByPriority();
     }
@@ -2664,17 +2670,17 @@ private:
     {
         CacheWindow currwnd = m_cacheWnd;
         bool taskListChanged = false;
-        if (currwnd.cacheBeginTs != m_bldtskSnapWnd.cacheBeginTs || currwnd.cacheEndTs != m_bldtskSnapWnd.cacheEndTs)
+        if (currwnd.cacheBeginMts != m_bldtskSnapWnd.cacheBeginMts || currwnd.cacheEndMts != m_bldtskSnapWnd.cacheEndMts)
         {
             m_logger->Log(DEBUG) << "^^^ Updating build task, index changed from ("
-                << TimestampToString(m_bldtskSnapWnd.cacheBeginTs) << " ~ " << TimestampToString(m_bldtskSnapWnd.cacheEndTs) << ") to ("
-                << TimestampToString(currwnd.cacheBeginTs) << " ~ " << TimestampToString(currwnd.cacheEndTs) << ")." << endl;
+                << MillisecToString(m_bldtskSnapWnd.cacheBeginMts) << " ~ " << MillisecToString(m_bldtskSnapWnd.cacheEndMts) << ") to ("
+                << MillisecToString(currwnd.cacheBeginMts) << " ~ " << MillisecToString(currwnd.cacheEndMts) << ")." << endl;
             lock_guard<mutex> lk(m_bldtskByTimeLock);
-            if (currwnd.cacheBeginTs > m_bldtskSnapWnd.cacheBeginTs ||
-                (currwnd.cacheBeginTs == m_bldtskSnapWnd.cacheBeginTs && currwnd.cacheEndTs > m_bldtskSnapWnd.cacheEndTs))
+            if (currwnd.cacheBeginMts > m_bldtskSnapWnd.cacheBeginMts ||
+                (currwnd.cacheBeginMts == m_bldtskSnapWnd.cacheBeginMts && currwnd.cacheEndMts > m_bldtskSnapWnd.cacheEndMts))
             {
-                int64_t beginPts = CvtMtsToPts((int64_t)(currwnd.cacheBeginTs*1000));
-                int64_t endPts = CvtMtsToPts((int64_t)(currwnd.cacheEndTs*1000))+1;
+                int64_t beginPts = CvtMtsToPts(currwnd.cacheBeginMts);
+                int64_t endPts = CvtMtsToPts(currwnd.cacheEndMts)+1;
                 if (currwnd.seekPos00 <= m_bldtskSnapWnd.seekPos10)
                 {
                     auto iter = m_bldtskTimeOrder.begin();
@@ -2726,8 +2732,8 @@ private:
             }
             else //(currwnd.cacheBeginTs < m_bldtskSnapWnd.cacheBeginTs)
             {
-                int64_t beginPts = CvtMtsToPts((int64_t)(currwnd.cacheBeginTs*1000));
-                int64_t endPts = CvtMtsToPts((int64_t)(currwnd.cacheEndTs*1000))+1;
+                int64_t beginPts = CvtMtsToPts(currwnd.cacheBeginMts);
+                int64_t endPts = CvtMtsToPts(currwnd.cacheEndMts)+1;
                 if (currwnd.seekPos10 >= m_bldtskSnapWnd.seekPos00)
                 {
                     // buildIndex1 = m_bldtskSnapWnd.cacheIdx0-1;
@@ -2829,8 +2835,8 @@ private:
             m_bldtskTimeOrder.clear();
         }
 
-        int64_t beginPts = CvtMtsToPts((int64_t)(currwnd.cacheBeginTs*1000));
-        int64_t endPts = CvtMtsToPts((int64_t)(currwnd.cacheEndTs*1000));
+        int64_t beginPts = CvtMtsToPts(currwnd.cacheBeginMts);
+        int64_t endPts = CvtMtsToPts(currwnd.cacheEndMts);
         int64_t pts0, pts1;
         pts0 = beginPts;
         while (pts0 < endPts)
@@ -2860,14 +2866,14 @@ private:
         if (currwnd.seekPos00 != m_bldtskSnapWnd.seekPos00 || currwnd.seekPos10 != m_bldtskSnapWnd.seekPos10)
         {
             m_logger->Log(DEBUG) << "^^^ Updating build task, index changed from ("
-                << TimestampToString(m_bldtskSnapWnd.cacheBeginTs) << " ~ " << TimestampToString(m_bldtskSnapWnd.cacheEndTs) << ") to ("
-                << TimestampToString(currwnd.cacheBeginTs) << " ~ " << TimestampToString(currwnd.cacheEndTs) << ")." << endl;
+                << MillisecToString(m_bldtskSnapWnd.cacheBeginMts) << " ~ " << MillisecToString(m_bldtskSnapWnd.cacheEndMts) << ") to ("
+                << MillisecToString(currwnd.cacheBeginMts) << " ~ " << MillisecToString(currwnd.cacheEndMts) << ")." << endl;
             lock_guard<mutex> lk(m_bldtskByTimeLock);
             if (currwnd.seekPos00 > m_bldtskSnapWnd.seekPos00 ||
                 (currwnd.seekPos00 == m_bldtskSnapWnd.seekPos00 && currwnd.seekPos10 > m_bldtskSnapWnd.seekPos10))
             {
-                int64_t beginPts = CvtMtsToPts((int64_t)(currwnd.cacheBeginTs*1000));
-                int64_t endPts = CvtMtsToPts((int64_t)(currwnd.cacheEndTs*1000));
+                int64_t beginPts = CvtMtsToPts(currwnd.cacheBeginMts);
+                int64_t endPts = CvtMtsToPts(currwnd.cacheEndMts);
                 if (currwnd.seekPos00 <= m_bldtskSnapWnd.seekPos00)
                 {
                     beginPts = m_bldtskTimeOrder.back()->seekPts.second;
@@ -2909,8 +2915,8 @@ private:
             }
             else //(currwnd.cacheBeginTs < m_bldtskSnapWnd.cacheBeginTs)
             {
-                int64_t beginPts = CvtMtsToPts((int64_t)(currwnd.cacheBeginTs*1000));
-                int64_t endPts = CvtMtsToPts((int64_t)(currwnd.cacheEndTs*1000));
+                int64_t beginPts = CvtMtsToPts(currwnd.cacheBeginMts);
+                int64_t endPts = CvtMtsToPts(currwnd.cacheEndMts);
                 if (currwnd.seekPos10 >= m_bldtskSnapWnd.seekPos10)
                 {
                     endPts = m_bldtskTimeOrder.front()->seekPts.first;
@@ -2997,17 +3003,61 @@ private:
                 }
                 else
                 {
-                    m_audReadTask = nullptr;
-                    m_audReadOffset = -1;
+                    if (!m_bldtskPriOrder.empty())
+                    {
+                        if (m_readForward)
+                        {
+                            auto& tailTask = m_bldtskPriOrder.back();
+                            if (m_audReadNextTaskSeekPts0 > tailTask->seekPts.first && tailTask->isFileEnd)
+                                m_audReadEof = true;
+                            else
+                            {
+                                auto& headTask = m_bldtskPriOrder.front();
+                                if (m_audReadNextTaskSeekPts0 < headTask->seekPts.first && headTask->isFileBegin)
+                                {
+                                    m_audReadTask = headTask;
+                                    m_audReadOffset = 0;
+                                    m_audReadNextTaskSeekPts0 = m_audReadTask->seekPts.second;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            auto& tailTask = m_bldtskPriOrder.front();
+                            if (m_audReadNextTaskSeekPts0 < tailTask->seekPts.first && tailTask->isFileBegin)
+                                m_audReadEof = true;
+                            else
+                            {
+                                auto& headTask = m_bldtskPriOrder.back();
+                                if (m_audReadNextTaskSeekPts0 > headTask->seekPts.first && headTask->isFileEnd)
+                                {
+                                    m_audReadTask = headTask;
+                                    m_audReadOffset = 0;
+                                    m_audReadNextTaskSeekPts0 = m_audReadTask->seekPts.second;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        m_audReadTask = nullptr;
+                        m_audReadOffset = -1;
+                    }
                 }
             }
             else
             {
                 CacheWindow currwnd = m_cacheWnd;
-                const int64_t readPosPts = CvtAudMtsToPts((int64_t)(currwnd.readPos*1000));
-                auto iter3 = find_if(m_bldtskPriOrder.begin(), m_bldtskPriOrder.end(), [this, readPosPts](const GopDecodeTaskHolder& task) {
-                    return readPosPts >= task->seekPts.first && readPosPts < task->seekPts.second;
-                });
+                const int64_t readPosPts = CvtAudMtsToPts(currwnd.readPos);
+                auto iter3 = m_bldtskPriOrder.end();
+                if (m_readForward)
+                    iter3 = find_if(m_bldtskPriOrder.begin(), m_bldtskPriOrder.end(), [this, readPosPts](const GopDecodeTaskHolder& task) {
+                        return readPosPts >= task->seekPts.first && readPosPts < task->seekPts.second;
+                    });
+                else
+                    iter3 = find_if(m_bldtskPriOrder.begin(), m_bldtskPriOrder.end(), [this, readPosPts](const GopDecodeTaskHolder& task) {
+                        return readPosPts > task->seekPts.first && readPosPts <= task->seekPts.second;
+                    });
                 if (iter3 != m_bldtskPriOrder.end())
                 {
                     m_audReadTask = *iter3;
@@ -3016,9 +3066,47 @@ private:
                 }
                 else
                 {
-                    // m_logger->Log(WARN) << "'m_audReadTask' CANNOT be found in 'm_bldtskPriOrder'!" << endl;
-                    m_audReadTask = nullptr;
-                    m_audReadOffset = -1;
+                    if (!m_bldtskPriOrder.empty())
+                    {
+                        if (m_readForward)
+                        {
+                            auto& tailTask = m_bldtskPriOrder.back();
+                            if (readPosPts > tailTask->seekPts.first && tailTask->isFileEnd)
+                                m_audReadEof = true;
+                            else
+                            {
+                                auto& headTask = m_bldtskPriOrder.front();
+                                if (readPosPts < headTask->seekPts.first && headTask->isFileBegin)
+                                {
+                                    m_audReadTask = headTask;
+                                    m_audReadOffset = 0;
+                                    m_audReadNextTaskSeekPts0 = m_audReadTask->seekPts.second;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            auto& tailTask = m_bldtskPriOrder.front();
+                            if (readPosPts < tailTask->seekPts.first && tailTask->isFileBegin)
+                                m_audReadEof = true;
+                            else
+                            {
+                                auto& headTask = m_bldtskPriOrder.back();
+                                if (readPosPts > headTask->seekPts.first && headTask->isFileEnd)
+                                {
+                                    m_audReadTask = headTask;
+                                    m_audReadOffset = 0;
+                                    m_audReadNextTaskSeekPts0 = m_audReadTask->seekPts.second;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // m_logger->Log(WARN) << "'m_audReadTask' CANNOT be found in 'm_bldtskPriOrder'!" << endl;
+                        m_audReadTask = nullptr;
+                        m_audReadOffset = -1;
+                    }
                 }
             }
         }
@@ -3047,8 +3135,10 @@ private:
                     m_audReadNextTaskSeekPts0 = INT64_MIN;
                 }
                 else
+                {
                     m_audReadNextTaskSeekPts0 = m_readForward ? m_bldtskPriOrder.back()->seekPts.second
                         : m_bldtskPriOrder.front()->seekPts.first-m_audioTaskPtsGap;
+                }
             }
             else
             {
@@ -3251,11 +3341,11 @@ private:
     // release resource thread
     thread m_releaseThread;
 
-    double m_prevReadPos{0};
+    int64_t m_prevReadPos{0};
     ImGui::ImMat m_prevReadImg;
     bool m_readForward{true};
     bool m_seekPosUpdated{false};
-    double m_seekPosTs{0};
+    int64_t m_seekPos{0};
     mutex m_seekPosLock;
     double m_vidfrmIntvMts{0};
     int64_t m_vidfrmIntvPts{0};
@@ -3270,8 +3360,8 @@ private:
     CacheWindow m_cacheWnd;
     CacheWindow m_bldtskSnapWnd;
     bool m_needUpdateBldtsk{false};
-    double m_vidDurTs{0};
-    double m_audDurTs{0};
+    int64_t m_vidDurMts{0};
+    int64_t m_audDurMts{0};
     int64_t m_audDurPts{0};
     uint32_t m_audFrmSize{0};
     GopDecodeTaskHolder m_audReadTask;
@@ -3320,9 +3410,9 @@ public:
         return true;
     }
 
-    double Pos() const override
+    int64_t Pos() const override
     {
-        return m_vmat.time_stamp;
+        return (int64_t)(m_vmat.time_stamp*1000);
     }
 
     int64_t Pts() const override

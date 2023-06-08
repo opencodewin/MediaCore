@@ -78,7 +78,7 @@ public:
 #endif
         m_outSamplesPerFrame = outSamplesPerFrame;
         m_samplePos = 0;
-        m_readPos = 0;
+        m_readSamples = 0;
         m_frameSize = outChannels*4;  // for now, output sample format only supports float32 data type, thus 4 bytes per sample.
         m_isTrackOutputPlanar = av_sample_fmt_is_planar(m_trackOutSmpfmt);
         m_matAvfrmCvter = new AudioImMatAVFrameConverter();
@@ -266,7 +266,7 @@ public:
         return delTrack;
     }
 
-    bool SetDirection(bool forward) override
+    bool SetDirection(bool forward, int64_t pos) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (m_readForward == forward)
@@ -278,10 +278,10 @@ public:
         for (auto& track : m_tracks)
             track->SetDirection(forward);
 
-        int64_t readPos = ReadPos();
+        int64_t seekPos = pos >= 0 ? pos : ReadPos();
         for (auto track : m_tracks)
-            track->SeekTo(readPos);
-        m_samplePos = readPos*m_outSampleRate/1000;
+            track->SeekTo(seekPos);
+        m_samplePos = seekPos*m_outSampleRate/1000;
 
         m_outputMats.clear();
         ReleaseMixer();
@@ -334,7 +334,7 @@ public:
             m_seekPosChanged = true;
             m_inSeeking = true;
             m_samplePos = pos*m_outSampleRate/1000;
-            m_readPos = pos;
+            m_readSamples = m_samplePos;
         }
         return true;
     }
@@ -407,7 +407,7 @@ public:
 
         amats = m_outputMats.front();
         m_outputMats.pop_front();
-        m_readPos += (int64_t)amats[0].frame.w*1000/m_outSampleRate;
+        m_readSamples += m_readForward ? (int64_t)(amats[0].frame.w) : -(int64_t)(amats[0].frame.w);
         eof = m_eof;
         return true;
     }
@@ -542,7 +542,7 @@ public:
 
     int64_t ReadPos() const override
     {
-        return m_readPos;
+        return m_readSamples*1000/m_outSampleRate;
     }
 
     string GetError() const override
@@ -929,7 +929,7 @@ private:
     uint32_t m_frameSize{0};
     uint32_t m_outSamplesPerFrame{1024};
     int64_t m_outMtsPerFrame{0};
-    int64_t m_readPos{0};
+    int64_t m_readSamples{0};
     bool m_readForward{true};
     bool m_eof{false};
     bool m_probeMode{false};
@@ -999,7 +999,7 @@ MultiTrackAudioReader::Holder MultiTrackAudioReader_Impl::CloneAndConfigure(uint
     // seek to 0
     newInstance->m_outputMats.clear();
     newInstance->m_samplePos = 0;
-    newInstance->m_readPos = 0;
+    newInstance->m_readSamples = 0;
     for (auto track : newInstance->m_tracks)
         track->SeekTo(0);
 

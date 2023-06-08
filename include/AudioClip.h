@@ -67,6 +67,8 @@ namespace MediaCore
         virtual void SetFilter(AudioFilter::Holder filter) = 0;
         virtual AudioFilter::Holder GetFilter() const = 0;
 
+        virtual void SetLogLevel(Logger::Level l) = 0;
+
         friend std::ostream& operator<<(std::ostream& os, Holder hClip);
     };
 

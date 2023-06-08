@@ -41,7 +41,7 @@ struct MultiTrackAudioReader
     virtual AudioTrack::Holder AddTrack(int64_t trackId) = 0;
     virtual AudioTrack::Holder RemoveTrackByIndex(uint32_t index) = 0;
     virtual AudioTrack::Holder RemoveTrackById(int64_t trackId) = 0;
-    virtual bool SetDirection(bool forward) = 0;
+    virtual bool SetDirection(bool forward, int64_t pos = -1) = 0;
     virtual bool SeekTo(int64_t pos, bool probeMode = false) = 0;
     virtual bool SetTrackMuted(int64_t id, bool muted) = 0;
     virtual bool IsTrackMuted(int64_t id) = 0;

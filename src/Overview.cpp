@@ -19,6 +19,7 @@
 #include <thread>
 #include <algorithm>
 #include <list>
+#include <cmath>
 #include "Overview.h"
 #include "FFUtils.h"
 #include "SysUtils.h"
@@ -859,7 +860,6 @@ private:
                     int fferr = avcodec_receive_frame(m_viddecCtx, &avfrm);
                     if (fferr == 0)
                     {
-                        avfrm.pts = avfrm.best_effort_timestamp;
                         m_logger->Log(DEBUG) << "<<< Get video frame pts=" << avfrm.pts << "(" << MillisecToString(av_rescale_q(avfrm.pts, m_vidAvStm->time_base, MILLISEC_TIMEBASE)) << ")." << endl;
                         avfrmLoaded = true;
                         idleLoop = idleLoop2 = false;
@@ -970,7 +970,35 @@ private:
                 }
                 else
                 {
-                    m_logger->Log(WARN) << "Discard AVFrame with pts=" << frm->pts << "(ts=" << ts << ")!";
+                    bool discarded = false;
+                    if (!m_snapshots.empty())
+                    {
+                        auto bestMatchIter = m_snapshots.begin();
+                        int64_t minDiff = abs(bestMatchIter->ssFrmPts-frm->pts);
+                        auto searchIter = bestMatchIter; searchIter++;
+                        while (searchIter != m_snapshots.end())
+                        {
+                            const int64_t diff = abs(searchIter->ssFrmPts-frm->pts);
+                            if (diff < minDiff)
+                            {
+                                bestMatchIter = searchIter;
+                                minDiff = diff;
+                            }
+                            else
+                                break;
+                        }
+                        if (bestMatchIter->img.empty())
+                        {
+                            if (!m_frmCvt.ConvertImage(frm, bestMatchIter->img, ts))
+                                m_logger->Log(Error) << "FAILED to convert AVFrame to ImGui::ImMat! Message is '" << m_frmCvt.GetError() << "'." << endl;
+                        }
+                        else
+                            discarded = true;
+                    }
+                    else
+                        discarded = true;
+                    if (discarded)
+                        m_logger->Log(WARN) << "Discard AVFrame with pts=" << frm->pts << "(ts=" << ts << ")!" << endl;
                 }
 
                 av_frame_free(&frm);

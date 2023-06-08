@@ -65,11 +65,11 @@ public:
         if (!m_audrdr)
             return 0;
         uint32_t readSize = buffSize;
-        double pos;
+        int64_t pos;
         bool eof;
         if (!m_audrdr->ReadAudioSamples(buff, readSize, pos, eof, blocking))
             return 0;
-        g_audPos = pos;
+        g_audPos = (double)pos/1000;
         if (g_fpPcmFile)
             fwrite(buff, 1, readSize, g_fpPcmFile);
         return readSize;
@@ -268,7 +268,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                 g_vidrdr->SetDirection(notForward);
                 g_playStartPos = playPos;
                 g_playStartTp = Clock::now();
-                g_vidrdr->SeekTo(playPos);
+                g_vidrdr->SeekTo(playPos*1000);
             }
             if (g_audrdr->IsOpened())
             {
@@ -309,10 +309,11 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         ImGui::Spacing();
         if (ImGui::SliderFloat("Position", &playPos, 0, mediaDur, "%.3f"))
         {
+            int64_t seekPos = playPos*1000;
             if (g_vidrdr->IsOpened())
-                g_vidrdr->SeekTo(playPos);
+                g_vidrdr->SeekTo(seekPos);
             if (g_audrdr->IsOpened())
-                g_audrdr->SeekTo(playPos);
+                g_audrdr->SeekTo(seekPos);
             g_playStartPos = playPos;
             g_playStartTp = Clock::now();
         }
@@ -324,7 +325,8 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         {
             bool eof;
             ImGui::ImMat vmat;
-            auto hVf = g_vidrdr->ReadVideoFrame(playPos, eof);
+            int64_t readPos = (int64_t)(playPos*1000);
+            auto hVf = g_vidrdr->ReadVideoFrame(readPos, eof);
             if (hVf)
             {
                 Log(VERBOSE) << "Succeeded to read video frame @pos=" << playPos << "." << endl;
@@ -388,7 +390,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                     // g_vidrdr->ConfigVideoReader((uint32_t)g_imageDisplaySize.x, (uint32_t)g_imageDisplaySize.y);
                     g_vidrdr->ConfigVideoReader(1.0f, 1.0f);
                     if (playPos > 0)
-                        g_vidrdr->SeekTo(playPos);
+                        g_vidrdr->SeekTo(playPos*1000);
                     g_vidrdr->Start();
                 }
                 if (g_mediaParser->HasAudio() && !g_videoOnly)
@@ -403,7 +405,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                     g_chooseAudioIndex = 0;
                     g_audrdr->ConfigAudioReader(c_audioRenderChannels, c_audioRenderSampleRate, "flt", g_chooseAudioIndex);
                     if (playPos > 0)
-                        g_audrdr->SeekTo(playPos);
+                        g_audrdr->SeekTo(playPos*1000);
                     g_audrdr->Start();
                 }
                 if (!g_vidrdr->IsOpened() && !g_audrdr->IsOpened())

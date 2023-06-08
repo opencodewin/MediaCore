@@ -40,7 +40,7 @@ struct MediaReader
         using Holder = std::shared_ptr<VideoFrame>;
         static Holder CreateMatInstance(ImGui::ImMat& m);
         virtual bool GetMat(ImGui::ImMat& m) = 0;
-        virtual double Pos() const = 0;
+        virtual int64_t Pos() const = 0;
         virtual int64_t Pts() const = 0;
         virtual int64_t Dur() const = 0;
     };
@@ -57,14 +57,14 @@ struct MediaReader
     virtual bool Start(bool suspend = false) = 0;
     virtual bool Stop() = 0;
     virtual void Close() = 0;
-    virtual bool SeekTo(double pos) = 0;
+    virtual bool SeekTo(int64_t pos) = 0;
     virtual void SetDirection(bool forward) = 0;
     virtual void Suspend() = 0;
     virtual void Wakeup() = 0;
 
-    virtual bool ReadVideoFrame(double pos, ImGui::ImMat& m, bool& eof, bool wait = true) = 0;
-    virtual VideoFrame::Holder ReadVideoFrame(double pos, bool& eof, bool wait = true) = 0;
-    virtual bool ReadAudioSamples(uint8_t* buf, uint32_t& size, double& pos, bool& eof, bool wait = true) = 0;
+    virtual bool ReadVideoFrame(int64_t pos, ImGui::ImMat& m, bool& eof, bool wait = true) = 0;
+    virtual VideoFrame::Holder ReadVideoFrame(int64_t pos, bool& eof, bool wait = true) = 0;
+    virtual bool ReadAudioSamples(uint8_t* buf, uint32_t& size, int64_t& pos, bool& eof, bool wait = true) = 0;
     virtual bool ReadAudioSamples(ImGui::ImMat& m, uint32_t readSamples, bool& eof, bool wait = true) = 0;
 
     virtual bool IsOpened() const = 0;
@@ -74,6 +74,7 @@ struct MediaReader
     virtual bool IsDirectionForward() const = 0;
     virtual bool IsSuspended() const = 0;
     virtual bool IsPlanar() const = 0;
+    virtual int64_t GetReadPos() const = 0;
 
     virtual bool SetCacheDuration(double forwardDur, double backwardDur) = 0;
     virtual std::pair<double, double> GetCacheDuration() const = 0;

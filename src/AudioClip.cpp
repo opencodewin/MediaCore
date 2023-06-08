@@ -17,6 +17,7 @@
 
 #include <sstream>
 #include <functional>
+#include <cmath>
 #include "AudioClip.h"
 #include "Logger.h"
 #include "SysUtils.h"
@@ -26,6 +27,8 @@ using namespace Logger;
 
 namespace MediaCore
 {
+static int64_t MAX_ALLOWED_MISMATCH_SAMPLES = 200;
+
 ///////////////////////////////////////////////////////////////////////////////////////////
 // AudioClip
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -38,6 +41,15 @@ public:
         int64_t start, int64_t end, int64_t startOffset, int64_t endOffset, bool exclusiveLogger = false)
         : m_id(id), m_start(start)
     {
+        string fileName = SysUtils::ExtractFileName(hParser->GetUrl());
+        ostringstream loggerNameOss;
+        loggerNameOss << id;
+        string idstr = loggerNameOss.str();
+        if (idstr.size() > 4)
+            idstr = idstr.substr(idstr.size()-4);
+        loggerNameOss.str(""); loggerNameOss << "AClp-" << fileName.substr(0, 4) << "-" << idstr;
+        m_logger = GetLogger(loggerNameOss.str());
+
         m_hInfo = hParser->GetMediaInfo();
         if (hParser->GetBestAudioStreamIndex() < 0)
             throw invalid_argument("Argument 'hParser' has NO AUDIO stream!");
@@ -179,12 +191,20 @@ public:
     void SeekTo(int64_t pos) override
     {
         if (pos < 0 || pos > Duration())
+        {
+            m_logger->Log(WARN) << "!! INVALID seek, pos=" << pos << " is out of the valid range [0, " << Duration() << "] !!" << endl;
             return;
+        }
+        int64_t targetReadSamples = pos*m_srcReader->GetAudioOutSampleRate()/1000;
+        if (targetReadSamples == m_readSamples)
+            return;
+
         auto seekPos = pos+m_startOffset;
-        if (seekPos >= m_srcDuration) seekPos = m_srcDuration-1;
-        if (!m_srcReader->SeekTo((double)seekPos/1000))
+        if (seekPos > m_srcDuration) seekPos = m_srcDuration;
+        m_logger->Log(DEBUG) << "-> AudClip.SeekTo(" << seekPos << ")" << endl;
+        if (!m_srcReader->SeekTo(seekPos))
             throw runtime_error(m_srcReader->GetError());
-        m_readSamples = pos*m_srcReader->GetAudioOutSampleRate()/1000;
+        m_readSamples = targetReadSamples;
         m_eof = false;
     }
 
@@ -197,36 +217,86 @@ public:
             m_eof = eof = true;
             return ImGui::ImMat();
         }
-
-        uint32_t sampleRate = m_srcReader->GetAudioOutSampleRate();
-        if (m_pcmFrameSize == 0)
-        {
-            m_pcmFrameSize = m_srcReader->GetAudioOutFrameSize();
-            m_pcmSizePerSec = sampleRate*m_pcmFrameSize;
-        }
-
         if (readSamples > leftSamples)
             readSamples = leftSamples;
+
+        uint32_t sampleRate = m_srcReader->GetAudioOutSampleRate();
         int channels = m_srcReader->GetAudioOutChannels();
+        if (m_pcmFrameSize == 0)
+            m_pcmFrameSize = m_srcReader->GetAudioOutFrameSize();
+
         ImGui::ImMat amat;
-        bool srcEof{false};
-        if (!m_srcReader->ReadAudioSamples(amat, readSamples, srcEof))
-            throw runtime_error(m_srcReader->GetError());
-        double srcpos = amat.time_stamp;
-        amat.time_stamp = (double)m_readSamples/sampleRate+(double)m_start/1000.;
-        readSamples = amat.w;
-        // Log(WARN) << "~~~ srcpos=" << srcpos << ", ts=" << amat.time_stamp << ", delta=" << (srcpos-amat.time_stamp) << endl;
-        const bool isForward = m_srcReader->IsDirectionForward();
-        if (isForward)
-            m_readSamples += readSamples;
+        int64_t expectedReadPos = (int64_t)((double)m_readSamples/sampleRate*1000)+m_startOffset;
+        int64_t sourceReadPos = m_srcReader->GetReadPos();
+        bool readForward = m_srcReader->IsDirectionForward();
+        // if expected read position does not match the real read position, use silence or skip samples to compensate
+        bool skip = false;
+        int64_t diffSamples = abs(sourceReadPos-expectedReadPos)*sampleRate/1000;
+        if (diffSamples > MAX_ALLOWED_MISMATCH_SAMPLES)
+        {
+            m_logger->Log(DEBUG) << "! expectedReadPos(" << expectedReadPos << ") != sourceReadPos(" << sourceReadPos << "), diffSamples=" << diffSamples << " !" << endl;
+            skip = expectedReadPos > sourceReadPos ? readForward : !readForward;
+        }
         else
-            m_readSamples -= readSamples;
+        {
+            diffSamples = 0;
+        }
+        bool srcEof{false};
+        if (diffSamples > 0)
+        {
+            if (skip)
+            {
+                ImGui::ImMat skipMat;
+                int64_t skippedSamples = diffSamples;
+                if (!m_srcReader->ReadAudioSamples(skipMat, skippedSamples, srcEof))
+                    throw runtime_error(m_srcReader->GetError());
+                m_logger->Log(DEBUG) << "! Try to skip " << diffSamples << " samples, skipped " << skippedSamples << " samples, srcEof=" << srcEof << " !" << endl;
+            }
+            else
+            {
+                int64_t silenceSamples = diffSamples > readSamples ? readSamples : diffSamples;
+                ImGui::ImMat silenceMat;
+                size_t elemSize = m_pcmFrameSize/channels;
+                silenceMat.create((int)silenceSamples, 1, channels, elemSize);
+                memset(silenceMat.data, 0, silenceMat.total()*silenceMat.elemsize);
+                amat = silenceMat;
+                m_logger->Log(DEBUG) << "! Return silence mat with " << silenceSamples << " samples !" << endl;
+                amat.time_stamp = (double)(expectedReadPos-m_startOffset+m_start)/1000;
+            }
+        }
+
+        // read from source
+        if (!m_eof && amat.empty())
+        {
+            uint32_t toReadSamples = readSamples;
+            if (!m_srcReader->ReadAudioSamples(amat, toReadSamples, srcEof))
+                throw runtime_error(m_srcReader->GetError());
+            if (!amat.empty())
+            {
+                int64_t actualReadPos = (int64_t)(amat.time_stamp*1000);
+                diffSamples = abs(actualReadPos-expectedReadPos)*sampleRate/1000;
+                if (diffSamples > MAX_ALLOWED_MISMATCH_SAMPLES)
+                    m_logger->Log(DEBUG) << "! expectedReadPos(" << expectedReadPos << ") != actualReadPos(" << actualReadPos << "), diffSamples=" << diffSamples << " !" << endl;
+            }
+            amat.time_stamp = (double)(expectedReadPos-m_startOffset+m_start)/1000;
+        }
+
+        // state update
+        if (!amat.empty())
+        {
+            readSamples = amat.w;
+            m_readSamples += readForward ? (int64_t)readSamples : -(int64_t)readSamples;
+        }
+        else
+        {
+            readSamples = 0;
+        }
         const uint32_t leftSamples2 = LeftSamples();
         if (leftSamples2 == 0 || srcEof)
             m_eof = eof = true;
 
         if (m_filter && readSamples > 0)
-            amat = m_filter->FilterPcm(amat, (int64_t)(amat.time_stamp*1000) - m_start);
+            amat = m_filter->FilterPcm(amat, (int64_t)(amat.time_stamp*1000)-m_start);
         return amat;
     }
 
@@ -253,7 +323,13 @@ public:
         return m_filter;
     }
 
+    void SetLogLevel(Level l) override
+    {
+        m_logger->SetShowLevels(l);
+    }
+
 private:
+    ALogger* m_logger;
     int64_t m_id;
     int64_t m_trackId{-1};
     MediaInfo::Holder m_hInfo;
@@ -264,7 +340,6 @@ private:
     int64_t m_startOffset;
     int64_t m_endOffset;
     int64_t m_padding;
-    uint32_t m_pcmSizePerSec{0};
     uint32_t m_pcmFrameSize{0};
     int64_t m_readSamples{0};
     int64_t m_totalSamples;

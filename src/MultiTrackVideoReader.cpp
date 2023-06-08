@@ -229,7 +229,6 @@ public:
                 }
                 m_tracks.insert(insertBeforeIter, hNewTrack);
             }
-            UpdateDuration();
         }
 
         SeekTo(ReadPos());
@@ -355,7 +354,7 @@ public:
         return true;
     }
 
-    bool SetDirection(bool forward) override
+    bool SetDirection(bool forward, int64_t pos) override
     {
         if (m_readForward == forward)
             return true;
@@ -365,7 +364,8 @@ public:
         m_readForward = forward;
         for (auto& track : m_tracks)
             track->SetDirection(forward);
-        SeekTo(ReadPos());
+        int64_t seekPos = pos >= 0 ? pos : ReadPos();
+        SeekTo(seekPos);
 
         StartMixingThread();
         return true;
@@ -418,7 +418,15 @@ public:
         m_logger->Log(DEBUG) << "=======> StopConsecutiveSeek" << endl;
         m_inSeeking = false;
         int step = m_readForward ? 1 : -1;
-        AddMixFrameTask(m_readFrameIdx, false, true);
+        auto reuseTask = ExtractSeekingTask(m_readFrameIdx);
+        if (reuseTask && reuseTask->TriggerStart())
+        {
+            AddMixFrameTask(reuseTask, true);
+        }
+        else
+        {
+            AddMixFrameTask(m_readFrameIdx, false, true, true);
+        }
         AddMixFrameTask(m_readFrameIdx+step, false, false);
         return true;
     }
@@ -523,7 +531,7 @@ public:
         m_duration = dur;
     }
 
-    bool Refresh() override
+    bool Refresh(bool updateDuration) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_started)
@@ -532,7 +540,9 @@ public:
             return false;
         }
 
-        UpdateDuration();
+        if (updateDuration)
+            UpdateDuration();
+
         SeekTo(ReadPos());
         return true;
     }
@@ -1014,14 +1024,23 @@ private:
         return hCandiFrame;
     }
 
-    MixFrameTask::Holder AddMixFrameTask(int64_t frameIndex, bool canDrop, bool needSeek)
+    MixFrameTask::Holder AddMixFrameTask(int64_t frameIndex, bool canDrop, bool needSeek, bool clearBeforeAdd = false)
     {
         if (frameIndex < 0)
             return nullptr;
         lock_guard<recursive_mutex> lk(m_mixFrameTasksLock);
-        auto mftIter = find_if(m_mixFrameTasks.begin(), m_mixFrameTasks.end(), [frameIndex] (auto& t) {
-            return t->frameIndex == frameIndex;
-        });
+        list<MixFrameTask::Holder>::iterator mftIter;
+        if (clearBeforeAdd)
+        {
+            ClearAllMixFrameTasks();
+            mftIter == m_mixFrameTasks.end();
+        }
+        else
+        {
+            mftIter = find_if(m_mixFrameTasks.begin(), m_mixFrameTasks.end(), [frameIndex] (auto& t) {
+                return t->frameIndex == frameIndex;
+            });
+        }
         MixFrameTask::Holder hTask;
         if (mftIter == m_mixFrameTasks.end())
         {
@@ -1032,9 +1051,7 @@ private:
                 needClearTaskList = m_readForward ? frameIndex < backTaskFrameIndex : frameIndex > backTaskFrameIndex;
             }
             if (needClearTaskList)
-            {
                 ClearAllMixFrameTasks();
-            }
 
             list<VideoTrack::Holder> tracks;
             {
@@ -1057,6 +1074,43 @@ private:
             hTask = *mftIter;
         }
         return hTask;
+    }
+
+    MixFrameTask::Holder AddMixFrameTask(MixFrameTask::Holder hMft, bool clearBeforeAdd)
+    {
+        int64_t frameIndex = hMft->frameIndex;
+        lock_guard<recursive_mutex> lk(m_mixFrameTasksLock);
+        if (clearBeforeAdd)
+        {
+            ClearAllMixFrameTasks();
+            m_mixFrameTasks.push_back(hMft);
+            m_logger->Log(DEBUG) << "++ AddMixFrameTask[2-0]: frameIndex=" << frameIndex << endl;
+        }
+        else
+        {
+            auto mftIter = find_if(m_mixFrameTasks.begin(), m_mixFrameTasks.end(), [frameIndex] (auto& t) {
+                return t->frameIndex == frameIndex;
+            });
+            if (mftIter == m_mixFrameTasks.end())
+            {
+                bool needClearTaskList = false;
+                if (!m_mixFrameTasks.empty())
+                {
+                    auto backTaskFrameIndex = m_mixFrameTasks.back()->frameIndex;
+                    needClearTaskList = m_readForward ? frameIndex < backTaskFrameIndex : frameIndex > backTaskFrameIndex;
+                }
+                if (needClearTaskList)
+                    ClearAllMixFrameTasks();
+
+                m_logger->Log(DEBUG) << "++ AddMixFrameTask[2-1]: frameIndex=" << frameIndex << endl;
+                m_mixFrameTasks.push_back(hMft);
+            }
+            else
+            {
+                hMft = *mftIter;
+            }
+        }
+        return hMft;
     }
 
     void ClearAllMixFrameTasks()
@@ -1150,6 +1204,21 @@ private:
         {
             hTask = *sktIter;
         }
+        return hTask;
+    }
+
+    MixFrameTask::Holder ExtractSeekingTask(int64_t frameIndex)
+    {
+        if (frameIndex < 0)
+            return nullptr;
+        lock_guard<mutex> lk(m_seekingTasksLock);
+        auto sktIter = find_if(m_seekingTasks.begin(), m_seekingTasks.end(), [frameIndex] (auto& t) {
+            return t->frameIndex == frameIndex;
+        });
+        if (sktIter == m_seekingTasks.end())
+            return nullptr;
+        auto hTask = *sktIter;
+        m_seekingTasks.erase(sktIter);
         return hTask;
     }
 
