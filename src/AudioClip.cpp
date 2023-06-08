@@ -271,7 +271,7 @@ public:
             uint32_t toReadSamples = readSamples;
             if (!m_srcReader->ReadAudioSamples(amat, toReadSamples, srcEof))
                 throw runtime_error(m_srcReader->GetError());
-            if (!amat.empty())
+            if (amat.w > 0)
             {
                 int64_t actualReadPos = (int64_t)(amat.time_stamp*1000);
                 diffSamples = abs(actualReadPos-expectedReadPos)*sampleRate/1000;

@@ -70,6 +70,7 @@ public:
 
     void InsertClip(AudioClip::Holder hClip) override
     {
+        // hClip->SetLogLevel(DEBUG);
         lock_guard<recursive_mutex> lk(m_apiLock);
         // add this clip into clip list
         hClip->SetDirection(m_readForward);

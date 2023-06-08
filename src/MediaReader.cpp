@@ -1376,12 +1376,13 @@ private:
         bool isIterSet = false;
         bool isPosSet = false;
         bool needLoop;
+        pos = GetReadPos();
         do
         {
             bool idleLoop = true;
 
             GopDecodeTaskHolder readTask = m_audReadTask;
-            if (!readTask)
+            if (!readTask || readTask->cancel)
             {
                 readTask = FindNextAudioReadTask();
                 skipSize = 0;
@@ -1714,14 +1715,23 @@ private:
                             // cancel all the following tasks if there is any
                             {
                                 lock_guard<mutex> lk(m_bldtskByPriLock);
-                                for (auto& task : m_bldtskPriOrder)
+                                auto delIter = m_bldtskPriOrder.begin();
+                                while (delIter != m_bldtskPriOrder.end())
                                 {
-                                    if (task->seekPts.first > currTask->seekPts.first)
+                                    auto& task = *delIter;
+                                    if (task == currTask && currTask->cancel)
+                                        delIter = m_bldtskPriOrder.erase(delIter);
+                                    else if (task->seekPts.first > currTask->seekPts.first)
                                     {
                                         m_logger->Log(DEBUG) << "CANCEL invalid task after WHOLE FILE demux EOF, seekPts.first=" << task->seekPts.first << "." << endl;
                                         task->cancel = true;
+                                        delIter = m_bldtskPriOrder.erase(delIter);
                                     }
+                                    else
+                                        delIter++;
                                 }
+                                if (currTask->cancel && !m_bldtskPriOrder.empty())
+                                    m_bldtskPriOrder.back()->isFileEnd = true;
                             }
                         }
                         else
@@ -3155,13 +3165,12 @@ private:
             if (c == 1 || c%100 == 0)
             {
                 ostringstream oss;
-                oss << "[" << c << "]CAN NOT find next AUDIO read task! "
-                    << "m_audReadNextTaskSeekPts0=";
+                oss << "[" << c << "]CAN NOT find next AUDIO read task! ";
                 if (m_audReadNextTaskSeekPts0 == INT64_MIN)
-                    oss << "INT64_MIN";
+                    oss << "ReadPos=" << m_cacheWnd.readPos << "(pts=" << CvtAudMtsToPts(m_cacheWnd.readPos) << ")";
                 else
-                    oss << m_audReadNextTaskSeekPts0;
-                oss << ", m_bldtskTimeOrder=";
+                    oss << "m_audReadNextTaskSeekPts0=" << m_audReadNextTaskSeekPts0;
+                oss << " , m_bldtskTimeOrder=";
                 list<GopDecodeTaskHolder> bldtskTimeOrder;
                 {
                     lock_guard<mutex> _lk(m_bldtskByTimeLock);

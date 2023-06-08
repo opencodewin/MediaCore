@@ -144,11 +144,6 @@ public:
         m_hasOvlp = hOvlp != nullptr;
         m_hOvlp = hOvlp;
         m_inited = true;
-        if (!hClip1)
-        {
-            m_src1Ready = m_src2Ready = true;
-            m_outputReady = true;
-        }
     }
 
     bool NeedProcess() const
@@ -163,20 +158,30 @@ public:
 
     void DoReadSourceFrame()
     {
-        if (m_hClip1 && !m_src1Ready)
+        if (m_hClip1)
         {
-            auto clipPos = m_readPos-m_hClip1->Start();
-            m_srcVf1 = m_hClip1->ReadSourceFrame(clipPos, m_eof1, false);
-            if (m_srcVf1 || m_eof1)
-                m_src1Ready = true;
+            if (!m_src1Ready)
+            {
+                auto clipPos = m_readPos-m_hClip1->Start();
+                m_srcVf1 = m_hClip1->ReadSourceFrame(clipPos, m_eof1, false);
+                if (m_srcVf1 || m_eof1)
+                    m_src1Ready = true;
+            }
         }
-        if (m_hClip2 && !m_src2Ready)
+        else
+            m_src1Ready = true;
+        if (m_hClip2)
         {
-            auto clipPos = m_readPos-m_hClip2->Start();
-            m_srcVf2 = m_hClip2->ReadSourceFrame(clipPos, m_eof2, false);
-            if (m_srcVf2 || m_eof2)
-                m_src2Ready = true;
+            if (!m_src2Ready)
+            {
+                auto clipPos = m_readPos-m_hClip2->Start();
+                m_srcVf2 = m_hClip2->ReadSourceFrame(clipPos, m_eof2, false);
+                if (m_srcVf2 || m_eof2)
+                    m_src2Ready = true;
+            }
         }
+        else
+            m_src2Ready = true;
     }
 
     void ProcessFrame()
@@ -188,6 +193,11 @@ public:
         }
         if (!IsSourceFrameReady())
             return;
+        if (!m_hClip1)
+        {
+            m_outputReady = true;
+            return;
+        }
         if (m_hasOvlp)
         {
             m_hOvlp->ProcessSourceFrame(m_readPos-m_hOvlp->Start(), m_outFrames, m_outMat, m_srcVf1, m_srcVf2);
