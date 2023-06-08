@@ -56,7 +56,7 @@ public:
         {
 #if IMGUI_VULKAN_SHADER
             ImGui::VkMat vkmat;
-            vkmat.type = IM_DT_INT8;
+            vkmat.type = baseImage.type;
             m_vulkanBlender.blend(overlayImage, baseImage, vkmat, x, y);
             if (!vkmat.empty())
             {
