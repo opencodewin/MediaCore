@@ -1033,7 +1033,7 @@ private:
         if (clearBeforeAdd)
         {
             ClearAllMixFrameTasks();
-            mftIter == m_mixFrameTasks.end();
+            mftIter = m_mixFrameTasks.end();
         }
         else
         {
