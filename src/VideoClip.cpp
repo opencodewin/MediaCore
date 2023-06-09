@@ -244,6 +244,8 @@ public:
         if (startOffset+m_endOffset >= m_srcDuration+m_padding)
             throw invalid_argument("Argument 'startOffset/endOffset', clip duration is NOT LARGER than 0!");
         m_startOffset = startOffset;
+        if (m_hFilter)
+            m_hFilter->UpdateClipRange();
     }
 
     void ChangeEndOffset(int64_t endOffset) override
@@ -255,6 +257,8 @@ public:
         if (m_startOffset+endOffset >= m_srcDuration+m_padding)
             throw invalid_argument("Argument 'startOffset/endOffset', clip duration is NOT LARGER than 0!");
         m_endOffset = endOffset;
+        if (m_hFilter)
+            m_hFilter->UpdateClipRange();
     }
 
     void SetDuration(int64_t duration) override

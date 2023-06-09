@@ -37,6 +37,8 @@ struct VideoFilter
     virtual const std::string GetFilterName() const = 0;
     virtual Holder Clone() = 0;
     virtual void ApplyTo(VideoClip* clip) = 0;
+    virtual const MediaCore::VideoClip* GetVideoClip() const = 0;
+    virtual void UpdateClipRange() = 0;
     virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) = 0;
 };
 
