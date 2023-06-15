@@ -7,11 +7,13 @@
 #include "Overview.h"
 #include "Snapshot.h"
 #include "FFUtils.h"
+#include "TextureManager.h"
 #include "Logger.h"
 #include "DebugHelper.h"
 
 using namespace std;
 using namespace MediaCore;
+using namespace RenderUtils;
 using namespace Logger;
 
 static Overview::Holder g_movr;
@@ -20,7 +22,9 @@ static Snapshot::Viewer::Holder g_ssvw1;
 static double g_windowPos = 0.f;
 static double g_windowSize = 300.f;
 static double g_windowFrames = 14.0f;
-ImVec2 g_snapImageSize;
+static Vec2<int32_t> g_snapImageSize;
+static TextureManager::Holder g_txmgr;
+static string g_snapTxPoolName = "SnapshotGridTexturePool";
 const string c_imguiIniPath = "ms_test.ini";
 const string c_bookmarkPath = "bookmark.ini";
 
@@ -33,6 +37,7 @@ static void MediaSnapshot_Initialize(void** handle)
         ->SetShowLevels(DEBUG);
     Snapshot::GetLogger()
         ->SetShowLevels(DEBUG);
+    g_txmgr = TextureManager::CreateInstance();
 
 #ifdef USE_BOOKMARK
 	// load bookmarks
@@ -53,7 +58,7 @@ static void MediaSnapshot_Initialize(void** handle)
     g_movr = Overview::CreateInstance();
     g_movr->SetSnapshotSize(320, 180);
     g_ssgen = Snapshot::Generator::CreateInstance();
-    g_ssgen->SetSnapshotResizeFactor(0.5f, 0.5f);
+    // g_ssgen->SetSnapshotResizeFactor(0.5f, 0.5f);
     g_ssgen->SetCacheFactor(3);
     g_ssvw1 = g_ssgen->CreateViewer(0);
 }
@@ -72,14 +77,22 @@ static void MediaSnapshot_Finalize(void** handle)
 		configFileWriter.close();
 	}
 #endif
+
+    g_txmgr->Release();
+    g_txmgr = nullptr;
 }
 
 static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
 {
     bool app_done = false;
     auto& io = ImGui::GetIO();
-    g_snapImageSize.x = io.DisplaySize.x/(g_windowFrames+1);
-    g_snapImageSize.y = g_snapImageSize.x*9/16;
+    if (g_snapImageSize.x == 0 || g_snapImageSize.y == 0)
+    {
+        g_snapImageSize.x = (int32_t)(io.DisplaySize.x/(g_windowFrames+1));
+        g_snapImageSize.y = (int32_t)(g_snapImageSize.x*9/16);
+        g_ssgen->SetSnapshotSize(g_snapImageSize.x, g_snapImageSize.y);
+        g_txmgr->CreateGridTexturePool(g_snapTxPoolName, g_snapImageSize, IM_DT_INT8, {16, 9}, 0);
+    }
 
     ImGui::SetNextWindowPos({0, 0});
     ImGui::SetNextWindowSize(io.DisplaySize);
@@ -124,7 +137,7 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
         if (!ret)
             snapshots.clear();
         else
-            g_ssvw1->UpdateSnapshotTexture(snapshots);
+            g_ssvw1->UpdateSnapshotTexture(snapshots, g_txmgr, g_snapTxPoolName);
 
         float startPos = snapshots.size() > 0 ? (float)snapshots[0]->mTimestampMs/1000 : minPos;
         int snapshotCnt = (int)ceil(g_windowFrames);
@@ -139,14 +152,17 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
             else
             {
                 string tag = MillisecToString(snapshots[i]->mTimestampMs);
-                if (!snapshots[i]->mTextureReady)
+                auto hTx = snapshots[i]->mTextureReady ? snapshots[i]->mhTx : nullptr;
+                ImTextureID tid = hTx ? hTx->TextureID() : nullptr;
+                if (!tid)
                 {
                     ImGui::Dummy(g_snapImageSize);
                     tag += "(loading)";
                 }
                 else
                 {
-                    ImGui::Image(*(snapshots[i]->mTextureHolder), g_snapImageSize);
+                    auto roiRect = hTx->GetDisplayRoi();
+                    ImGui::Image(tid, g_snapImageSize, roiRect.lt, roiRect.rb);
                 }
                 ImGui::TextUnformatted(tag.c_str());
             }
@@ -187,6 +203,8 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
         app_done = true;
     }
 
+    g_txmgr->UpdateTextureState();
+    Log(DEBUG) << g_txmgr.get() << endl;
     return app_done;
 }
 

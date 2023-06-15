@@ -122,8 +122,6 @@ public:
         WaitAllThreadsQuit();
         FlushAllQueues();
 
-        m_deprecatedTextures.clear();
-
         if (m_viddecCtx)
         {
             avcodec_free_context(&m_viddecCtx);
@@ -222,13 +220,6 @@ public:
                         Image::Holder hImage(new Image());
                         hImage->mImgMat = m;
                         hImage->mTimestampMs = (int64_t)(m.time_stamp*1000);
-                        hImage->mTextureHolder = TextureHolder(new ImTextureID(0), [this] (ImTextureID* pTid) {
-                            if (*pTid)
-                                ImGui::ImDestroyTexture(*pTid);
-                            delete pTid;
-                        });
-                        ImMatToTexture(hImage->mImgMat, *(hImage->mTextureHolder));
-                        hImage->mTextureReady = true;
                         m_ovssimgs.insert(iter, std::move(hImage));
                     }
                 }
@@ -1340,7 +1331,8 @@ private:
         SysUtils::SetThreadName(m_updateSsThread, thnOss.str());
         m_freeGoptskThread = thread(&Generator_Impl::FreeGopTaskProc, this);
         thnOss.str(""); thnOss << "SsgFgt-" << fileName;
-        SysUtils::SetThreadName(m_freeGoptskThread, thnOss.str());    }
+        SysUtils::SetThreadName(m_freeGoptskThread, thnOss.str());
+    }
 
     void WaitAllThreadsQuit()
     {
@@ -1372,28 +1364,6 @@ private:
     {
         // AutoSection _as("FAQ");
         {
-            lock_guard<mutex> lk(m_deprecatedTextureLock);
-            for (auto tsk : m_goptskPrepareList)
-            {
-                for (auto p: tsk->ssAvfrmList)
-                    if (p->img->mTextureHolder)
-                        m_deprecatedTextures.push_back(std::move(p->img->mTextureHolder));
-                for (auto p: tsk->ssImgList)
-                    if (p->img->mTextureHolder)
-                        m_deprecatedTextures.push_back(std::move(p->img->mTextureHolder));
-            }
-            for (auto tsk : m_goptskList)
-            {
-                for (auto p: tsk->ssAvfrmList)
-                    if (p->img->mTextureHolder)
-                        m_deprecatedTextures.push_back(std::move(p->img->mTextureHolder));
-                for (auto p: tsk->ssImgList)
-                    if (p->img->mTextureHolder)
-                        m_deprecatedTextures.push_back(std::move(p->img->mTextureHolder));
-            }
-        }
-
-        {
             lock_guard<mutex> _lk(m_goptskFreeLock);
             if (!m_goptskPrepareList.empty())
                 m_goptskToFree.splice(m_goptskToFree.end(), m_goptskPrepareList);
@@ -1418,11 +1388,6 @@ private:
             {
                 av_frame_free(&avfrm);
                 m_owner->m_pendingVidfrmCnt--;
-            }
-            if (img->mTextureHolder)
-            {
-                lock_guard<mutex> lk(m_owner->m_deprecatedTextureLock);
-                m_owner->m_deprecatedTextures.push_back(img->mTextureHolder);
             }
         }
 
@@ -1990,27 +1955,22 @@ public:
             return m_owner->GetError();
         }
 
-        bool UpdateSnapshotTexture(vector<Image::Holder>& snapshots) override
+        bool UpdateSnapshotTexture(std::vector<Image::Holder>& snapshots, RenderUtils::TextureManager::Holder hTxMgr, const std::string& gridPoolName) override
         {
             // AutoSection _as("UpdSsTx");
-            // free deprecated textures
-            {
-                lock_guard<mutex> lktid(m_owner->m_deprecatedTextureLock);
-                m_owner->m_deprecatedTextures.clear();
-            }
-
             for (auto& img : snapshots)
             {
                 if (img->mTextureReady)
                     continue;
-                if (!img->mImgMat.empty())
+                if (!img->mhTx)
                 {
-                    img->mTextureHolder = TextureHolder(new ImTextureID(0), [this] (ImTextureID* pTid) {
-                        if (*pTid)
-                            ImGui::ImDestroyTexture(*pTid);
-                        delete pTid;
-                    });
-                    ImMatToTexture(img->mImgMat, *(img->mTextureHolder));
+                    img->mhTx = hTxMgr->GetGridTextureFromPool(gridPoolName);
+                    if (!img->mhTx)
+                        m_logger->Log(WARN) << "FAILED to get grid texture from 'TextureManager'! Error is '" << hTxMgr->GetError() << "'." << endl;
+                }
+                if (!img->mImgMat.empty() && img->mhTx)
+                {
+                    img->mhTx->RenderMatToTexture(img->mImgMat);
                     img->mTextureReady = true;
                 }
             }
@@ -2155,9 +2115,6 @@ private:
     Overview::Holder m_hOverview;
     list<Image::Holder> m_ovssimgs;
     bool m_isOvssComplete{false};
-    // textures
-    list<TextureHolder> m_deprecatedTextures;
-    mutex m_deprecatedTextureLock;
 
     bool m_useRszFactor{false};
     bool m_ssSizeChanged{false};

@@ -22,20 +22,23 @@
 #include "MediaCore.h"
 #include "MediaParser.h"
 #include "Overview.h"
+#include "TextureManager.h"
 #include "Logger.h"
 
 namespace MediaCore
 {
 namespace Snapshot
 {
-    using TextureHolder = std::shared_ptr<ImTextureID>;
     struct Image
     {
         using Holder = std::shared_ptr<Image>;
-
+        ~Image()
+        {
+            mImgMat.release();
+            if (mhTx) mhTx->Invalidate();
+        }
         bool mTextureReady{false};
-        TextureHolder mTextureHolder;
-        ImVec2 mSize{0, 0};
+        RenderUtils::ManagedTexture::Holder mhTx;
         int64_t mTimestampMs{0};
         ImGui::ImMat mImgMat;
     };
@@ -47,7 +50,7 @@ namespace Snapshot
         virtual bool Seek(double pos) = 0;
         virtual double GetCurrWindowPos() const = 0;
         virtual bool GetSnapshots(double startPos, std::vector<Image::Holder>& snapshots) = 0;
-        virtual bool UpdateSnapshotTexture(std::vector<Image::Holder>& snapshots) = 0;
+        virtual bool UpdateSnapshotTexture(std::vector<Image::Holder>& snapshots, RenderUtils::TextureManager::Holder hTxMgr, const std::string& gridPoolName) = 0;
 
         virtual Holder CreateViewer(double pos = 0) = 0;
         virtual void Release() = 0;

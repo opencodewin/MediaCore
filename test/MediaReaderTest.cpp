@@ -14,14 +14,18 @@
 #include "MediaReader.h"
 #include "AudioRender.h"
 #include "FFUtils.h"
+#include "TextureManager.h"
 #include "Logger.h"
 #include "DebugHelper.h"
 
 using namespace std;
 using namespace MediaCore;
+using namespace RenderUtils;
 using namespace Logger;
 using Clock = chrono::steady_clock;
 
+static TextureManager::Holder g_txmgr;
+static ManagedTexture::Holder g_tx;
 static bool g_isOpening = false;
 static MediaParser::Holder g_mediaParser;
 static bool g_videoOnly = false;
@@ -39,8 +43,7 @@ static const pair<double, double> G_DurTable[] = {
     {  5, 1 },
     { 10, 2 },
 };
-static ImTextureID g_imageTid;
-static ImVec2 g_imageDisplaySize = { 640, 360 };
+static Vec2<int32_t> g_imageDisplaySize = { 640, 360 };
 // audio
 static MediaReader::Holder g_audrdr;
 static AudioRender* g_audrnd = nullptr;
@@ -97,6 +100,8 @@ static void MediaReader_Initialize(void** handle)
         ->SetShowLevels(INFO);
     MediaReader::GetDefaultLogger()
         ->SetShowLevels(INFO);
+    g_txmgr = TextureManager::CreateInstance();
+    g_txmgr->SetLogLevel(VERBOSE);
 
 #ifdef USE_BOOKMARK
 	// load bookmarks
@@ -115,7 +120,7 @@ static void MediaReader_Initialize(void** handle)
 
     // g_vidrdr = MediaReader::CreateInstance();
     g_vidrdr = MediaReader::CreateVideoInstance();
-    g_vidrdr->SetLogLevel(VERBOSE);
+    g_vidrdr->SetLogLevel(DEBUG);
     g_audrdr = MediaReader::CreateInstance();
     g_audrdr->SetLogLevel(INFO);
 
@@ -140,11 +145,6 @@ static void MediaReader_Finalize(void** handle)
     }
     g_vidrdr = nullptr;
     g_audrdr = nullptr;
-    if (g_imageTid)
-    {
-        ImGui::ImDestroyTexture(g_imageTid);
-        g_imageTid = nullptr;
-    }
 
 #ifdef USE_BOOKMARK
 	// save bookmarks
@@ -155,6 +155,10 @@ static void MediaReader_Finalize(void** handle)
 		configFileWriter.close();
 	}
 #endif
+
+    g_tx = nullptr;
+    g_txmgr = nullptr;
+
     if (g_dumpPcm)
         fclose(g_fpPcmFile);
 }
@@ -349,9 +353,18 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                 }
                 if (imgValid)
                 {
-                    // AddCheckPoint("MatToTexture0");
-                    ImGui::ImMatToTexture(vmat, g_imageTid);
-                    // AddCheckPoint("MatToTexture1");
+                    if (!g_tx)
+                    {
+                        Vec2<int32_t> txSize(vmat.w, vmat.h);
+                        // Vec2<int32_t> txSize(g_imageDisplaySize);
+                        g_tx = g_txmgr->CreateManagedTextureFromMat(vmat, txSize);
+                        if (!g_tx)
+                            Log(Error) << "FAILED to create ManagedTexture from ImMat! Error is '" << g_txmgr->GetError() << "'." << endl;
+                    }
+                    else
+                    {
+                        g_tx->RenderMatToTexture(vmat);
+                    }
                 }
             }
             else
@@ -360,8 +373,9 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
             }
         }
         // AddCheckPoint("ShowImage0");
-        if (g_imageTid)
-            ImGui::Image(g_imageTid, g_imageDisplaySize);
+        ImTextureID tid = g_tx ? g_tx->TextureID() : nullptr;
+        if (tid)
+            ImGui::Image(tid, g_imageDisplaySize);
         else
             ImGui::Dummy(g_imageDisplaySize);
         // AddCheckPoint("ShowImage1");
@@ -432,9 +446,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
             g_playStartPos = 0;
             g_audioStreamCount = 0;
             g_chooseAudioIndex = -1;
-            if (g_imageTid)
-                ImGui::ImDestroyTexture(g_imageTid);
-            g_imageTid = nullptr;
+            if (g_tx) g_tx = nullptr;
             g_isLongCacheDur = false;
             string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
             g_mediaParser = MediaParser::CreateInstance();
@@ -453,6 +465,8 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         app_done = true;
     }
 
+    g_txmgr->UpdateTextureState();
+    Log(DEBUG) << g_txmgr.get() << endl;
     return app_done;
 }
 
