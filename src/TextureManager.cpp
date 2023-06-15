@@ -802,8 +802,8 @@ public:
         }
     }
 
-    std::string GetError() const { return m_errMsg; }
-    void SetLogLevel(Logger::Level l) { m_logger->SetShowLevels(l); }
+    std::string GetError() const override { return m_errMsg; }
+    void SetLogLevel(Logger::Level l) override { m_logger->SetShowLevels(l); }
 
 public:
     static const function<void(TextureManager*)> TEXTURE_MANAGER_DELETER;
