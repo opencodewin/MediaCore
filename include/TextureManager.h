@@ -24,14 +24,6 @@ struct Vec2 : public std::pair<T,T>
     Vec2(const Vec2<T>& vec2) : basetype(vec2.x, vec2.y), x(basetype::first), y(basetype::second) {}
     template<typename U>
     Vec2(const Vec2<U>& vec2) : basetype(vec2.x, vec2.y), x(basetype::first), y(basetype::second) {}
-    // Vec2(basetype&& a) : basetype(std::move(a)), x(basetype::first), y(basetype::second)
-    // {
-    //     Logger::Log(Logger::WARN) << "x=" << x << ", y=" << y << std::endl;
-    // }
-    // Vec2(Vec2<T>&& a) : basetype(std::move(a)), x(basetype::first), y(basetype::second)
-    // {
-    //     Logger::Log(Logger::WARN) << "x=" << x << ", y=" << y << std::endl;
-    // }
     Vec2<T>& operator=(const Vec2<T>& a) { *static_cast<basetype*>(this) = static_cast<const basetype>(a); return *this; }
     Vec2<T> operator+(const Vec2<T>& a) const { return {x+a.x, y+a.y}; }
     Vec2<T> operator-(const Vec2<T>& a) const { return {x-a.x, y-a.y}; }
@@ -85,9 +77,10 @@ struct TextureManager
     virtual ManagedTexture::Holder CreateManagedTextureFromMat(const ImGui::ImMat& vmat, Vec2<int32_t>& textureSize, ImDataType dataType = IM_DT_INT8) = 0;
     virtual bool CreateTexturePool(const std::string& name, const Vec2<int32_t>& textureSize, ImDataType dataType, uint32_t minPoolSize, uint32_t maxPoolSize = 0) = 0;
     virtual ManagedTexture::Holder GetTextureFromPool(const std::string& poolName) = 0;
-    virtual bool CreateGridTexturePool(const std::string& name, const Vec2<int32_t>& gridTextureSize, ImDataType dataType, const Vec2<int32_t>& gridSize, uint32_t minPoolSize, uint32_t maxPoolSize = 0) = 0;
+    virtual bool CreateGridTexturePool(const std::string& name, const Vec2<int32_t>& textureSize, ImDataType dataType, const Vec2<int32_t>& gridSize, uint32_t minPoolSize, uint32_t maxPoolSize = 0) = 0;
     virtual ManagedTexture::Holder GetGridTextureFromPool(const std::string& poolName) = 0;
 
+    virtual bool GetTexturePoolAttributes(const std::string& poolName, Vec2<int32_t>& textureSize, ImDataType& dataType) = 0;
     virtual void SetUiThread(const std::thread::id& threadId) = 0;
     virtual bool UpdateTextureState() = 0;  // run this method in UI thread
     virtual void Release() = 0;

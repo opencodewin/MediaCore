@@ -29,6 +29,7 @@ struct _TextureContainer
     virtual ManagedTexture::Holder GetFreeTexture() = 0;
     virtual void UpdateTextureState() = 0;
     virtual bool RequestTextureID(ManagedTexture* pMtx) = 0;
+    virtual void GetAttributes(Vec2<int32_t>& txSize, ImDataType& dtype) = 0;
 };
 
 class TextureManager_Impl : public TextureManager
@@ -189,7 +190,7 @@ private:
             return true;
         }
 
-        std::string GetError() const override { return m_owner->GetError(); }
+        string GetError() const override { return m_owner->GetError(); }
 
         TextureManager_Impl* m_owner;
         _TextureContainer* m_container;
@@ -264,6 +265,8 @@ private:
         }
 
         bool RequestTextureID(ManagedTexture* pMtx) override { return true; }
+
+        void GetAttributes(Vec2<int32_t>& txSize, ImDataType& dtype) override {}
 
         TextureManager_Impl* m_owner;
         string m_name;
@@ -370,6 +373,12 @@ private:
         }
 
         bool RequestTextureID(ManagedTexture* pMtx) override { return true; }
+
+        void GetAttributes(Vec2<int32_t>& txSize, ImDataType& dtype) override
+        {
+            txSize = m_textureSize;
+            dtype = m_dataType;
+        }
 
         TextureManager_Impl* m_owner;
         string m_name;
@@ -586,6 +595,12 @@ private:
             return true;
         }
 
+        void GetAttributes(Vec2<int32_t>& txSize, ImDataType& dtype) override
+        {
+            txSize = m_textureSize;
+            dtype = m_dataType;
+        }
+
         TextureManager_Impl* m_owner;
         string m_name;
         Vec2<int32_t> m_textureSize;
@@ -650,7 +665,7 @@ public:
         return hTx;
     }
 
-    bool CreateTexturePool(const std::string& name, const Vec2<int32_t>& textureSize, ImDataType dataType, uint32_t minPoolSize, uint32_t maxPoolSize) override
+    bool CreateTexturePool(const string& name, const Vec2<int32_t>& textureSize, ImDataType dataType, uint32_t minPoolSize, uint32_t maxPoolSize) override
     {
         if (name.empty())
         {
@@ -686,7 +701,7 @@ public:
         return true;
     }
 
-    ManagedTexture::Holder GetTextureFromPool(const std::string& poolName) override
+    ManagedTexture::Holder GetTextureFromPool(const string& poolName) override
     {
         lock_guard<mutex> lk(m_containersLock);
         auto iter = m_containers.find(poolName);
@@ -702,7 +717,7 @@ public:
         return iter->second->GetFreeTexture();
     }
 
-    bool CreateGridTexturePool(const std::string& name, const Vec2<int32_t>& textureSize, ImDataType dataType, const Vec2<int32_t>& gridSize, uint32_t minPoolSize, uint32_t maxPoolSize) override
+    bool CreateGridTexturePool(const string& name, const Vec2<int32_t>& textureSize, ImDataType dataType, const Vec2<int32_t>& gridSize, uint32_t minPoolSize, uint32_t maxPoolSize) override
     {
         if (name.empty())
         {
@@ -743,7 +758,7 @@ public:
         return true;
     }
 
-    ManagedTexture::Holder GetGridTextureFromPool(const std::string& poolName) override
+    ManagedTexture::Holder GetGridTextureFromPool(const string& poolName) override
     {
         lock_guard<mutex> lk(m_containersLock);
         auto iter = m_containers.find(poolName);
@@ -759,7 +774,22 @@ public:
         return pCont->GetFreeTexture();
     }
 
-    void SetUiThread(const std::thread::id& threadId) override { m_uiThreadId = threadId; }
+    bool GetTexturePoolAttributes(const string& poolName, Vec2<int32_t>& textureSize, ImDataType& dataType) override
+    {
+        lock_guard<mutex> lk(m_containersLock);
+        auto iter = m_containers.find(poolName);
+        if (iter == m_containers.end())
+        {
+            ostringstream oss; oss << "CANNOT find any grid texture pool with name '" << poolName << "'!";
+            m_errMsg = oss.str();
+            return false;
+        }
+        auto& hCont = iter->second;
+        hCont->GetAttributes(textureSize, dataType);
+        return true;
+    }
+
+    void SetUiThread(const thread::id& threadId) override { m_uiThreadId = threadId; }
 
     bool UpdateTextureState() override
     {
@@ -802,7 +832,7 @@ public:
         }
     }
 
-    std::string GetError() const override { return m_errMsg; }
+    string GetError() const override { return m_errMsg; }
     void SetLogLevel(Logger::Level l) override { m_logger->SetShowLevels(l); }
 
 public:
