@@ -34,9 +34,9 @@ static void MediaSnapshot_Initialize(void** handle)
     GetDefaultLogger()
         ->SetShowLevels(DEBUG);
     MediaParser::GetLogger()
-        ->SetShowLevels(DEBUG);
+        ->SetShowLevels(INFO);
     Snapshot::GetLogger()
-        ->SetShowLevels(DEBUG);
+        ->SetShowLevels(INFO);
     g_txmgr = TextureManager::CreateInstance();
 
 #ifdef USE_BOOKMARK
@@ -204,7 +204,7 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
     }
 
     g_txmgr->UpdateTextureState();
-    Log(DEBUG) << g_txmgr.get() << endl;
+    // Log(DEBUG) << g_txmgr.get() << endl;
     return app_done;
 }
 

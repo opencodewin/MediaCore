@@ -466,7 +466,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
     }
 
     g_txmgr->UpdateTextureState();
-    Log(DEBUG) << g_txmgr.get() << endl;
+    // Log(DEBUG) << g_txmgr.get() << endl;
     return app_done;
 }
 

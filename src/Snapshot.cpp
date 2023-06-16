@@ -1122,39 +1122,37 @@ private:
                 hasOutput = avfrmLoaded;
                 if (avfrmLoaded)
                 {
-                    int32_t ssIdx{-1};
-                    uint32_t bias{UINT32_MAX};
-                    list<GopDecodeTaskHolder> ssGopTasks = FindFrameSsPosition(avfrm.pts, ssIdx, bias);
-                    if (ssGopTasks.empty())
+                    while (!m_quit)
                     {
-                        m_logger->Log(VERBOSE) << "Drop video frame pts=" << avfrm.pts << ", ssIdx=" << ssIdx << ". No corresponding GopDecoderTask can be found." << endl;
-                        av_frame_unref(&avfrm);
-                        avfrmLoaded = false;
-                        idleLoop = false;
-                    }
-                    else
-                    {
-                        while (!m_quit)
+                        int32_t ssIdx{-1};
+                        uint32_t bias{UINT32_MAX};
+                        list<GopDecodeTaskHolder> ssGopTasks = FindFrameSsPosition(avfrm.pts, ssIdx, bias);
+                        if (ssGopTasks.empty())
                         {
-                            if (m_pendingVidfrmCnt < m_maxPendingVidfrmCnt)
+                            m_logger->Log(VERBOSE) << "Drop video frame pts=" << avfrm.pts << ", ssIdx=" << ssIdx << ". No corresponding GopDecoderTask can be found." << endl;
+                            av_frame_unref(&avfrm);
+                            avfrmLoaded = false;
+                            idleLoop = false;
+                            break;
+                        }
+                        if (m_pendingVidfrmCnt < m_maxPendingVidfrmCnt)
+                        {
+                            for (auto& t : ssGopTasks)
                             {
-                                for (auto& t : ssGopTasks)
-                                {
-                                    m_logger->Log(DEBUG) << "Enqueue SS#" << ssIdx << ", pts=" << avfrm.pts << "(ts=" << MillisecToString(CvtVidPtsToMts(avfrm.pts))
-                                        << ") to _GopDecodeTask: ssIdxPair=[" << t->m_range.SsIdx().first << ", " << t->m_range.SsIdx().second
-                                        << "), ptsPair=[" << t->m_range.SeekPts().first << ", " << t->m_range.SeekPts().second << ")." << endl;
-                                }
-                                if (!EnqueueSnapshotAVFrame(ssGopTasks, &avfrm, ssIdx, bias))
-                                    m_logger->Log(WARN) << "FAILED to enqueue SS#" << ssIdx << ", pts=" << avfrm.pts << "(ts=" << MillisecToString(CvtVidPtsToMts(avfrm.pts)) << ")." << endl;
-                                av_frame_unref(&avfrm);
-                                avfrmLoaded = false;
-                                idleLoop = false;
-                                break;
+                                m_logger->Log(DEBUG) << "Enqueue SS#" << ssIdx << ", pts=" << avfrm.pts << "(ts=" << MillisecToString(CvtVidPtsToMts(avfrm.pts))
+                                    << ") to _GopDecodeTask: ssIdxPair=[" << t->m_range.SsIdx().first << ", " << t->m_range.SsIdx().second
+                                    << "), ptsPair=[" << t->m_range.SeekPts().first << ", " << t->m_range.SeekPts().second << ")." << endl;
                             }
-                            else
-                            {
-                                this_thread::sleep_for(chrono::milliseconds(5));
-                            }
+                            if (!EnqueueSnapshotAVFrame(ssGopTasks, &avfrm, ssIdx, bias))
+                                m_logger->Log(WARN) << "FAILED to enqueue SS#" << ssIdx << ", pts=" << avfrm.pts << "(ts=" << MillisecToString(CvtVidPtsToMts(avfrm.pts)) << ")." << endl;
+                            av_frame_unref(&avfrm);
+                            avfrmLoaded = false;
+                            idleLoop = false;
+                            break;
+                        }
+                        else
+                        {
+                            this_thread::sleep_for(chrono::milliseconds(5));
                         }
                     }
                 }
@@ -1238,25 +1236,20 @@ private:
                         ss = currTask->ssAvfrmList.front();
                         currTask->ssAvfrmList.pop_front();
                     }
-                    if (ss->avfrm)
+                    if (ss->frm)
                     {
-                        double ts = (double)CvtVidPtsToMts(ss->avfrm->pts)/1000.;
-                        if (!m_frmCvt.ConvertImage(ss->avfrm, ss->img->mImgMat, ts))
+                        double ts = (double)CvtVidPtsToMts(ss->frm->pts)/1000.;
+                        if (!m_frmCvt.ConvertImage(ss->frm.get(), ss->img->mImgMat, ts))
                         {
-                            m_logger->Log(WARN) << "FAILED to convert AVFrame(pts=" << ss->avfrm->pts << ", mts=" << CvtVidPtsToMts(ss->avfrm->pts)
+                            m_logger->Log(WARN) << "FAILED to convert AVFrame(pts=" << ss->frm->pts << ", mts=" << CvtVidPtsToMts(ss->frm->pts)
                                     << ") to ImGui::ImMat! Message is '" << m_frmCvt.GetError() << "'. REDO-decoding on this task." << endl;
-                            av_frame_free(&ss->avfrm);
-                            m_pendingVidfrmCnt--;
+                            ss->frm = nullptr;
                             currTask->redoDecoding = true;
                             idleLoop = false;
                             break;
                         }
 
-                        av_frame_free(&ss->avfrm);
-                        ss->avfrm = nullptr;
-                        m_pendingVidfrmCnt--;
-                        if (m_pendingVidfrmCnt < 0)
-                            m_logger->Log(Error) << "Pending video AVFrame ptr count is NEGATIVE! " << m_pendingVidfrmCnt << endl;
+                        ss->frm = nullptr;
                         ss->img->mTimestampMs = CalcSnapshotMts(ss->index);
                         idleLoop = false;
                     }
@@ -1289,32 +1282,6 @@ private:
         m_logger->Log(VERBOSE) << "Leave UpdateSnapshotThreadProc()." << endl;
     }
 
-    void FreeGopTaskProc()
-    {
-        m_logger->Log(VERBOSE) << "Enter FreeGopTaskProc()." << endl;
-        while (!m_quit)
-        {
-            bool idleLoop = true;
-
-            list<GopDecodeTaskHolder> clearList;
-            {
-                lock_guard<mutex> _lk(m_goptskFreeLock);
-                if (!m_goptskToFree.empty())
-                    clearList.splice(clearList.end(), m_goptskToFree);
-            }
-            if (!clearList.empty())
-            {
-                m_logger->Log(VERBOSE) << "Clear " << clearList.size() << " gop tasks." << endl;
-                clearList.clear();
-                idleLoop = false;
-            }
-
-            if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(20));
-        }
-        m_logger->Log(VERBOSE) << "Leave FreeGopTaskProc()." << endl;
-    }
-
     void StartAllThreads()
     {
         string fileName = SysUtils::ExtractFileName(m_hParser->GetUrl());
@@ -1329,9 +1296,6 @@ private:
         m_updateSsThread = thread(&Generator_Impl::UpdateSnapshotThreadProc, this);
         thnOss.str(""); thnOss << "SsgUss-" << fileName;
         SysUtils::SetThreadName(m_updateSsThread, thnOss.str());
-        m_freeGoptskThread = thread(&Generator_Impl::FreeGopTaskProc, this);
-        thnOss.str(""); thnOss << "SsgFgt-" << fileName;
-        SysUtils::SetThreadName(m_freeGoptskThread, thnOss.str());
     }
 
     void WaitAllThreadsQuit()
@@ -1363,38 +1327,24 @@ private:
     void FlushAllQueues()
     {
         // AutoSection _as("FAQ");
-        {
-            lock_guard<mutex> _lk(m_goptskFreeLock);
-            if (!m_goptskPrepareList.empty())
-                m_goptskToFree.splice(m_goptskToFree.end(), m_goptskPrepareList);
-            if (!m_goptskList.empty())
-                m_goptskToFree.splice(m_goptskToFree.end(), m_goptskList);
-        }
+        m_goptskPrepareList.clear();
+        m_goptskList.clear();
     }
 
     struct _Picture
     {
         using Holder = shared_ptr<_Picture>;
 
-        _Picture(Generator_Impl* owner, int32_t _index, AVFrame* _avfrm, uint32_t _bias)
-            : m_owner(owner), img(new Image()), index(_index), avfrm(_avfrm), bias(_bias)
+        _Picture(Generator_Impl* owner, int32_t _index, SelfFreeAVFramePtr _frm, uint32_t _bias)
+            : m_owner(owner), img(new Image()), index(_index), frm(_frm), bias(_bias)
         {
-            pts = _avfrm->pts;
-        }
-
-        ~_Picture()
-        {
-            if (avfrm)
-            {
-                av_frame_free(&avfrm);
-                m_owner->m_pendingVidfrmCnt--;
-            }
+            pts = _frm->pts;
         }
 
         Generator_Impl* m_owner;
         Image::Holder img;
         int32_t index;
-        AVFrame* avfrm;
+        SelfFreeAVFramePtr frm;
         int64_t pts;
         int64_t bias;
         bool fixed{false};
@@ -1568,23 +1518,12 @@ private:
         return index;
     }
 
-    // bool IsSpecificSnapshotFrame(uint32_t index, int64_t mts)
-    // {
-    //     double diff = abs(index*m_ssIntvMts-mts);
-    //     return diff <= m_vidfrmIntvMtsHalf;
-    // }
-
     int64_t CalcSnapshotMts(int32_t index)
     {
         if (m_ssIntvPts > 0)
             return CvtVidPtsToMts(floor(index*m_ssIntvPts+m_vidStartPts));
         return 0;
     }
-
-    // double CalcSnapshotTimestamp(uint32_t index)
-    // {
-    //     return (double)CalcSnapshotMts(index)/1000.;
-    // }
 
     int32_t CalcSsIndexFromTs(double ts)
     {
@@ -1833,18 +1772,26 @@ private:
         return nxttsk;
     }
 
-    bool EnqueueSnapshotAVFrame(list<GopDecodeTaskHolder> ssGopTasks, AVFrame* frm, int32_t ssIdx, uint32_t bias)
+    bool EnqueueSnapshotAVFrame(list<GopDecodeTaskHolder> ssGopTasks, AVFrame* avfrm, int32_t ssIdx, uint32_t bias)
     {
         if (ssGopTasks.empty())
             return false;
 
-        AVFrame* _avfrm = av_frame_clone(frm);
+        AVFrame* _avfrm = av_frame_clone(avfrm);
         if (!_avfrm)
         {
             m_logger->Log(Error) << "FAILED to invoke 'av_frame_clone()' to allocate new AVFrame for SS!" << endl;
             return false;
         }
-        _Picture::Holder ss(new _Picture(this, ssIdx, _avfrm, bias));
+        SelfFreeAVFramePtr frm(_avfrm, [this] (AVFrame* p) {
+            if (p)
+            {
+                av_frame_free(&p);
+                m_pendingVidfrmCnt--;
+            }
+        });
+        m_pendingVidfrmCnt++;
+        _Picture::Holder ss(new _Picture(this, ssIdx, frm, bias));
 
         bool ssAdopted = false;
         for (auto& t : ssGopTasks)
@@ -1894,13 +1841,6 @@ private:
                     t->demuxerEof = true;  // also stop demuxing task if it's not stopped already
                 }
             }
-        }
-        if (ssAdopted)
-            m_pendingVidfrmCnt++;
-        else if (ss->avfrm)
-        {
-            av_frame_free(&ss->avfrm);
-            ss->avfrm = nullptr;
         }
         return true;
     }
@@ -2108,8 +2048,6 @@ private:
     list<GopDecodeTaskHolder> m_goptskPrepareList;
     list<GopDecodeTaskHolder> m_goptskList;
     mutex m_goptskListReadLocks[3];
-    list<GopDecodeTaskHolder> m_goptskToFree;
-    mutex m_goptskFreeLock;
     atomic_int32_t m_pendingVidfrmCnt{0};
     int32_t m_maxPendingVidfrmCnt{2};
     Overview::Holder m_hOverview;
