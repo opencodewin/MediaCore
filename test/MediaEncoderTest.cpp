@@ -27,20 +27,22 @@ int main(int argc, const char* argv[])
     GetDefaultLogger()->SetShowLevels(DEBUG);
     MediaEncoder::GetLogger()->SetShowLevels(DEBUG);
 
-    // string codecHint = "hevc";
-    // vector<MediaEncoder::EncoderDescription> encoderDescList;
-    // MediaEncoder::FindEncoder(codecHint, encoderDescList);
-    // Log(DEBUG) << "Results for searching codec hint '" << codecHint << "':" << endl;
-    // if (encoderDescList.empty())
-    //     Log(DEBUG) << "NO ENCODER IS FOUND." << endl;
-    // else
-    // {
-    //     for (int i = 0; i < encoderDescList.size(); i++)
-    //     {
-    //         auto& encdesc = encoderDescList[i];
-    //         Log(DEBUG) << "[" << i << "] " << encdesc << endl;
-    //     }
-    // }
+#if 0
+    string codecHint = "h264";
+    vector<MediaEncoder::Description> encoderDescList;
+    MediaEncoder::FindEncoder(codecHint, encoderDescList);
+    Log(DEBUG) << "Results for searching codec hint '" << codecHint << "':" << endl;
+    if (encoderDescList.empty())
+        Log(DEBUG) << "NO ENCODER IS FOUND." << endl;
+    else
+    {
+        for (int i = 0; i < encoderDescList.size(); i++)
+        {
+            auto& encdesc = encoderDescList[i];
+            Log(DEBUG) << "[" << i << "] " << encdesc << endl;
+        }
+    }
+#endif
 
     string vidEncCodec = "h264";
     uint32_t outWidth{1920}, outHeight{1080};

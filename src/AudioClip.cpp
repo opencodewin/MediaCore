@@ -227,6 +227,12 @@ public:
 
         ImGui::ImMat amat;
         int64_t expectedReadPos = (int64_t)((double)m_readSamples/sampleRate*1000)+m_startOffset;
+        if (!m_initSeek)
+        {
+            if (expectedReadPos > 1000)
+                m_srcReader->SeekTo(expectedReadPos);
+            m_initSeek = true;
+        }
         int64_t sourceReadPos = m_srcReader->GetReadPos();
         bool readForward = m_srcReader->IsDirectionForward();
         // if expected read position does not match the real read position, use silence or skip samples to compensate
@@ -247,10 +253,12 @@ public:
             if (skip)
             {
                 ImGui::ImMat skipMat;
-                int64_t skippedSamples = diffSamples;
-                if (!m_srcReader->ReadAudioSamples(skipMat, skippedSamples, srcEof))
+                int64_t skipSamples = diffSamples;
+                if (skipSamples > sampleRate)
+                    m_logger->Log(WARN) << "! Skip sample count " << skipSamples << " is TOO LARGE !" << endl;
+                if (!m_srcReader->ReadAudioSamples(skipMat, skipSamples, srcEof))
                     throw runtime_error(m_srcReader->GetError());
-                m_logger->Log(DEBUG) << "! Try to skip " << diffSamples << " samples, skipped " << skippedSamples << " samples, srcEof=" << srcEof << " !" << endl;
+                m_logger->Log(DEBUG) << "! Try to skip " << diffSamples << " samples, skipped " << skipSamples << " samples, srcEof=" << srcEof << " !" << endl;
             }
             else
             {
@@ -344,6 +352,7 @@ private:
     int64_t m_readSamples{0};
     int64_t m_totalSamples;
     bool m_eof{false};
+    bool m_initSeek{false};
 };
 
 static const function<void(AudioClip*)> AUDIO_CLIP_HOLDER_DELETER = [] (AudioClip* p) {
