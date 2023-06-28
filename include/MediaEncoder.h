@@ -35,10 +35,16 @@ struct MediaEncoder
 
     struct Option
     {
-        Option() {}
+        Option() = default;
+        Option(const Option&) = default;
+        Option(Option&&) = default;
+        Option& operator=(const Option&) = default;
         Option(const std::string& _name, const Value& _val) : name(_name), value(_val) {}
         Option(std::string&& _name, Value&& _val) : name(_name), value(_val) {}
-        Option(const std::string& _name, int64_t _val) : name(_name), value(_val) {}
+        template <typename T>
+        Option(const std::string& _name, const T& _val) : name(_name), value(_val) {}
+        template <typename T>
+        Option(const std::string& _name, Value::Type _type, const T& _val) : name(_name), value(_type, _val) {}
 
         enum LimitationType
         {

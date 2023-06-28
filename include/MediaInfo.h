@@ -58,7 +58,10 @@ namespace MediaCore
             VT_RATIO,
         };
 
-        Value() {}
+        Value() = default;
+        Value(const Value&) = default;
+        Value(Value&&) = default;
+        Value& operator=(const Value&) = default;
         Value(int64_t val) : type(VT_INT) { numval.i64=val; }
         Value(uint64_t val) : type(VT_INT) { numval.i64=val; }
         Value(int32_t val) : type(VT_INT) { numval.i64=val; }
