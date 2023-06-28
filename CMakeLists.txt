@@ -90,6 +90,7 @@ add_library(MediaCore ${LIBRARY}
     ${LIB_SRC_DIR}/FontManager_Fontconfig.cpp
     ${LIB_SRC_DIR}/Logger.cpp
     ${LIB_SRC_DIR}/MediaEncoder.cpp
+    ${LIB_SRC_DIR}/MediaInfo.cpp
     ${LIB_SRC_DIR}/MediaParser.cpp
     ${LIB_SRC_DIR}/MediaReader.cpp
     ${LIB_SRC_DIR}/MultiTrackAudioReader.cpp

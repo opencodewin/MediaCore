@@ -20,6 +20,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <ostream>
 #include "MediaCore.h"
 
 namespace MediaCore
@@ -34,11 +35,70 @@ namespace MediaCore
 
     struct Ratio
     {
+        Ratio() {}
+        Ratio(int32_t _num, int32_t _den) : num(_num), den(_den) {}
+        Ratio(const std::string& ratstr);
+
         int32_t num{0};
         int32_t den{0};
 
         static inline bool IsValid(const Ratio& r)
         { return r.num != 0 && r.den != 0; }
+    };
+
+    struct Value
+    {
+        enum Type
+        {
+            VT_INT = 0,
+            VT_DOUBLE,
+            VT_BOOL,
+            VT_STRING,
+            VT_FLAGS,
+            VT_RATIO,
+        };
+
+        Value() {}
+        Value(int64_t val) : type(VT_INT) { numval.i64=val; }
+        Value(uint64_t val) : type(VT_INT) { numval.i64=val; }
+        Value(int32_t val) : type(VT_INT) { numval.i64=val; }
+        Value(uint32_t val) : type(VT_INT) { numval.i64=val; }
+        Value(int16_t val) : type(VT_INT) { numval.i64=val; }
+        Value(uint16_t val) : type(VT_INT) { numval.i64=val; }
+        Value(int8_t val) : type(VT_INT) { numval.i64=val; }
+        Value(uint8_t val) : type(VT_INT) { numval.i64=val; }
+        Value(double val) : type(VT_DOUBLE) { numval.dbl=val; }
+        Value(float val) : type(VT_DOUBLE) { numval.dbl=val; }
+        Value(bool val) : type(VT_BOOL) { numval.bln=val; }
+        Value(const char* val) : type(VT_STRING) { strval=std::string(val); }
+        Value(const std::string& val) : type(VT_STRING) { strval=val; }
+        Value(const Ratio& rat) : type(VT_RATIO) { ratval=rat; }
+
+        template <typename T>
+        Value(Type _type, const T& val) : type(_type)
+        {
+            switch (_type)
+            {
+                case VT_INT:    numval.i64 = static_cast<int64_t>(val); break;
+                case VT_DOUBLE: numval.dbl = static_cast<double>(val); break;
+                case VT_BOOL:   numval.bln = static_cast<bool>(val); break;
+                case VT_STRING: strval = std::string(val); break;
+                case VT_FLAGS:  numval.i64 = static_cast<int64_t>(val); break;
+                case VT_RATIO:  ratval = Ratio(val); break;
+            }
+        }
+
+        Type type;
+        union
+        {
+            int64_t i64;
+            double dbl;
+            bool bln;
+        } numval;
+        std::string strval;
+        Ratio ratval;
+
+        friend std::ostream& operator<<(std::ostream& os, const Value& val);
     };
 
     struct Stream

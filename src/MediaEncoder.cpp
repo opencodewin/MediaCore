@@ -1396,28 +1396,6 @@ ALogger* MediaEncoder::GetLogger()
     return Logger::GetLogger("MEncoder");
 }
 
-ostream& operator<<(ostream& os, const MediaEncoder::Option::Value& val)
-{
-    if (val.type == MediaEncoder::Option::OPVT_INT)
-        os << val.numval.i64;
-    else if (val.type == MediaEncoder::Option::OPVT_DOUBLE)
-        os << val.numval.dbl;
-    else if (val.type == MediaEncoder::Option::OPVT_BOOL)
-        os << val.numval.bln;
-    else if (val.type == MediaEncoder::Option::OPVT_STRING)
-        os << val.strval;
-    else if (val.type == MediaEncoder::Option::OPVT_FLAGS)
-        os << val.numval.i64;
-    else if (val.type == MediaEncoder::Option::OPVT_RATIO)
-    {
-        if (val.strval.empty())
-            os << "0";
-        else
-            os << val.strval;
-    }
-    return os;
-}
-
 ostream& operator<<(ostream& os, const MediaEncoder::Option::EnumValue& enumval)
 {
     os << enumval.value;
@@ -1432,17 +1410,17 @@ ostream& operator<<(ostream& os, const MediaEncoder::Option::Description& optdes
     if (!optdesc.tag.empty())
         os << "(" << optdesc.tag << ")";
     os << " - ";
-    if (optdesc.valueType == MediaEncoder::Option::OPVT_INT)
+    if (optdesc.valueType == Value::VT_INT)
         os << "INT";
-    else if (optdesc.valueType == MediaEncoder::Option::OPVT_DOUBLE)
+    else if (optdesc.valueType == Value::VT_DOUBLE)
         os << "DOUBLE";
-    else if (optdesc.valueType == MediaEncoder::Option::OPVT_BOOL)
+    else if (optdesc.valueType == Value::VT_BOOL)
         os << "BOOL";
-    else if (optdesc.valueType == MediaEncoder::Option::OPVT_STRING)
+    else if (optdesc.valueType == Value::VT_STRING)
         os << "STRING";
-    else if (optdesc.valueType == MediaEncoder::Option::OPVT_FLAGS)
+    else if (optdesc.valueType == Value::VT_FLAGS)
         os << "FLAGS";
-    else if (optdesc.valueType == MediaEncoder::Option::OPVT_RATIO)
+    else if (optdesc.valueType == Value::VT_RATIO)
         os << "RATIO";
     else
         os << "UNKNOWN";
@@ -1490,17 +1468,17 @@ static bool ConvertAVOptionToOptionDescription(AVCodecPtr cdcptr, const AVOption
 {
     ALogger* logger = MediaEncoder::GetLogger();
     if (opt->type == AV_OPT_TYPE_INT || opt->type == AV_OPT_TYPE_INT64 || opt->type == AV_OPT_TYPE_UINT64)
-        optdesc.valueType = MediaEncoder::Option::OPVT_INT;
+        optdesc.valueType = Value::VT_INT;
     else if (opt->type == AV_OPT_TYPE_FLOAT || opt->type == AV_OPT_TYPE_DOUBLE)
-        optdesc.valueType = MediaEncoder::Option::OPVT_DOUBLE;
+        optdesc.valueType = Value::VT_DOUBLE;
     else if (opt->type == AV_OPT_TYPE_BOOL)
-        optdesc.valueType = MediaEncoder::Option::OPVT_BOOL;
+        optdesc.valueType = Value::VT_BOOL;
     else if (opt->type == AV_OPT_TYPE_STRING)
-        optdesc.valueType = MediaEncoder::Option::OPVT_STRING;
+        optdesc.valueType = Value::VT_STRING;
     else if (opt->type == AV_OPT_TYPE_FLAGS)
-        optdesc.valueType = MediaEncoder::Option::OPVT_FLAGS;
+        optdesc.valueType = Value::VT_FLAGS;
     else if (opt->type == AV_OPT_TYPE_RATIONAL)
-        optdesc.valueType = MediaEncoder::Option::OPVT_RATIO;
+        optdesc.valueType = Value::VT_RATIO;
     else
     {
         //logger->Log(WARN) << "UNSUPPORTED ffmpeg option value type " << opt->type << " for option '" << opt->name
@@ -1512,32 +1490,32 @@ static bool ConvertAVOptionToOptionDescription(AVCodecPtr cdcptr, const AVOption
     if (opt->unit) optdesc.unit = string(opt->unit);
     optdesc.defaultValue.type = optdesc.rangeMin.type = optdesc.rangeMax.type = optdesc.valueType;
     optdesc.limitType = MediaEncoder::Option::OPLT_NONE;
-    if (optdesc.valueType == MediaEncoder::Option::OPVT_INT)
+    if (optdesc.valueType == Value::VT_INT)
     {
         optdesc.defaultValue.numval.i64 = opt->default_val.i64;
         optdesc.rangeMin.numval.i64 = (int64_t)opt->min;
         optdesc.rangeMax.numval.i64 = (int64_t)opt->max;
         optdesc.limitType = MediaEncoder::Option::OPLT_RANGE;
     }
-    else if (optdesc.valueType == MediaEncoder::Option::OPVT_DOUBLE)
+    else if (optdesc.valueType == Value::VT_DOUBLE)
     {
         optdesc.defaultValue.numval.dbl = opt->default_val.dbl;
         optdesc.rangeMin.numval.dbl = opt->min;
         optdesc.rangeMax.numval.dbl = opt->max;
         optdesc.limitType = MediaEncoder::Option::OPLT_RANGE;
     }
-    else if (optdesc.valueType == MediaEncoder::Option::OPVT_BOOL)
+    else if (optdesc.valueType == Value::VT_BOOL)
     {
         optdesc.defaultValue.numval.bln = opt->default_val.i64 != (int64_t)opt->min;
         optdesc.rangeMin.numval.bln = false;
         optdesc.rangeMax.numval.bln = true;
     }
-    else if (optdesc.valueType == MediaEncoder::Option::OPVT_STRING)
+    else if (optdesc.valueType == Value::VT_STRING)
     {
         if (opt->default_val.str)
             optdesc.defaultValue.strval = string(opt->default_val.str);
     }
-    else if (optdesc.valueType == MediaEncoder::Option::OPVT_FLAGS)
+    else if (optdesc.valueType == Value::VT_FLAGS)
     {
         optdesc.defaultValue.numval.i64 = opt->default_val.i64;
     }
@@ -1562,8 +1540,7 @@ static void InitializeOptionDescList(AVCodecPtr cdcptr, vector<MediaEncoder::Opt
         if (s_vidcdcOptDescList.empty())
         {
             // add some fixed options
-            s_vidcdcOptDescList.push_back({ "aspect", "sample aspect ratio", "", "", MediaEncoder::Option::OPVT_RATIO,
-                                            { MediaEncoder::Option::OPVT_RATIO, {.i64=0}, "" }, MediaEncoder::Option::OPLT_NONE });
+            s_vidcdcOptDescList.push_back({ "aspect", "sample aspect ratio", "", "", Value::VT_RATIO, Value(Ratio(1, 1)), MediaEncoder::Option::OPLT_NONE });
 
             const AVClass *cc = avcodec_get_class();
             const AVOption *opt = nullptr;

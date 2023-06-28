@@ -35,28 +35,11 @@ struct MediaEncoder
 
     struct Option
     {
-        enum ValueType
-        {
-            OPVT_INT = 0,
-            OPVT_DOUBLE,
-            OPVT_BOOL,
-            OPVT_STRING,
-            OPVT_FLAGS,
-            OPVT_RATIO,
-        };
-        struct Value
-        {
-            ValueType type;
-            union
-            {
-                int64_t i64;
-                double dbl;
-                bool bln;
-            } numval;
-            std::string strval;
+        Option() {}
+        Option(const std::string& _name, const Value& _val) : name(_name), value(_val) {}
+        Option(std::string&& _name, Value&& _val) : name(_name), value(_val) {}
+        Option(const std::string& _name, int64_t _val) : name(_name), value(_val) {}
 
-            friend std::ostream& operator<<(std::ostream& os, const Value& val);
-        };
         enum LimitationType
         {
             OPLT_NONE = 0,
@@ -77,7 +60,7 @@ struct MediaEncoder
             std::string tag;
             std::string desc;
             std::string unit;
-            ValueType valueType;
+            Value::Type valueType;
             Value defaultValue;
             LimitationType limitType;
             Value rangeMin, rangeMax;  // when 'limitType' == OPLT_RANGE, here stores the min/max option values.
