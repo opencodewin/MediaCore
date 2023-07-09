@@ -18,6 +18,7 @@
 #pragma once
 #include <cstdint>
 #include <memory>
+#include <unordered_set>
 #include <ostream>
 #include <string>
 #include "immat.h"
@@ -59,7 +60,7 @@ struct MultiTrackVideoReader
     virtual bool ReadNextVideoFrame(ImGui::ImMat& vmat) = 0;
     virtual void UpdateDuration() = 0;
     virtual bool Refresh(bool updateDuration = true) = 0;
-    virtual bool RefreshTrackView(const std::vector<int64_t>& trackIds) = 0;
+    virtual bool RefreshTrackView(const std::unordered_set<int64_t>& trackIds) = 0;
 
     virtual int64_t Duration() const = 0;
     virtual int64_t ReadPos() const = 0;

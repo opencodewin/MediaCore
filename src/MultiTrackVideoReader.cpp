@@ -547,7 +547,7 @@ public:
         return true;
     }
 
-    bool RefreshTrackView(const vector<int64_t>& trackIds) override
+    bool RefreshTrackView(const unordered_set<int64_t>& trackIds) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_started)
@@ -827,7 +827,7 @@ private:
     bool ReadVideoFrameWithoutSubtitle(int64_t frameIndex, vector<CorrelativeFrame>& frames, bool nonblocking, bool precise)
     {
         m_readFrameIdx = frameIndex;
-        if (m_prevOutFrame && m_prevOutFrame->frameIndex == frameIndex)
+        if (m_prevOutFrame && m_prevOutFrame->frameIndex == frameIndex && m_prevOutFrame->outputReady && !precise)
         {
             frames = m_prevOutFrame->outputFrames;
             return true;
