@@ -21,6 +21,7 @@
 #include <list>
 #include <cmath>
 #include "Overview.h"
+#include "MediaReader.h"
 #include "FFUtils.h"
 #include "SysUtils.h"
 extern "C"
@@ -375,23 +376,38 @@ private:
 
     bool OpenMedia(MediaParser::Holder hParser)
     {
-        int fferr = avformat_open_input(&m_avfmtCtx, hParser->GetUrl().c_str(), nullptr, nullptr);
-        if (fferr < 0)
+        if (!hParser->IsImageSequence())
         {
-            m_avfmtCtx = nullptr;
-            m_errMsg = FFapiFailureMessage("avformat_open_input", fferr);
-            return false;
-        }
+            int fferr = avformat_open_input(&m_avfmtCtx, hParser->GetUrl().c_str(), nullptr, nullptr);
+            if (fferr < 0)
+            {
+                m_avfmtCtx = nullptr;
+                m_errMsg = FFapiFailureMessage("avformat_open_input", fferr);
+                return false;
+            }
 
-        m_hMediaInfo = hParser->GetMediaInfo();
-        m_vidStmIdx = hParser->GetBestVideoStreamIndex();
-        m_audStmIdx = hParser->GetBestAudioStreamIndex();
-        if (m_vidStmIdx < 0 && m_audStmIdx < 0)
+            m_hMediaInfo = hParser->GetMediaInfo();
+            m_vidStmIdx = hParser->GetBestVideoStreamIndex();
+            m_audStmIdx = hParser->GetBestAudioStreamIndex();
+            if (m_vidStmIdx < 0 && m_audStmIdx < 0)
+            {
+                ostringstream oss;
+                oss << "Neither video nor audio stream can be found in '" << m_avfmtCtx->url << "'.";
+                m_errMsg = oss.str();
+                return false;
+            }
+        }
+        else
         {
-            ostringstream oss;
-            oss << "Neither video nor audio stream can be found in '" << m_avfmtCtx->url << "'.";
-            m_errMsg = oss.str();
-            return false;
+            m_hMediaInfo = hParser->GetMediaInfo();
+            m_vidStmIdx = hParser->GetBestVideoStreamIndex();
+            if (m_vidStmIdx < 0)
+            {
+                ostringstream oss;
+                oss << "No video stream can be found from image-sequence '" << m_avfmtCtx->url << "'.";
+                m_errMsg = oss.str();
+                return false;
+            }
         }
 
         m_vidfrmIntvTs = 0;
@@ -465,58 +481,89 @@ private:
 
     bool Prepare()
     {
-        int fferr;
-        fferr = avformat_find_stream_info(m_avfmtCtx, nullptr);
-        if (fferr < 0)
+        if (!m_hParser->IsImageSequence())
         {
-            m_errMsg = FFapiFailureMessage("avformat_open_input", fferr);
-            return false;
-        }
-
-        bool openVideoFailed = true;
-        if (HasVideo())
-        {
-            m_vidAvStm = m_avfmtCtx->streams[m_vidStmIdx];
-
-            m_viddecOpenOpts.onlyUseSoftwareDecoder = !m_vidPreferUseHw;
-            FFUtils::OpenVideoDecoderResult res;
-            if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res))
+            int fferr;
+            fferr = avformat_find_stream_info(m_avfmtCtx, nullptr);
+            if (fferr < 0)
             {
-                m_viddecCtx = res.decCtx;
-                openVideoFailed = false;
+                m_errMsg = FFapiFailureMessage("avformat_open_input", fferr);
+                return false;
             }
-            else
-            {
-                ostringstream oss;
-                oss << "Open video decoder FAILED! Error is '" << res.errMsg << "'.";
-                m_errMsg = oss.str();
-                m_vidStmIdx = -1;
-            }
-        }
-        m_decodeVideo = !openVideoFailed;
 
-        bool openAudioFailed = true;
-        if (HasAudio())
-        {
-            m_audAvStm = m_avfmtCtx->streams[m_audStmIdx];
-
-            m_auddec = avcodec_find_decoder(m_audAvStm->codecpar->codec_id);
-            if (m_auddec == nullptr)
+            bool openVideoFailed = true;
+            if (HasVideo())
             {
-                ostringstream oss;
-                oss << "Can not find audio decoder by codec_id " << m_audAvStm->codecpar->codec_id << "!";
-                if (openVideoFailed)
-                    m_errMsg = m_errMsg+" "+oss.str();
+                m_vidAvStm = m_avfmtCtx->streams[m_vidStmIdx];
+
+                m_viddecOpenOpts.onlyUseSoftwareDecoder = !m_vidPreferUseHw;
+                FFUtils::OpenVideoDecoderResult res;
+                if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res))
+                {
+                    m_viddecCtx = res.decCtx;
+                    openVideoFailed = false;
+                }
                 else
+                {
+                    ostringstream oss;
+                    oss << "Open video decoder FAILED! Error is '" << res.errMsg << "'.";
                     m_errMsg = oss.str();
+                    m_vidStmIdx = -1;
+                }
             }
-            else if (OpenAudioDecoder())
-                openAudioFailed = false;
-        }
-        m_decodeAudio = !openAudioFailed;
+            m_decodeVideo = !openVideoFailed;
 
-        if (openVideoFailed && openAudioFailed)
-            return false;
+            bool openAudioFailed = true;
+            if (HasAudio())
+            {
+                m_audAvStm = m_avfmtCtx->streams[m_audStmIdx];
+
+                m_auddec = avcodec_find_decoder(m_audAvStm->codecpar->codec_id);
+                if (m_auddec == nullptr)
+                {
+                    ostringstream oss;
+                    oss << "Can not find audio decoder by codec_id " << m_audAvStm->codecpar->codec_id << "!";
+                    if (openVideoFailed)
+                        m_errMsg = m_errMsg+" "+oss.str();
+                    else
+                        m_errMsg = oss.str();
+                }
+                else if (OpenAudioDecoder())
+                    openAudioFailed = false;
+            }
+            m_decodeAudio = !openAudioFailed;
+
+            if (openVideoFailed && openAudioFailed)
+                return false;
+        }
+        else
+        {
+            m_hImgsqReader = MediaReader::CreateImageSequenceInstance();
+            if (!m_hImgsqReader->Open(m_hParser))
+            {
+                ostringstream oss; oss << "FAILED to open image-sequence reader! Error is '" << m_hImgsqReader->GetError() << "'.";
+                m_errMsg = oss.str();
+                return false;
+            }
+            const auto outW = m_frmCvt.GetOutWidth();
+            const auto outH = m_frmCvt.GetOutHeight();
+            const auto outClrfmt = m_frmCvt.GetOutColorFormat();
+            const auto outDtype = m_frmCvt.GetOutDataType();
+            const auto rszInterp = m_frmCvt.GetResizeInterpolateMode();
+            if (!m_hImgsqReader->ConfigVideoReader(outW, outH, outClrfmt, outDtype, rszInterp))
+            {
+                ostringstream oss; oss << "FAILED to configure image-sequence reader! Error is '" << m_hImgsqReader->GetError() << "'.";
+                m_errMsg = oss.str();
+                return false;
+            }
+            m_hImgsqReader->SetCacheFrames(true, 0, 0);
+            if (!m_hImgsqReader->Start())
+            {
+                ostringstream oss; oss << "FAILED to start image-sequence reader! Error is '" << m_hImgsqReader->GetError() << "'.";
+                m_errMsg = oss.str();
+                return false;
+            }
+        }
 
         m_prepared = true;
         return true;
@@ -610,17 +657,28 @@ private:
         string fileName = SysUtils::ExtractFileName(m_hParser->GetUrl());
         ostringstream thnOss;
         m_quit = false;
+        bool startReleaseResourceThread = true;
         if (HasVideo())
         {
-            m_demuxVidThread = thread(&Overview_Impl::DemuxVideoThreadProc, this);
-            thnOss.str(""); thnOss << "OvwVdmx-" << fileName;
-            SysUtils::SetThreadName(m_demuxVidThread, thnOss.str());
-            m_viddecThread = thread(&Overview_Impl::VideoDecodeThreadProc, this);
-            thnOss.str(""); thnOss << "OvwVdc-" << fileName;
-            SysUtils::SetThreadName(m_viddecThread, thnOss.str());
-            m_genSsThread = thread(&Overview_Impl::GenerateSsThreadProc, this);
-            thnOss.str(""); thnOss << "OvwGss-" << fileName;
-            SysUtils::SetThreadName(m_genSsThread, thnOss.str());
+            if (!m_hParser->IsImageSequence())
+            {
+                m_demuxVidThread = thread(&Overview_Impl::DemuxVideoThreadProc, this);
+                thnOss.str(""); thnOss << "OvwVdmx-" << fileName;
+                SysUtils::SetThreadName(m_demuxVidThread, thnOss.str());
+                m_viddecThread = thread(&Overview_Impl::VideoDecodeThreadProc, this);
+                thnOss.str(""); thnOss << "OvwVdc-" << fileName;
+                SysUtils::SetThreadName(m_viddecThread, thnOss.str());
+                m_genSsThread = thread(&Overview_Impl::GenerateSsThreadProc, this);
+                thnOss.str(""); thnOss << "OvwGss-" << fileName;
+                SysUtils::SetThreadName(m_genSsThread, thnOss.str());
+            }
+            else
+            {
+                m_genSsThread = thread(&Overview_Impl::GenerateSsByImgsqThreadProc, this);
+                thnOss.str(""); thnOss << "OvwGss-" << fileName;
+                SysUtils::SetThreadName(m_genSsThread, thnOss.str());
+                startReleaseResourceThread = false;
+            }
         }
         if (HasAudio())
         {
@@ -634,7 +692,8 @@ private:
             thnOss.str(""); thnOss << "OvwGwf-" << fileName;
             SysUtils::SetThreadName(m_genWfThread, thnOss.str());
         }
-        m_releaseThread = thread(&Overview_Impl::ReleaseResourceProc, this);
+        if (startReleaseResourceThread)
+            m_releaseThread = thread(&Overview_Impl::ReleaseResourceProc, this);
     }
 
     void WaitAllThreadsQuit(bool callFromReleaseProc = false)
@@ -942,9 +1001,44 @@ private:
         m_logger->Log(DEBUG) << "Leave VideoDecodeThreadProc()." << endl;
     }
 
+    void FillBlankSsByDuplication()
+    {
+        auto nonEmptyIter = find_if(m_snapshots.begin(), m_snapshots.end(), [](const Snapshot& ss) {
+            return ss.ssFrmPts != INT64_MIN;
+        });
+        if (nonEmptyIter != m_snapshots.end() && m_snapshots.size() > 1)
+        {
+            const auto& nonEmptySs = *nonEmptyIter;
+            auto iter1 = m_snapshots.begin();
+            auto iter2 = iter1; iter2++;
+            if (iter1->ssFrmPts == INT64_MIN)
+            {
+                iter1->sameFrame = true;
+                iter1->sameAsIndex = nonEmptySs.index;
+            }
+            while (iter2 != m_snapshots.end())
+            {
+                if (iter2->ssFrmPts == INT64_MIN)
+                {
+                    iter2->sameFrame = true;
+                    iter2->sameAsIndex = iter1->sameFrame ? iter1->sameAsIndex : iter1->index;
+                }
+                iter1++; iter2++;
+            }
+        }
+    }
+
     void GenerateSsThreadProc()
     {
         m_logger->Log(DEBUG) << "Enter GenerateSsThreadProc()." << endl;
+        while (!m_prepared && !m_quit)
+            this_thread::sleep_for(chrono::milliseconds(5));
+        if (m_quit || !m_decodeVideo)
+        {
+            m_genSsEof = true;
+            return;
+        }
+
         while (!m_quit)
         {
             bool idleLoop = true;
@@ -1010,34 +1104,41 @@ private:
             if (idleLoop)
                 this_thread::sleep_for(chrono::milliseconds(5));
         }
+        FillBlankSsByDuplication();
 
-        auto iter = find_if(m_snapshots.begin(), m_snapshots.end(), [](const Snapshot& ss) {
-            return ss.ssFrmPts == INT64_MIN;
-        });
-        if (iter != m_snapshots.begin())
-        {
-            auto iter2 = iter;
-            iter2--;
-            while (iter != m_snapshots.end())
-            {
-                iter->sameFrame = true;
-                iter->sameAsIndex = iter2->sameFrame ? iter2->sameAsIndex : iter2->index;
-                iter++;
-                iter2++;
-            }
-        }
-        else
-        {
-            iter++;
-            while (iter != m_snapshots.end())
-            {
-                iter->sameFrame = true;
-                iter->sameAsIndex = 0;
-                iter++;
-            }
-        }
         m_genSsEof = true;
         m_logger->Log(DEBUG) << "Leave GenerateSsThreadProc()." << endl;
+    }
+
+    void GenerateSsByImgsqThreadProc()
+    {
+        m_logger->Log(DEBUG) << "Enter GenerateSsByImgsqThreadProc()." << endl;
+        if (!m_prepared && !Prepare())
+        {
+            m_logger->Log(Error) << "Prepare() FAILED for url '" << m_hParser->GetUrl() << "'! Error is '" << m_errMsg << "'." << endl;
+            return;
+        }
+
+        auto ssIter = m_snapshots.begin();
+        while (!m_quit && ssIter != m_snapshots.end())
+        {
+            bool eof = false;
+            auto hVfrm = m_hImgsqReader->ReadVideoFrame(ssIter->img.time_stamp*1000, eof);
+            if (hVfrm)
+            {
+                if (hVfrm->GetMat(ssIter->img))
+                    ssIter->ssFrmPts = ssIter->index;
+                else
+                    m_logger->Log(WARN) << "FAILED to GetMat for image-sequence at pos " << ssIter->img.time_stamp << "." << endl;
+            }
+            else
+                m_logger->Log(WARN) << "FAILED to ReadVideoFrame for image-sequence at pos " << ssIter->img.time_stamp << ". Error is '" << m_hImgsqReader->GetError() << "'." << endl;
+            ssIter++;
+        }
+        FillBlankSsByDuplication();
+
+        m_genSsEof = true;
+        m_logger->Log(DEBUG) << "Leave GenerateSsByImgsqThreadProc()." << endl;
     }
 
     void DemuxAudioThreadProc()
@@ -1565,6 +1666,9 @@ private:
     int64_t m_vidFrmCnt{0};
     double m_ssIntvMts;
     double m_vidfrmIntvTs;
+
+    // image sequence
+    MediaReader::Holder m_hImgsqReader;
 
     // audio waveform
     Waveform::Holder m_hWaveform;

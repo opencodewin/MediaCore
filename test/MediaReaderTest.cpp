@@ -427,7 +427,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                         g_audrdr->SeekTo(playPos*1000);
                     g_audrdr->Start();
                 }
-                if (!g_vidrdr->IsOpened() && !g_audrdr->IsOpened())
+                if ((!g_vidrdr || !g_vidrdr->IsOpened()) && !g_audrdr->IsOpened())
                     Log(Error) << "Neither VIDEO nor AUDIO stream is ready for playback!" << endl;
                 g_playStartTp = Clock::now();
                 g_isOpening = false;
@@ -456,7 +456,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
             string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
             g_mediaParser = MediaParser::CreateInstance();
             if (g_isImageSequence)
-                g_mediaParser->OpenImageSequence({25, 1}, filePathName, ".+\\.png", false);
+                g_mediaParser->OpenImageSequence({25, 1}, filePathName, ".+_([[:digit:]]{1,})\\.png", false);
             else
                 g_mediaParser->Open(filePathName);
             g_isOpening = true;

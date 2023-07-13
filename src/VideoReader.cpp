@@ -517,6 +517,21 @@ public:
         throw runtime_error("VideoReader does NOT SUPPORT method SetCacheDuration()!");
     }
 
+    bool SetCacheFrames(bool readForward, uint32_t forwardFrames, uint32_t backwardFrames) override
+    {
+        if (readForward)
+        {
+            m_forwardCacheFrameCount.first = backwardFrames;
+            m_forwardCacheFrameCount.second = forwardFrames;
+        }
+        else
+        {
+            m_backwardCacheFrameCount.first = forwardFrames;
+            m_backwardCacheFrameCount.second = backwardFrames;
+        }
+        return true;
+    }
+
     pair<double, double> GetCacheDuration() const override
     {
         throw runtime_error("VideoReader does NOT SUPPORT method GetCacheDuration()!");

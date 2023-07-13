@@ -78,6 +78,7 @@ struct MediaReader
     virtual int64_t GetReadPos() const = 0;
 
     virtual bool SetCacheDuration(double forwardDur, double backwardDur) = 0;
+    virtual bool SetCacheFrames(bool readForward, uint32_t forwardFrames, uint32_t backwardFrames) = 0;
     virtual std::pair<double, double> GetCacheDuration() const = 0;
     virtual bool IsHwAccelEnabled() const = 0;
     virtual void EnableHwAccel(bool enable) = 0;

@@ -776,6 +776,11 @@ public:
         return true;
     }
 
+    bool SetCacheFrames(bool readForward, uint32_t forwardFrames, uint32_t backwardFrames) override
+    {
+        throw runtime_error("This interface is NOT SUPPORTED by 'MediaReader_Impl'!");
+    }
+
     int64_t GetReadPos() const override
     {
         return m_cacheWnd.readPos;

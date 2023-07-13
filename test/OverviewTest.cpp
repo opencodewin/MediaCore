@@ -20,6 +20,8 @@ static vector<ImTextureID> g_snapshotTids;
 ImVec2 g_snapImageSize;
 const string c_imguiIniPath = "movr_test.ini";
 const string c_bookmarkPath = "bookmark.ini";
+static bool g_isImageSequence = false;
+static MediaParser::Holder g_mediaParser;
 
 // Application Framework Functions
 static void MediaOverview_Initialize(void** handle)
@@ -96,6 +98,9 @@ static bool MediaOverview_Frame(void * handle, bool app_will_quit)
                                                     filters, "~/Videos/", 1, nullptr, 
                                                     ImGuiFileDialogFlags_ShowBookmark | ImGuiFileDialogFlags_Modal);
         }
+
+        ImGui::SameLine();
+        ImGui::Checkbox("Open image sequence", &g_isImageSequence);
 
         ImGui::Spacing();
 
@@ -206,9 +211,15 @@ static bool MediaOverview_Frame(void * handle, bool app_will_quit)
                 tid = nullptr;
             }
             string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
-            if (g_movr->Open(filePathName, g_ssCount))
-                g_movr->GetMediaParser()->EnableParseInfo(MediaParser::VIDEO_SEEK_POINTS);
-            // g_movr2->Open(g_movr->GetMediaParser());
+            g_mediaParser = MediaParser::CreateInstance();
+            if (g_isImageSequence)
+                g_mediaParser->OpenImageSequence({25, 1}, filePathName, ".+_([[:digit:]]{1,})\\.png", false);
+            else
+            {
+                g_mediaParser->Open(filePathName);
+                g_mediaParser->EnableParseInfo(MediaParser::VIDEO_SEEK_POINTS);
+            }
+            g_movr->Open(g_mediaParser, g_ssCount);
         }
         ImGuiFileDialog::Instance()->Close();
     }

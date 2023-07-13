@@ -73,10 +73,22 @@ public:
             m_errMsg = "The parser is NOT opened for an image sequence!";
             return false;
         }
+        m_hMediaInfo = hParser->GetMediaInfo();
+        if (!m_hMediaInfo)
+        {
+            ostringstream oss; oss << "FAILED to get MediaInfo for MediaParser! Image sequence dir path is '" << m_hParser->GetUrl() << "'.";
+            m_errMsg = oss.str();
+            return false;
+        }
+        m_pVidstm = dynamic_cast<VideoStream*>(m_hMediaInfo->streams[0].get());
+        m_frameRate = m_pVidstm->realFrameRate;
+        m_vidTimeBase = {m_frameRate.den, m_frameRate.num};
+        m_vidDurMts = m_pVidstm->duration*1000;
+        m_vidfrmIntvPts = 1;
 
         m_hParser = hParser;
         m_opened = true;
-        return false;
+        return true;
     }
 
     bool ConfigVideoReader(uint32_t outWidth, uint32_t outHeight, ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp) override
@@ -398,6 +410,13 @@ public:
         throw runtime_error("This interface is NOT SUPPORTED by ImageSequenceReader!");
     }
 
+    bool SetCacheFrames(bool readForward, uint32_t forwardFrames, uint32_t backwardFrames) override
+    {
+        m_cacheFrameCount.first = backwardFrames;
+        m_cacheFrameCount.second = forwardFrames;
+        return true;
+    }
+
     pair<double, double> GetCacheDuration() const override
     {
         throw runtime_error("This interface is NOT SUPPORTED by ImageSequenceReader!");
@@ -593,7 +612,7 @@ private:
             {
                 FFUtils::OpenVideoDecoderOptions viddecOpenOpts = owner->m_viddecOpenOpts;
                 FFUtils::OpenVideoDecoderResult res;
-                if (FFUtils::OpenVideoDecoder(m_avfmtCtx, vidstmIdx, &viddecOpenOpts, &res))
+                if (FFUtils::OpenVideoDecoder(m_avfmtCtx, vidstmIdx, &viddecOpenOpts, &res, false))
                 {
                     m_viddecCtx = res.decCtx;
                     AVHWDeviceType hwDevType = res.hwDevType;
@@ -709,8 +728,12 @@ private:
                 if (!imagePath.empty())
                 {
                     if (DecodeImageFile(imagePath))
-                    {
                         idleLoop = false;
+                    else
+                    {
+                        lock_guard<mutex> lk(m_vfLock);
+                        if (m_pVfrm)
+                            m_pVfrm->decodeFailed = true;
                     }
                     ReleaseFormatContext();
                     imagePath.clear();
@@ -748,8 +771,12 @@ private:
             }
             if (!frmPtr)
             {
-                // owner->m_logger->Log(Error) << "NULL avframe ptr at pos " << pos << "(" << pts << ")!" << endl;
-                return false;
+                while (!frmPtr && !decodeFailed)
+                {
+                    this_thread::sleep_for(chrono::milliseconds(2));
+                }
+                if (!frmPtr)
+                    return false;
             }
 
             // acquire the lock of 'frmPtr'
@@ -793,6 +820,7 @@ private:
         bool isStartFrame{false};
         atomic_bool frmPtrInUse{false};
         DecodeImageContext::Holder hDecCtx;
+        bool decodeFailed{false};
         string imageFilePath;
     };
 
@@ -803,8 +831,16 @@ private:
         lock_guard<mutex> _lk(m_cacheRangeLock);
         m_readPos = readPts;
         auto& cacheFrameCount = m_cacheFrameCount;
-        m_cacheRange.first = readPts-cacheFrameCount.first*m_vidfrmIntvPts;
-        m_cacheRange.second = readPts+cacheFrameCount.second*m_vidfrmIntvPts;
+        if (m_readForward)
+        {
+            m_cacheRange.first = readPts-cacheFrameCount.first*m_vidfrmIntvPts;
+            m_cacheRange.second = readPts+cacheFrameCount.second*m_vidfrmIntvPts;
+        }
+        else
+        {
+            m_cacheRange.first = readPts-cacheFrameCount.second*m_vidfrmIntvPts;
+            m_cacheRange.second = readPts+cacheFrameCount.first*m_vidfrmIntvPts;
+        }
         if (m_vidfrmIntvPts > 1)
         {
             m_cacheRange.first--;
@@ -872,20 +908,7 @@ private:
         }
 
         lock_guard<recursive_mutex> lk(m_apiLock, adopt_lock);
-        m_hMediaInfo = m_hParser->GetMediaInfo();
-        if (!m_hMediaInfo)
-        {
-            ostringstream oss; oss << "FAILED to get MediaInfo for MediaParser! Image sequence dir path is '" << m_hParser->GetUrl() << "'.";
-            m_errMsg = oss.str();
-            return false;
-        }
         m_hFileIter = m_hParser->GetImageSequenceIterator()->Clone();
-        m_pVidstm = dynamic_cast<VideoStream*>(m_hMediaInfo->streams[0].get());
-        m_frameRate = m_pVidstm->realFrameRate;
-        m_vidTimeBase = {m_frameRate.den, m_frameRate.num};
-        m_vidDurMts = m_pVidstm->duration*1000;
-        m_vidfrmIntvPts = 1;
-
         auto filePath = m_hFileIter->GetNextFilePath();
         filePath = m_hFileIter->JoinBaseDirPath(filePath);
         int fferr = avformat_open_input(&(decCtx->m_avfmtCtx), filePath.c_str(), nullptr, nullptr);

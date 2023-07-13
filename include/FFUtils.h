@@ -92,6 +92,7 @@ public:
     uint32_t GetOutWidth() const { return m_outWidth; }
     uint32_t GetOutHeight() const { return m_outHeight; }
     ImColorFormat GetOutColorFormat() const { return m_outClrFmt; }
+    ImDataType GetOutDataType() const { return m_outDataType; }
     ImInterpolateMode GetResizeInterpolateMode() const { return m_resizeInterp; }
 
     void SetUseVulkanConverter(bool use) { m_useVulkanComponents = use; }
