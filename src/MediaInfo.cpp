@@ -25,6 +25,12 @@ Ratio::Ratio(const string& ratstr)
     }
 }
 
+ostream& operator<<(ostream& os, const Ratio& r)
+{
+    os << "(" << r.num << "/" << r.den << ")";
+    return os;
+}
+
 ostream& operator<<(ostream& os, const Value& val)
 {
     if (val.type == Value::VT_INT)

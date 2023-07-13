@@ -32,6 +32,7 @@ struct MediaReader
     using Holder = std::shared_ptr<MediaReader>;
     static MEDIACORE_API Holder CreateInstance(const std::string& loggerName = "");
     static MEDIACORE_API Holder CreateVideoInstance(const std::string& loggerName = "");
+    static MEDIACORE_API Holder CreateImageSequenceInstance(const std::string& loggerName = "");
     static MEDIACORE_API Logger::ALogger* GetDefaultLogger();
     static MEDIACORE_API Logger::ALogger* GetVideoLogger();
 

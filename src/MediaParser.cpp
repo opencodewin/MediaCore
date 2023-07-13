@@ -26,7 +26,6 @@
 #include <sstream>
 #include "MediaParser.h"
 #include "FFUtils.h"
-#include "SysUtils.h"
 extern "C"
 {
     #include "libavutil/avutil.h"
@@ -109,6 +108,43 @@ public:
         return true;
     }
 
+    bool OpenImageSequence(const Ratio& frameRate,
+            const std::string& dirPath, const std::string& regexPattern, bool caseSensitive) override
+    {
+        if (!Ratio::IsValid(frameRate))
+        {
+            ostringstream oss; oss << "INVALID argument 'frameRate'! Ratio " << frameRate << " is not valid.";
+            m_errMsg = oss.str();
+            return false;
+        }
+        lock_guard<recursive_mutex> lk(m_apiLock);
+        m_hFileIter = SysUtils::FileIterator::CreateInstance(dirPath);
+        if (!m_hFileIter)
+        {
+            ostringstream oss; oss << "INVALID argument 'dirPath'! '" << dirPath << "' is NOT a DIRECTORY.";
+            m_errMsg = oss.str();
+            return false;
+        }
+        m_hFileIter->SetCaseSensitive(caseSensitive);
+        m_hFileIter->SetFilterPattern(regexPattern, true);
+
+        TaskHolder hTask(new ParseTask());
+        hTask->taskProc = bind(&MediaParser_Impl::ParseGeneralMediaInfo, this, _1);
+        {
+            lock_guard<mutex> lk(m_taskTableLock);
+            m_taskTable[MEDIA_INFO] = hTask;
+        }
+        {
+            lock_guard<mutex> lk(m_pendingTaskQLock);
+            m_pendingTaskQ.push_back(hTask);
+        }
+
+        m_imgsqFrameRate = frameRate;
+        m_isImageSequence = true;
+        m_opened = true;
+        return true;
+    }
+
     void Close() override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
@@ -135,6 +171,8 @@ public:
         m_url = "";
         m_errMsg = "";
         m_opened = false;
+        m_isImageSequence = false;
+        m_hFileIter = nullptr;
     }
 
     bool EnableParseInfo(InfoType infoType) override
@@ -251,6 +289,16 @@ public:
         return m_opened;
     }
 
+    bool IsImageSequence() const override
+    {
+        return m_isImageSequence;
+    }
+
+    SysUtils::FileIterator::Holder GetImageSequenceIterator() const override
+    {
+        return m_hFileIter;
+    }
+
     string GetError() const override
     {
         return m_errMsg;
@@ -318,6 +366,14 @@ private:
 
     bool ParseGeneralMediaInfo(TaskHolder hTask)
     {
+        if (m_isImageSequence)
+            return ParseMediaInfoFromImageSequence(hTask);
+        else
+            return ParseMediaInfoFromFile(hTask);
+    }
+
+    bool ParseMediaInfoFromFile(TaskHolder hTask)
+    {
         string fileName = SysUtils::ExtractFileName(m_url);
         ostringstream thnOss;
         thnOss << "PsrTsk-" << fileName;
@@ -365,6 +421,51 @@ private:
         m_bestVidStmIdx = av_find_best_stream(m_avfmtCtx, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
         m_bestAudStmIdx = av_find_best_stream(m_avfmtCtx, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
         m_logger->Log(INFO) << "Parse general media info of media '" << m_url << "' done." << endl;
+        return true;
+    }
+
+    bool ParseMediaInfoFromImageSequence(TaskHolder hTask)
+    {
+        string dirPath = m_hFileIter->GetBaseDirPath();
+        ostringstream thnOss;
+        thnOss << "PsrTskIs-" << dirPath;
+        SysUtils::SetThreadName(m_taskThread, thnOss.str());
+
+        m_hMediaInfo = MediaInfo::Holder(new MediaInfo());
+        m_hMediaInfo->url = dirPath;
+        auto filePath = m_hFileIter->GetNextFilePath();
+        if (!filePath.empty())
+        {
+            auto fullPath = m_hFileIter->JoinBaseDirPath(filePath);
+            int fferr = avformat_open_input(&m_avfmtCtx, fullPath.c_str(), nullptr, nullptr);
+            if (fferr < 0)
+            {
+                m_avfmtCtx = nullptr;
+                m_errMsg = FFapiFailureMessage("avformat_open_input", fferr);
+                return false;
+            }
+            fferr = avformat_find_stream_info(m_avfmtCtx, nullptr);
+            if (fferr < 0)
+            {
+                hTask->errMsg = FFapiFailureMessage("avformat_find_stream_info", fferr);
+                return false;
+            }
+            auto hMediaInfo = GenerateMediaInfoByAVFormatContext(m_avfmtCtx);
+            m_bestVidStmIdx = av_find_best_stream(m_avfmtCtx, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+            if (m_bestVidStmIdx >= 0)
+            {
+                m_hMediaInfo->streams.push_back(hMediaInfo->streams[m_bestVidStmIdx]);
+                m_bestVidStmIdx = 0;
+                auto vidstm = dynamic_cast<VideoStream*>(m_hMediaInfo->streams[0].get());
+                vidstm->avgFrameRate = vidstm->realFrameRate = m_imgsqFrameRate;
+                vidstm->isImage = false;
+                vidstm->frameNum = m_hFileIter->GetValidFileCount();
+                vidstm->duration = (double)vidstm->frameNum*(double)m_imgsqFrameRate.den/m_imgsqFrameRate.num;
+            }
+            m_hFileIter->SeekToValidFile(0);
+            m_logger->Log(INFO) << "Parse general media info of media '" << fullPath << "' done." << endl;
+        }
+
         return true;
     }
 
@@ -531,6 +632,10 @@ private:
 
     SeekPointsHolder m_hVidSeekPoints;
     double m_minSpIntervalSec{2};
+
+    SysUtils::FileIterator::Holder m_hFileIter;
+    bool m_isImageSequence{false};
+    Ratio m_imgsqFrameRate;
 
     string m_url;
     AVFormatContext* m_avfmtCtx{nullptr};

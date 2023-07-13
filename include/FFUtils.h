@@ -228,6 +228,7 @@ namespace FFUtils
     // Find and open a video decoder
     struct OpenVideoDecoderOptions
     {
+        std::string designatedDecoderName;
         bool onlyUseSoftwareDecoder{false};
         AVHWDeviceType useHardwareType{AV_HWDEVICE_TYPE_NONE};
         bool preferHwOutputPixfmt{true};
@@ -241,7 +242,7 @@ namespace FFUtils
         SelfFreeAVFramePtr probeFrame;
         std::string errMsg;
     };
-    bool OpenVideoDecoder(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, OpenVideoDecoderOptions* options, OpenVideoDecoderResult* result);
+    bool OpenVideoDecoder(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, OpenVideoDecoderOptions* options, OpenVideoDecoderResult* result, bool needValidation = true);
 
     // A function to copy pcm data from one buffer to another, with the considering of sample format and buffer state
     uint32_t CopyPcmDataEx(uint8_t channels, uint8_t bytesPerSample, uint32_t copySamples,

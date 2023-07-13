@@ -27,6 +27,7 @@ using Clock = chrono::steady_clock;
 static TextureManager::Holder g_txmgr;
 static ManagedTexture::Holder g_tx;
 static bool g_isOpening = false;
+static bool g_isImageSequence = false;
 static MediaParser::Holder g_mediaParser;
 static bool g_videoOnly = false;
 static bool g_audioOnly = false;
@@ -118,9 +119,6 @@ static void MediaReader_Initialize(void** handle)
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = c_imguiIniPath.c_str();
 
-    // g_vidrdr = MediaReader::CreateInstance();
-    g_vidrdr = MediaReader::CreateVideoInstance();
-    g_vidrdr->SetLogLevel(DEBUG);
     g_audrdr = MediaReader::CreateInstance();
     g_audrdr->SetLogLevel(INFO);
 
@@ -180,8 +178,10 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                                                     ImGuiFileDialogFlags_ShowBookmark | ImGuiFileDialogFlags_Modal);
         }
 
-        bool isFileOpened = g_vidrdr->IsOpened() || g_audrdr->IsOpened();
+        ImGui::SameLine();
+        ImGui::Checkbox("Open image sequence", &g_isImageSequence);
 
+        bool isFileOpened = (g_vidrdr && g_vidrdr->IsOpened()) || g_audrdr->IsOpened();
         ImGui::SameLine();
         ImGui::BeginDisabled(!isFileOpened || g_audioStreamCount < 2);
         ImGui::PushItemWidth(100);
@@ -214,7 +214,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         bool isForward;
         float playPos;
         float mediaDur;
-        if (g_vidrdr->IsOpened())
+        if (g_vidrdr && g_vidrdr->IsOpened())
         {
             isForward = g_vidrdr->IsDirectionForward();
             const VideoStream* vstminfo = g_vidrdr->GetVideoStream();
@@ -248,7 +248,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
             g_isPlay = !g_isPlay;
             if (g_isPlay)
             {
-                if (g_vidrdr->IsSuspended())
+                if (g_vidrdr && g_vidrdr->IsSuspended())
                     g_vidrdr->Wakeup();
                 g_playStartTp = Clock::now();
                 if (g_audrdr->IsOpened())
@@ -267,7 +267,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         if (ImGui::Button(dirBtnLabel.c_str()))
         {
             bool notForward = !isForward;
-            if (g_vidrdr->IsOpened())
+            if (g_vidrdr && g_vidrdr->IsOpened())
             {
                 g_vidrdr->SetDirection(notForward);
                 g_playStartPos = playPos;
@@ -281,7 +281,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         }
 
         ImGui::SameLine();
-        string suspendBtnLabel = g_vidrdr->IsSuspended() ? "WakeUp" : "Suspend";
+        string suspendBtnLabel = g_vidrdr && g_vidrdr->IsSuspended() ? "WakeUp" : "Suspend";
         if (ImGui::Button(suspendBtnLabel.c_str()))
         {
             if (g_vidrdr->IsSuspended())
@@ -325,7 +325,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
 
         ImGui::Spacing();
         string imgTag;
-        if (g_vidrdr->IsOpened() && !g_vidrdr->IsSuspended())
+        if (g_vidrdr && g_vidrdr->IsOpened() && !g_vidrdr->IsSuspended())
         {
             bool eof;
             ImGui::ImMat vmat;
@@ -399,6 +399,11 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
             {
                 if (g_mediaParser->HasVideo() && !g_audioOnly)
                 {
+                    if (g_mediaParser->IsImageSequence())
+                        g_vidrdr = MediaReader::CreateImageSequenceInstance();
+                    else
+                        g_vidrdr = MediaReader::CreateVideoInstance();
+                    g_vidrdr->SetLogLevel(DEBUG);
                     g_vidrdr->EnableHwAccel(g_useHwAccel);
                     g_vidrdr->Open(g_mediaParser);
                     // g_vidrdr->ConfigVideoReader((uint32_t)g_imageDisplaySize.x, (uint32_t)g_imageDisplaySize.y);
@@ -439,7 +444,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
 	{
         if (ImGuiFileDialog::Instance()->IsOk())
 		{
-            g_vidrdr->Close();
+            if (g_vidrdr) g_vidrdr->Close();
             g_audrdr->Close();
             g_audrnd->Flush();
             g_audPos = 0;
@@ -450,7 +455,10 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
             g_isLongCacheDur = false;
             string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
             g_mediaParser = MediaParser::CreateInstance();
-            g_mediaParser->Open(filePathName);
+            if (g_isImageSequence)
+                g_mediaParser->OpenImageSequence({25, 1}, filePathName, ".+\\.png", false);
+            else
+                g_mediaParser->Open(filePathName);
             g_isOpening = true;
         }
         ImGuiFileDialog::Instance()->Close();

@@ -18,6 +18,9 @@
 #pragma once
 #include <thread>
 #include <string>
+#include <memory>
+#include <cstdint>
+#include <vector>
 #include "MediaCore.h"
 
 namespace SysUtils
@@ -27,4 +30,24 @@ MEDIACORE_API std::string ExtractFileBaseName(const std::string& path);
 MEDIACORE_API std::string ExtractFileExtName(const std::string& path);
 MEDIACORE_API std::string ExtractFileName(const std::string& path);
 MEDIACORE_API std::string ExtractDirectoryPath(const std::string& path);
+MEDIACORE_API bool IsDirectory(const std::string& path);
+
+struct FileIterator
+{
+    using Holder = std::shared_ptr<FileIterator>;
+    static Holder CreateInstance(const std::string& baseDirPath);
+    virtual Holder Clone() const = 0;
+
+    virtual bool SetFilterPattern(const std::string& filterPattern, bool isRegexPattern) = 0;
+    virtual void SetCaseSensitive(bool sensitive) = 0;
+    virtual std::string GetBaseDirPath() const = 0;
+    virtual std::string GetNextFilePath() = 0;
+    virtual uint32_t GetNextFileIndex() const = 0;
+    virtual std::vector<std::string> GetAllFilePaths() = 0;
+    virtual uint32_t GetValidFileCount(bool refresh = false) = 0;
+    virtual bool SeekToValidFile(uint32_t index) = 0;
+    virtual std::string JoinBaseDirPath(const std::string& relativeFilePath) const = 0;
+
+    virtual std::string GetError() const = 0;
+};
 }

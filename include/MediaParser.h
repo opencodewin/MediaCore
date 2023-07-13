@@ -22,6 +22,7 @@
 #include <memory>
 #include "MediaCore.h"
 #include "MediaInfo.h"
+#include "SysUtils.h"
 #include "Logger.h"
 
 namespace MediaCore
@@ -33,6 +34,8 @@ struct MediaParser
     static MEDIACORE_API Logger::ALogger* GetLogger();
 
     virtual bool Open(const std::string& url) = 0;
+    virtual bool OpenImageSequence(const Ratio& frameRate,
+            const std::string& dirPath, const std::string& regexPattern, bool caseSensitive) = 0;
     virtual void Close() = 0;
 
     enum InfoType
@@ -52,6 +55,8 @@ struct MediaParser
     virtual int GetBestAudioStreamIndex() = 0;
     virtual VideoStream* GetBestVideoStream() = 0;
     virtual AudioStream* GetBestAudioStream() = 0;
+    virtual bool IsImageSequence() const = 0;
+    virtual SysUtils::FileIterator::Holder GetImageSequenceIterator() const = 0;
 
     using SeekPointsHolder = std::shared_ptr<std::vector<int64_t>>;
     virtual SeekPointsHolder GetVideoSeekPoints(bool wait = true) = 0;

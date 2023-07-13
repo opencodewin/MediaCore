@@ -38,7 +38,7 @@ private:
     struct ManagedTexture_Impl : public ManagedTexture
     {
         ManagedTexture_Impl(TextureManager_Impl* owner, _TextureContainer* container, const Vec2<int32_t>& textureSize, const Vec2<int32_t>& roiSize, ImDataType dataType)
-            : m_owner(owner), m_container(container), m_textureSize(textureSize), m_roiSize(roiSize), m_dataType(dataType)
+            : m_owner(owner), m_container(container), m_textureSize(textureSize), m_roiSize(roiSize), m_roiRect({0,0}, textureSize), m_dataType(dataType)
         {}
         virtual ~ManagedTexture_Impl() {}
 
@@ -318,7 +318,6 @@ private:
 
             // create new ManagedTexture
             ManagedTexture_Impl* pTx = new ManagedTexture_Impl(m_owner, this, m_textureSize, m_textureSize, m_dataType);
-            pTx->m_roiRect = {{0,0}, m_textureSize};
             ManagedTexture::Holder hTx(pTx, MANAGED_TEXTURE_DELETER);
             m_txPool.push_back(hTx);
             return hTx;

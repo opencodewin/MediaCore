@@ -137,7 +137,7 @@ ImColorFormat ConvertPixelFormatToColorFormat(AVPixelFormat pixfmt)
         clrfmt = IM_CF_RGBA;
     else if (pixfmt == AV_PIX_FMT_BGRA || pixfmt == AV_PIX_FMT_BGR0 || pixfmt == AV_PIX_FMT_BGRA64)
         clrfmt = IM_CF_ARGB;
-    else if (pixfmt == AV_PIX_FMT_RGB24 || pixfmt == AV_PIX_FMT_RGB48)
+    else if (pixfmt == AV_PIX_FMT_RGB24 || pixfmt == AV_PIX_FMT_RGB48BE || pixfmt == AV_PIX_FMT_RGB48LE)
         clrfmt = IM_CF_BGR;
     else if (pixfmt == AV_PIX_FMT_ARGB || pixfmt == AV_PIX_FMT_0RGB)
         clrfmt = IM_CF_BGRA;
@@ -608,7 +608,8 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat
             << desc->name << "', can only support value from 1 ~ 4." << endl;
         return false;
     }
-    bool isRgb = (desc->flags&AV_PIX_FMT_FLAG_RGB) > 0;
+    const bool isRgb = (desc->flags&AV_PIX_FMT_FLAG_RGB) != 0;
+    const bool isPlanar = (desc->flags&AV_PIX_FMT_FLAG_PLANAR) != 0;
 
     int bitDepth = desc->comp[0].depth;
     ImColorSpace color_space =  avfrm->colorspace == AVCOL_SPC_BT470BG ||
@@ -635,7 +636,7 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat
         int chLinesize = linesize;
         int chWidth = width;
         int chHeight = height;
-        if ((desc->flags&AV_PIX_FMT_FLAG_RGB) == 0 && i > 0)
+        if (!isRgb && i > 0)
         {
             chLinesize >>= desc->log2_chroma_w;
             chWidth >>= desc->log2_chroma_w;
@@ -650,12 +651,23 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat
         if (desc->nb_components > i && desc->comp[i].plane == i)
         {
             uint8_t* src_data = avfrm->data[i]+desc->comp[i].offset;
-            if (i < channel)
+            if (!isRgb)
             {
-                mat_component.create_type(chLinesize, chHeight, 1, src_data, dataType);
-                mat_component.dw = chWidth;
+                if (i < channel)
+                {
+                    mat_component.create_type(chLinesize, chHeight, 1, src_data, dataType);
+                    mat_component.dw = chWidth;
+                }
+                vmat.push_back(mat_component);
             }
-            vmat.push_back(mat_component);
+            else
+            {
+                if (isPlanar)
+                    mat_component.create_type(chWidth, chHeight, 1, src_data, dataType);
+                else
+                    mat_component.create_type(chWidth, chHeight, desc->nb_components, src_data, dataType);
+                vmat.push_back(mat_component);
+            }
         }
     }
     if (!vmat.empty())
@@ -900,28 +912,42 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
             outMat.time_stamp = timestamp;
             return false;
         }
-        // YUV -> RGB
-        ImGui::VkMat rgbMat;
-        rgbMat.type = m_outDataType;
-        rgbMat.color_format = IM_CF_ABGR;
-        rgbMat.w = m_outWidth;
-        rgbMat.h = m_outHeight;
-        if (m_imgClrCvt->YUV2RGBA(inMat[0], inMat[1], inMat.size() > 2 ? inMat[2] : ImGui::ImMat(), rgbMat, m_resizeInterp) < 0.f)
+        if (IM_ISYUV(inMat[0].color_format))
         {
-            m_errMsg = m_imgClrCvt->GetError();
-            return false;
-        }
-        if (m_outputCpuMat && rgbMat.device == IM_DD_VULKAN)
-        {
-            outMat.type = m_outDataType;
-            m_imgClrCvt->Conv(rgbMat, outMat);
+            // YUV -> RGB
+            ImGui::VkMat rgbMat;
+            rgbMat.type = m_outDataType;
+            rgbMat.color_format = IM_CF_ABGR;
+            rgbMat.w = m_outWidth;
+            rgbMat.h = m_outHeight;
+            if (m_imgClrCvt->YUV2RGBA(inMat[0], inMat[1], inMat.size() > 2 ? inMat[2] : ImGui::ImMat(), rgbMat, m_resizeInterp) < 0.f)
+            {
+                m_errMsg = m_imgClrCvt->GetError();
+                return false;
+            }
+            if (m_outputCpuMat && rgbMat.device == IM_DD_VULKAN)
+            {
+                outMat.type = m_outDataType;
+                m_imgClrCvt->Conv(rgbMat, outMat);
+            }
+            else
+                outMat = rgbMat;
+            outMat.time_stamp = timestamp;
+            outMat.rate = inMat[0].rate;
+            outMat.flags = inMat[0].flags;
+            outMat.duration = inMat[0].duration;
         }
         else
-            outMat = rgbMat;
-        outMat.time_stamp = timestamp;
-        outMat.rate = inMat[0].rate;
-        outMat.flags = inMat[0].flags;
-        outMat.duration = inMat[0].duration;
+        {
+            outMat = m_outputCpuMat ? ImGui::ImMat() : ImGui::VkMat();
+            outMat.color_format = IM_CF_ABGR;
+            outMat.type = m_outDataType;
+            if (inMat[0].w != m_outWidth || inMat[0].h != m_outHeight)
+                m_imgRsz->Resize(inMat[0], outMat, (float)m_outWidth/inMat[0].w, (float)m_outHeight/inMat[0].h, m_resizeInterp);
+            else
+                m_imgClrCvt->Conv(inMat[0], outMat);
+            outMat.time_stamp = timestamp;
+        }
 #else // YUV_CONVERT_NON_PLANAR
         // AVFrame -> ImMat
         ImGui::ImMat inMat;
@@ -2096,7 +2122,7 @@ static bool _CheckVideoDecoderValidity(const AVFormatContext* pAvfmtCtx, int vid
 
 namespace FFUtils
 {
-    bool OpenVideoDecoder(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, OpenVideoDecoderOptions* options, OpenVideoDecoderResult* result)
+    bool OpenVideoDecoder(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, OpenVideoDecoderOptions* options, OpenVideoDecoderResult* result, bool needValidation)
     {
         // check arguments are valid
         if (!result)
@@ -2143,7 +2169,27 @@ namespace FFUtils
         }
 
         AVStream* targetStream = pAvfmtCtx->streams[videoStreamIndex];
-        AVCodecPtr codec = (AVCodecPtr)avcodec_find_decoder(targetStream->codecpar->codec_id);
+        AVCodecPtr codec;
+        if (!options->designatedDecoderName.empty())
+        {
+            codec = avcodec_find_decoder_by_name(options->designatedDecoderName.c_str());
+            if (!codec)
+            {
+                ostringstream oss; oss << "Can not find the decoder by designated name '" << options->designatedDecoderName << "'!";
+                result->errMsg = oss.str();
+                return false;
+            }
+        }
+        else
+        {
+            codec = (AVCodecPtr)avcodec_find_decoder(targetStream->codecpar->codec_id);
+            if (!codec)
+            {
+                ostringstream oss; oss << "Can not find the decoder by codec_id " << targetStream->codecpar->codec_id << "!";
+                result->errMsg = oss.str();
+                return false;
+            }
+        }
         OpenVideoDecoderResult hwResult, swResult;
         bool ret = false;
         if (!options->onlyUseSoftwareDecoder)
@@ -2151,8 +2197,7 @@ namespace FFUtils
             ret = _OpenHwVideoDecoder(codec, targetStream->codecpar, options, &hwResult);
             if (ret)
             {
-                ret = _CheckVideoDecoderValidity(pAvfmtCtx, videoStreamIndex, &hwResult);
-                if (ret)
+                if (!needValidation || _CheckVideoDecoderValidity(pAvfmtCtx, videoStreamIndex, &hwResult))
                     *result = hwResult;
                 else
                     Log(DEBUG) << "FAILED on validity check for HW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url
@@ -2167,8 +2212,7 @@ namespace FFUtils
             ret = _OpenSwVideoDecoder(codec, targetStream->codecpar, options, &swResult);
             if (ret)
             {
-                ret = _CheckVideoDecoderValidity(pAvfmtCtx, videoStreamIndex, &swResult);
-                if (ret)
+                if (!needValidation || _CheckVideoDecoderValidity(pAvfmtCtx, videoStreamIndex, &swResult))
                     *result = swResult;
                 else
                     Log(DEBUG) << "FAILED on validity check for SW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url

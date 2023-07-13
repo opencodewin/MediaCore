@@ -44,6 +44,8 @@ namespace MediaCore
 
         static inline bool IsValid(const Ratio& r)
         { return r.num != 0 && r.den != 0; }
+
+        friend std::ostream& operator<<(std::ostream& os, const Ratio& r);
     };
 
     struct Value

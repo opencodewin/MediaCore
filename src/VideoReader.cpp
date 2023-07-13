@@ -26,6 +26,7 @@
 #include "MediaReader.h"
 #include "FFUtils.h"
 #include "SysUtils.h"
+#include "DebugHelper.h"
 extern "C"
 {
     #include "libavutil/avutil.h"
@@ -33,13 +34,7 @@ extern "C"
     #include "libavutil/pixdesc.h"
     #include "libavformat/avformat.h"
     #include "libavcodec/avcodec.h"
-    #include "libavdevice/avdevice.h"
-    #include "libavfilter/avfilter.h"
-    #include "libavfilter/buffersrc.h"
-    #include "libavfilter/buffersink.h"
-    #include "libswscale/swscale.h"
 }
-#include "DebugHelper.h"
 
 #define VIDEO_DECODE_PERFORMANCE_ANALYSIS 0
 #define VIDEO_FRAME_CONVERSION_PERFORMANCE_ANALYSIS 0
@@ -148,16 +143,7 @@ public:
         m_outClrFmt = outClrfmt;
         m_outDtype = outDtype;
         m_interpMode = rszInterp;
-
         m_vidDurMts = (int64_t)(vidStream->duration*1000);
-        AVRational timebase = { vidStream->timebase.num, vidStream->timebase.den };
-        AVRational frameRate;
-        if (Ratio::IsValid(vidStream->avgFrameRate))
-            frameRate = { vidStream->avgFrameRate.num, vidStream->avgFrameRate.den };
-        else if (Ratio::IsValid(vidStream->realFrameRate))
-            frameRate = { vidStream->realFrameRate.num, vidStream->realFrameRate.den };
-        else
-            frameRate = av_inv_q(timebase);
 
         m_configured = true;
         return true;
@@ -167,6 +153,7 @@ public:
             float outWidthFactor, float outHeightFactor,
             ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp) override
     {
+        lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_opened)
         {
             m_errMsg = "Can NOT configure a 'VideoReader' until it's been configured!";
@@ -182,7 +169,6 @@ public:
             m_errMsg = "Can NOT configure this 'VideoReader' as video reader since no video stream is found!";
             return false;
         }
-        lock_guard<recursive_mutex> lk(m_apiLock);
 
         auto vidStream = GetVideoStream();
         m_isImage = vidStream->isImage;
@@ -192,16 +178,7 @@ public:
         m_outClrFmt = outClrfmt;
         m_outDtype = outDtype;
         m_interpMode = rszInterp;
-
         m_vidDurMts = (int64_t)(vidStream->duration*1000);
-        AVRational timebase = { vidStream->timebase.num, vidStream->timebase.den };
-        AVRational frameRate;
-        if (Ratio::IsValid(vidStream->avgFrameRate))
-            frameRate = { vidStream->avgFrameRate.num, vidStream->avgFrameRate.den };
-        else if (Ratio::IsValid(vidStream->realFrameRate))
-            frameRate = { vidStream->realFrameRate.num, vidStream->realFrameRate.den };
-        else
-            frameRate = av_inv_q(timebase);
 
         m_configured = true;
         return true;
@@ -341,10 +318,7 @@ public:
             m_errMsg = "This 'VideoReader' instance is NOT OPENED yet!";
             return;
         }
-        if (m_readForward != forward)
-        {
-            m_readForward = forward;
-        }
+        m_readForward = forward;
     }
 
     void Suspend() override
@@ -933,7 +907,6 @@ private:
     };
 
     static const function<void (VideoFrame*)> VIDEO_READER_VIDEO_FRAME_HOLDER_DELETER;
-    static VideoFrame::Holder CreateVideoFrameInstance(VideoFrame_Impl* pVf);
 
     void DemuxThreadProc()
     {
@@ -1326,7 +1299,7 @@ private:
                         if (m_readForward && hPrevFrm && hPrevFrm->Pts() >= pVf->pts)
                             m_logger->Log(WARN) << "!! Video decoder output is NON-MONOTONIC !! prev-pts=" << hPrevFrm->Pts() << " >= pts=" << pVf->pts << endl;
 
-                        VideoFrame::Holder hVfrm = CreateVideoFrameInstance(pVf);
+                        VideoFrame::Holder hVfrm(pVf, VIDEO_READER_VIDEO_FRAME_HOLDER_DELETER);
                         hPrevFrm = hVfrm;
                         lock_guard<mutex> _lk(m_vfrmQLock);
                         auto riter = find_if(m_vfrmQ.rbegin(), m_vfrmQ.rend(), [pts] (auto& vf) {
@@ -1572,11 +1545,6 @@ const function<void (MediaReader::VideoFrame*)> VideoReader_Impl::VIDEO_READER_V
     VideoReader_Impl::VideoFrame_Impl* ptr = dynamic_cast<VideoReader_Impl::VideoFrame_Impl*>(p);
     delete ptr;
 };
-
-MediaReader::VideoFrame::Holder VideoReader_Impl::CreateVideoFrameInstance(VideoReader_Impl::VideoFrame_Impl* pVf)
-{
-    return MediaReader::VideoFrame::Holder(pVf, VIDEO_READER_VIDEO_FRAME_HOLDER_DELETER);
-}
 
 static const auto VIDEO_READER_HOLDER_DELETER = [] (MediaReader* p) {
     VideoReader_Impl* ptr = dynamic_cast<VideoReader_Impl*>(p);
