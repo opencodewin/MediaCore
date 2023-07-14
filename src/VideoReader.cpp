@@ -909,6 +909,9 @@ private:
         int64_t Pts() const override { return pts; }
         int64_t Dur() const override { return dur; }
 
+        void SetAutoConvertToMat(bool enable) override {}
+        bool IsReady() const override { return !vmat.empty(); }
+
         VideoReader_Impl* owner;
         SelfFreeAVFramePtr frmPtr;
         ImGui::ImMat vmat;

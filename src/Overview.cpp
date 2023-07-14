@@ -536,34 +536,6 @@ private:
             if (openVideoFailed && openAudioFailed)
                 return false;
         }
-        else
-        {
-            m_hImgsqReader = MediaReader::CreateImageSequenceInstance();
-            if (!m_hImgsqReader->Open(m_hParser))
-            {
-                ostringstream oss; oss << "FAILED to open image-sequence reader! Error is '" << m_hImgsqReader->GetError() << "'.";
-                m_errMsg = oss.str();
-                return false;
-            }
-            const auto outW = m_frmCvt.GetOutWidth();
-            const auto outH = m_frmCvt.GetOutHeight();
-            const auto outClrfmt = m_frmCvt.GetOutColorFormat();
-            const auto outDtype = m_frmCvt.GetOutDataType();
-            const auto rszInterp = m_frmCvt.GetResizeInterpolateMode();
-            if (!m_hImgsqReader->ConfigVideoReader(outW, outH, outClrfmt, outDtype, rszInterp))
-            {
-                ostringstream oss; oss << "FAILED to configure image-sequence reader! Error is '" << m_hImgsqReader->GetError() << "'.";
-                m_errMsg = oss.str();
-                return false;
-            }
-            m_hImgsqReader->SetCacheFrames(true, 0, 0);
-            if (!m_hImgsqReader->Start())
-            {
-                ostringstream oss; oss << "FAILED to start image-sequence reader! Error is '" << m_hImgsqReader->GetError() << "'.";
-                m_errMsg = oss.str();
-                return false;
-            }
-        }
 
         m_prepared = true;
         return true;
@@ -1110,6 +1082,54 @@ private:
         m_logger->Log(DEBUG) << "Leave GenerateSsThreadProc()." << endl;
     }
 
+    struct ImgsqDecodeContext
+    {
+        using Holder = shared_ptr<ImgsqDecodeContext>;
+
+        ImgsqDecodeContext() {}
+        Snapshot* m_pSs{nullptr};
+        int64_t pos;
+        bool isIdle{true};
+        MediaReader::Holder m_hImgsqReader;
+        MediaReader::VideoFrame::Holder m_hVfrm;
+    };
+
+    ImgsqDecodeContext::Holder CreateImgsqDecodeContext()
+    {
+        ImgsqDecodeContext::Holder hImgsqDecCtx(new ImgsqDecodeContext());
+        hImgsqDecCtx->m_hImgsqReader = MediaReader::CreateImageSequenceInstance();
+        auto hImgsqReader = hImgsqDecCtx->m_hImgsqReader;
+        if (!hImgsqReader->Open(m_hParser))
+        {
+            ostringstream oss; oss << "FAILED to open image-sequence reader! Error is '" << hImgsqReader->GetError() << "'.";
+            m_errMsg = oss.str();
+            return nullptr;
+        }
+        const auto outW = m_frmCvt.GetOutWidth();
+        const auto outH = m_frmCvt.GetOutHeight();
+        const auto outClrfmt = m_frmCvt.GetOutColorFormat();
+        const auto outDtype = m_frmCvt.GetOutDataType();
+        const auto rszInterp = m_frmCvt.GetResizeInterpolateMode();
+        if (!hImgsqReader->ConfigVideoReader(outW, outH, outClrfmt, outDtype, rszInterp))
+        {
+            ostringstream oss; oss << "FAILED to configure image-sequence reader! Error is '" << hImgsqReader->GetError() << "'.";
+            m_errMsg = oss.str();
+            return nullptr;
+        }
+        hImgsqReader->SetCacheFrames(true, 0, 0);
+        return hImgsqDecCtx;
+    }
+
+    void AssignDecodeContextToSs(Snapshot& ss, ImgsqDecodeContext::Holder hImgsqDecCtx)
+    {
+        hImgsqDecCtx->m_pSs = &ss;
+        hImgsqDecCtx->pos = ss.img.time_stamp*1000;
+        hImgsqDecCtx->isIdle = false;
+        hImgsqDecCtx->m_hImgsqReader->SeekTo(hImgsqDecCtx->pos);
+        if (!hImgsqDecCtx->m_hImgsqReader->IsStarted())
+            hImgsqDecCtx->m_hImgsqReader->Start();
+    }
+
     void GenerateSsByImgsqThreadProc()
     {
         m_logger->Log(DEBUG) << "Enter GenerateSsByImgsqThreadProc()." << endl;
@@ -1119,23 +1139,93 @@ private:
             return;
         }
 
+        list<ImgsqDecodeContext::Holder> imgsqDecCtxList;
+        for (auto i = 0; i < m_maxImgsqDecNum; i++)
+            imgsqDecCtxList.push_back(CreateImgsqDecodeContext());
+
         auto ssIter = m_snapshots.begin();
         while (!m_quit && ssIter != m_snapshots.end())
         {
-            bool eof = false;
-            auto hVfrm = m_hImgsqReader->ReadVideoFrame(ssIter->img.time_stamp*1000, eof);
-            if (hVfrm)
+            bool idleLoop = true;
+
+            auto idleDecIter = find_if(imgsqDecCtxList.begin(), imgsqDecCtxList.end(), [] (auto& hImgsqDecCtx) {
+                return hImgsqDecCtx->isIdle;
+            });
+
+            if (idleDecIter != imgsqDecCtxList.end())
             {
-                if (hVfrm->GetMat(ssIter->img))
-                    ssIter->ssFrmPts = ssIter->index;
-                else
-                    m_logger->Log(WARN) << "FAILED to GetMat for image-sequence at pos " << ssIter->img.time_stamp << "." << endl;
+                AssignDecodeContextToSs(*ssIter++, *idleDecIter);
+                idleLoop = false;
             }
-            else
-                m_logger->Log(WARN) << "FAILED to ReadVideoFrame for image-sequence at pos " << ssIter->img.time_stamp << ". Error is '" << m_hImgsqReader->GetError() << "'." << endl;
-            ssIter++;
+
+            for (auto& hImgsqDecCtx : imgsqDecCtxList)
+            {
+                if (!hImgsqDecCtx->m_hVfrm)
+                {
+                    bool eof = false;
+                    auto hVfrm = hImgsqDecCtx->m_hImgsqReader->ReadVideoFrame(hImgsqDecCtx->pos, eof, false);
+                    if (hVfrm)
+                    {
+                        hVfrm->SetAutoConvertToMat(true);
+                        hImgsqDecCtx->m_hVfrm = hVfrm;
+                    }
+                }
+                if (hImgsqDecCtx->m_hVfrm && hImgsqDecCtx->m_hVfrm->IsReady())
+                {
+                    if (hImgsqDecCtx->m_hVfrm->GetMat(hImgsqDecCtx->m_pSs->img))
+                        hImgsqDecCtx->m_pSs->ssFrmPts = hImgsqDecCtx->m_pSs->index;
+                    else
+                        m_logger->Log(WARN) << "FAILED to GetMat for image-sequence at pos " << hImgsqDecCtx->m_pSs->img.time_stamp << "." << endl;
+                    hImgsqDecCtx->isIdle = true;
+                    hImgsqDecCtx->m_hVfrm = nullptr;
+                    idleLoop = false;
+                }
+            }
+
+            if (idleLoop)
+                this_thread::sleep_for(chrono::milliseconds(5));
         }
-        FillBlankSsByDuplication();
+
+        // wait for all decode context finish
+        while (!m_quit && !imgsqDecCtxList.empty())
+        {
+            bool idleLoop = true;
+
+            auto decIter = imgsqDecCtxList.begin();
+            while (decIter != imgsqDecCtxList.end())
+            {
+                auto& hImgsqDecCtx = *decIter;
+                if (!hImgsqDecCtx->m_hVfrm)
+                {
+                    bool eof = false;
+                    auto hVfrm = hImgsqDecCtx->m_hImgsqReader->ReadVideoFrame(hImgsqDecCtx->pos, eof, false);
+                    if (hVfrm)
+                    {
+                        hVfrm->SetAutoConvertToMat(true);
+                        hImgsqDecCtx->m_hVfrm = hVfrm;
+                    }
+                }
+                if (hImgsqDecCtx->m_hVfrm && hImgsqDecCtx->m_hVfrm->IsReady())
+                {
+                    if (hImgsqDecCtx->m_hVfrm->GetMat(hImgsqDecCtx->m_pSs->img))
+                        hImgsqDecCtx->m_pSs->ssFrmPts = hImgsqDecCtx->m_pSs->index;
+                    else
+                        m_logger->Log(WARN) << "FAILED to GetMat for image-sequence at pos " << hImgsqDecCtx->m_pSs->img.time_stamp << "." << endl;
+                    hImgsqDecCtx->isIdle = true;
+                    hImgsqDecCtx->m_hVfrm = nullptr;
+                    decIter = imgsqDecCtxList.erase(decIter);
+                    idleLoop = false;
+                }
+                else
+                    decIter++;
+            }
+
+            if (idleLoop)
+                this_thread::sleep_for(chrono::milliseconds(5));
+        }
+
+        if (!m_quit)
+            FillBlankSsByDuplication();
 
         m_genSsEof = true;
         m_logger->Log(DEBUG) << "Leave GenerateSsByImgsqThreadProc()." << endl;
@@ -1668,7 +1758,7 @@ private:
     double m_vidfrmIntvTs;
 
     // image sequence
-    MediaReader::Holder m_hImgsqReader;
+    int32_t m_maxImgsqDecNum{4};
 
     // audio waveform
     Waveform::Holder m_hWaveform;

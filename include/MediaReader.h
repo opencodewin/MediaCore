@@ -44,6 +44,8 @@ struct MediaReader
         virtual int64_t Pos() const = 0;
         virtual int64_t Pts() const = 0;
         virtual int64_t Dur() const = 0;
+        virtual void SetAutoConvertToMat(bool enable) = 0;
+        virtual bool IsReady() const = 0;
     };
 
     virtual bool Open(const std::string& url) = 0;

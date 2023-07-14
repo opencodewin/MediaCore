@@ -3439,6 +3439,9 @@ public:
         return 0;
     }
 
+    void SetAutoConvertToMat(bool enable) override {}
+    bool IsReady() const override { return !m_vmat.empty(); }
+
 private:
     ImGui::ImMat m_vmat;
 };

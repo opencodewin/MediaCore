@@ -232,11 +232,8 @@ public:
         }
 
         m_logger->Log(DEBUG) << "--> Seek[0]: Set seek pos " << pos << endl;
-        if (m_prepared)
-        {
-            int64_t seekPts = CvtMtsToPts(pos);
-            UpdateReadPos(seekPts);
-        }
+        int64_t seekPts = CvtMtsToPts(pos);
+        UpdateReadPos(seekPts);
         return true;
     }
 
@@ -616,7 +613,7 @@ private:
                 {
                     m_viddecCtx = res.decCtx;
                     AVHWDeviceType hwDevType = res.hwDevType;
-                    owner->m_logger->Log(INFO) << "Opened video decoder '" << m_viddecCtx->codec->name << "'("
+                    owner->m_logger->Log(DEBUG) << "Opened video decoder '" << m_viddecCtx->codec->name << "'("
                             << (hwDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(hwDevType)) << ")" << " for img-sq file '" << filePath << "'." << endl;
                 }
                 else
@@ -728,7 +725,10 @@ private:
                 if (!imagePath.empty())
                 {
                     if (DecodeImageFile(imagePath))
+                    {
+                        owner->m_logger->Log(VERBOSE) << "--> Imgsq decode done. '" << imagePath << "'" << endl;
                         idleLoop = false;
+                    }
                     else
                     {
                         lock_guard<mutex> lk(m_vfLock);
@@ -787,6 +787,8 @@ private:
                     break;
                 this_thread::sleep_for(chrono::milliseconds(5));
             }
+            if (owner->m_quitThread)
+                return false;
 
             // avframe -> ImMat
             double ts = (double)pos/1000;
@@ -809,6 +811,11 @@ private:
         int64_t Pts() const override { return pts; }
         int64_t Dur() const override { return dur; }
 
+        void SetAutoConvertToMat(bool enable) override
+        { bAutoCvtToMat = enable; }
+
+        bool IsReady() const override { return !vmat.empty() || decodeFailed; }
+
         ImageSequenceReader_Impl* owner;
         SelfFreeAVFramePtr frmPtr;
         ImGui::ImMat vmat;
@@ -819,6 +826,7 @@ private:
         bool isEofFrame{false};
         bool isStartFrame{false};
         atomic_bool frmPtrInUse{false};
+        bool bAutoCvtToMat{false};
         DecodeImageContext::Holder hDecCtx;
         bool decodeFailed{false};
         string imageFilePath;
@@ -893,7 +901,7 @@ private:
         m_vfrmQ.clear();
     }
 
-    bool Prepare(DecodeImageContext* decCtx)
+    bool Prepare()
     {
         bool locked = false;
         do {
@@ -909,51 +917,6 @@ private:
 
         lock_guard<recursive_mutex> lk(m_apiLock, adopt_lock);
         m_hFileIter = m_hParser->GetImageSequenceIterator()->Clone();
-        auto filePath = m_hFileIter->GetNextFilePath();
-        filePath = m_hFileIter->JoinBaseDirPath(filePath);
-        int fferr = avformat_open_input(&(decCtx->m_avfmtCtx), filePath.c_str(), nullptr, nullptr);
-        if (fferr < 0)
-        {
-            decCtx->m_avfmtCtx = nullptr;
-            ostringstream oss; oss << "FAILED to invoke 'avformat_open_input' on file '" << filePath << "'! fferr=" << fferr << ".";
-            m_errMsg = oss.str();
-            return false;
-        }
-        fferr = avformat_find_stream_info(decCtx->m_avfmtCtx, nullptr);
-        if (fferr < 0)
-        {
-            ostringstream oss; oss << "FAILED to invoke 'avformat_find_stream_info' on file '" << filePath << "'! fferr=" << fferr << ".";
-            m_errMsg = oss.str();
-            return false;
-        }
-        auto vidstmIdx = av_find_best_stream(decCtx->m_avfmtCtx, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
-        if (vidstmIdx < 0)
-        {
-            ostringstream oss; oss << "Can not find any video stream in file '" << filePath << "'!";
-            m_errMsg = oss.str();
-            return false;
-        }
-
-        m_viddecOpenOpts.onlyUseSoftwareDecoder = !m_vidPreferUseHw;
-        m_viddecOpenOpts.useHardwareType = m_vidUseHwType;
-        FFUtils::OpenVideoDecoderResult res;
-        if (FFUtils::OpenVideoDecoder(decCtx->m_avfmtCtx, vidstmIdx, &m_viddecOpenOpts, &res))
-        {
-            decCtx->m_viddecCtx = res.decCtx;
-            AVHWDeviceType hwDevType = res.hwDevType;
-            if (res.decCtx)
-                m_viddecOpenOpts.designatedDecoderName = string(res.decCtx->codec->name);
-            m_logger->Log(INFO) << "Opened video decoder '" << 
-                decCtx->m_viddecCtx->codec->name << "'(" << (hwDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(hwDevType)) << ")"
-                << " for media '" << m_hParser->GetUrl() << "'." << endl;
-        }
-        else
-        {
-            ostringstream oss;
-            oss << "Open video decoder FAILED! Error is '" << res.errMsg << "'.";
-            m_errMsg = oss.str();
-            return false;
-        }
 
         if (!m_pFrmCvt)
         {
@@ -1002,10 +965,7 @@ private:
     {
         m_logger->Log(DEBUG) << "Enter ReadImageThreadProc()..." << endl;
 
-        DecodeImageContext decCtx(this);
-        bool prepareFailed = !m_prepared && !Prepare(&decCtx);
-        decCtx.ReleaseFormatContext();
-        decCtx.ReleaseDecoderContext();
+        bool prepareFailed = !m_prepared && !Prepare();
         if (prepareFailed)
         {
             m_logger->Log(Error) << "Prepare() FAILED! Error is '" << m_errMsg << "'." << endl;
@@ -1137,7 +1097,7 @@ private:
                         iter = m_vfrmQ.erase(iter);
                         continue;
                     }
-                    if (!hVfrm && pVf->isHwfrm)
+                    if (!hVfrm && (pVf->isHwfrm || (pVf->bAutoCvtToMat && pVf->frmPtr)))
                         hVfrm = *iter;
                     iter++;
                 }
@@ -1156,23 +1116,43 @@ private:
                     this_thread::sleep_for(chrono::milliseconds(5));
                 }
 
-                if (!m_quitThread && pVf->frmPtr)
+                if (pVf->isHwfrm)
                 {
-                    SelfFreeAVFramePtr swfrm = AllocSelfFreeAVFramePtr();
-                    if (!TransferHwFrameToSwFrame(swfrm.get(), pVf->frmPtr.get()))
+                    if (!m_quitThread && pVf->frmPtr)
                     {
-                        m_logger->Log(Error) << "TransferHwFrameToSwFrame() FAILED at pos " << pVf->pos << "(" << pVf->pts << ")! Discard this frame." << endl;
-                        pVf->frmPtr = nullptr;
-                        lock_guard<mutex> _lk(m_vfrmQLock);
-                        auto iter = find(m_vfrmQ.begin(), m_vfrmQ.end(), hVfrm);
-                        if (iter != m_vfrmQ.end()) m_vfrmQ.erase(iter);
+                        SelfFreeAVFramePtr swfrm = AllocSelfFreeAVFramePtr();
+                        if (!TransferHwFrameToSwFrame(swfrm.get(), pVf->frmPtr.get()))
+                        {
+                            m_logger->Log(Error) << "TransferHwFrameToSwFrame() FAILED at pos " << pVf->pos << "(" << pVf->pts << ")! Discard this frame." << endl;
+                            pVf->frmPtr = nullptr;
+                            lock_guard<mutex> _lk(m_vfrmQLock);
+                            auto iter = find(m_vfrmQ.begin(), m_vfrmQ.end(), hVfrm);
+                            if (iter != m_vfrmQ.end()) m_vfrmQ.erase(iter);
+                        }
+                        else
+                        {
+                            pVf->frmPtr = swfrm;
+                        }
+                    }
+                    pVf->isHwfrm = false;
+                }
+                if (pVf->frmPtr && pVf->bAutoCvtToMat)
+                {
+                    // avframe -> ImMat
+                    double ts = (double)pVf->pos/1000;
+                    ImGui::ImMat vmat;
+                    if (!m_pFrmCvt->ConvertImage(pVf->frmPtr.get(), vmat, ts))
+                    {
+                        m_logger->Log(Error) << "AVFrameToImMatConverter::ConvertImage() FAILED at pos " << pVf->pos << "(" << pVf->pts
+                                << ")! Error is '" << m_pFrmCvt->GetError() << "'." << endl;
                     }
                     else
                     {
-                        pVf->frmPtr = swfrm;
+                        pVf->vmat = vmat;
                     }
+                    pVf->frmPtr = nullptr;
                 }
-                pVf->isHwfrm = false;
+
                 pVf->frmPtrInUse = false;
                 idleLoop = false;
             }

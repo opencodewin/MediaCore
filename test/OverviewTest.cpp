@@ -27,7 +27,7 @@ static MediaParser::Holder g_mediaParser;
 static void MediaOverview_Initialize(void** handle)
 {
     GetDefaultLogger()
-        ->SetShowLevels(DEBUG);
+        ->SetShowLevels(INFO);
     Overview::GetLogger()
         ->SetShowLevels(DEBUG);
 
