@@ -544,7 +544,8 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, ImGui::ImMat& vmat, double time
 
     ImGui::ImMat mat_V;
     int channel;
-    ImDataType dataType = bitDepth > 8 ? IM_DT_INT16 : IM_DT_INT8;
+    const bool isBigEndian = (desc->flags&AV_PIX_FMT_FLAG_BE) > 0;
+    ImDataType dataType = bitDepth > 8 ? isBigEndian ? IM_DT_INT16_BE : IM_DT_INT16 : IM_DT_INT8;
     if (isRgb)
         channel = desc->nb_components;
     else
@@ -629,7 +630,8 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat
     const int width = avfrm->width;
     const int height = avfrm->height;
     int channel = ISNV12(avfrm->format) ? 2 : desc->nb_components;
-    ImDataType dataType = bitDepth > 8 ? IM_DT_INT16 : IM_DT_INT8;
+    const bool isBigEndian = (desc->flags&AV_PIX_FMT_FLAG_BE) > 0;
+    ImDataType dataType = bitDepth > 8 ? isBigEndian ? IM_DT_INT16_BE : IM_DT_INT16 : IM_DT_INT8;
     for (int i = 0; i < desc->nb_components; i++)
     {
         ImGui::ImMat mat_component;

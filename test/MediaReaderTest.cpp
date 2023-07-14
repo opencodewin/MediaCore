@@ -406,8 +406,8 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                     g_vidrdr->SetLogLevel(DEBUG);
                     g_vidrdr->EnableHwAccel(g_useHwAccel);
                     g_vidrdr->Open(g_mediaParser);
-                    // g_vidrdr->ConfigVideoReader((uint32_t)g_imageDisplaySize.x, (uint32_t)g_imageDisplaySize.y);
-                    g_vidrdr->ConfigVideoReader(1.0f, 1.0f);
+                    g_vidrdr->ConfigVideoReader((uint32_t)g_imageDisplaySize.x, (uint32_t)g_imageDisplaySize.y, IM_CF_RGBA, IM_DT_INT8, IM_INTERPOLATE_AREA);
+                    // g_vidrdr->ConfigVideoReader(1.0f, 1.0f);
                     if (playPos > 0)
                         g_vidrdr->SeekTo(playPos*1000);
                     g_vidrdr->Start();
