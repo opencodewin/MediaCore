@@ -58,7 +58,7 @@ struct MediaEncoder
             std::string desc;
             int32_t value;
 
-            friend std::ostream& operator<<(std::ostream& os, const EnumValue& enumval);
+            friend MEDIACORE_API std::ostream& operator<<(std::ostream& os, const EnumValue& enumval);
         };
         struct Description
         {
@@ -72,7 +72,7 @@ struct MediaEncoder
             Value rangeMin, rangeMax;  // when 'limitType' == OPLT_RANGE, here stores the min/max option values.
             std::vector<EnumValue> enumValues;  // when 'limitType' == OPLT_ENUM, here stores all the enumeration values.
 
-            friend std::ostream& operator<<(std::ostream& os, const Description& optdesc);
+            friend MEDIACORE_API std::ostream& operator<<(std::ostream& os, const Description& optdesc);
         };
 
         std::string name;
@@ -87,7 +87,7 @@ struct MediaEncoder
         bool isHardwareEncoder;
         std::vector<Option::Description> optDescList;
 
-        friend std::ostream& operator<<(std::ostream& os, const Description& encdesc);
+        friend MEDIACORE_API std::ostream& operator<<(std::ostream& os, const Description& encdesc);
     };
 
     static MEDIACORE_API bool FindEncoder(const std::string& codecName, std::vector<Description>& encoderDescList);

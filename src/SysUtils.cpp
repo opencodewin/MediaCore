@@ -32,7 +32,9 @@ namespace fs = std::filesystem;
 #elif defined(_WIN32) && !defined(__MINGW64__)
 #else
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <dirent.h>
+#include <fcntl.h>
 #endif
 
 using namespace std;
@@ -290,7 +292,7 @@ public:
         struct dirent *ent;
         while ((ent = readdir(m_pDIR)) != NULL)
         {
-            if (ent->d_type == DT_LNK || ent->d_type == DT_REG)
+            if (IsCorrectFileType(ent))
             {
                 if (IsMatchPattern(ent->d_name))
                     break;
@@ -323,7 +325,7 @@ public:
         struct dirent *ent;
         while ((ent = readdir(m_pDIR)) != NULL)
         {
-            if (ent->d_type == DT_LNK || ent->d_type == DT_REG)
+            if (IsCorrectFileType(ent))
             {
                 if (IsMatchPattern(ent->d_name))
                     paths.push_back(string(ent->d_name));
@@ -349,7 +351,7 @@ public:
         struct dirent *ent;
         while ((ent = readdir(m_pDIR)) != NULL)
         {
-            if (ent->d_type == DT_LNK || ent->d_type == DT_REG)
+            if (IsCorrectFileType(ent))
             {
                 if (IsMatchPattern(ent->d_name))
                     cnt++;
@@ -381,7 +383,7 @@ public:
         struct dirent *ent;
         while (m_fileIndex < index && (ent = readdir(m_pDIR)) != NULL)
         {
-            if (ent->d_type == DT_LNK || ent->d_type == DT_REG)
+            if (IsCorrectFileType(ent))
             {
                 if (IsMatchPattern(ent->d_name))
                     m_fileIndex++;
@@ -402,9 +404,33 @@ public:
         return oss.str();
     }
 
+    string JoinBaseDirPath(const char* pPath) const
+    {
+        ostringstream oss; oss << m_baseDirPath << pPath;
+        return oss.str();
+    }
+
     string GetError() const override
     {
         return m_errMsg;
+    }
+
+    bool IsCorrectFileType(struct dirent* ent)
+    {
+#ifdef _DIRENT_HAVE_D_TYPE
+        if (ent->d_type == DT_REG)
+            return true;
+#endif
+        struct stat fileStat;
+        string fullPath = JoinBaseDirPath(ent->d_name);
+        int ret;
+        if ((ret = stat(fullPath.c_str(), &fileStat)) < 0)
+        {
+            Log(Error) << "FAILED to invoke 'stat' on file '" << ent->d_name << "' in directory '" << m_baseDirPath << "'! ret=" << ret << "." << endl;
+            return false;
+        }
+        const auto st_mode = fileStat.st_mode;
+        return (st_mode&S_IFREG)!=0 && (st_mode&S_IREAD)!=0;
     }
 
     bool IsMatchPattern(const char* pPath)
