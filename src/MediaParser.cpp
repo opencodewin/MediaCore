@@ -109,7 +109,7 @@ public:
     }
 
     bool OpenImageSequence(const Ratio& frameRate,
-            const std::string& dirPath, const std::string& regexPattern, bool caseSensitive) override
+            const std::string& dirPath, const std::string& regexPattern, bool caseSensitive, bool includeSubDir) override
     {
         if (!Ratio::IsValid(frameRate))
         {
@@ -127,6 +127,7 @@ public:
         }
         m_hFileIter->SetCaseSensitive(caseSensitive);
         m_hFileIter->SetFilterPattern(regexPattern, true);
+        m_hFileIter->SetRecursive(includeSubDir);
         m_hFileIter->StartParsing();
         m_url = dirPath;
 

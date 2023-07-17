@@ -381,14 +381,18 @@ public:
     {
         if (dirEntry.is_regular_file())
             return true;
-        if (dirEntry.is_syslink() && dirEntry.status().type() == fs::file_type::regular)
+        if (dirEntry.is_symlink() && dirEntry.status().type() == fs::file_type::regular)
             return true;
         return false;
     }
 
     bool IsSubDirectory(const fs::directory_entry& dirEntry)
     {
-        return dirEntry.is_directory();
+        if (dirEntry.is_directory())
+            return true;
+        if (dirEntry.is_symlink() && dirEntry.status().type() == fs::file_type::directory)
+            return true;
+        return false;
     }
 #elif defined(_WIN32) && !defined(__MINGW64__)
 #else
@@ -429,6 +433,11 @@ public:
     }
 #endif
 
+    bool IsMatchPattern(const string& path)
+    {
+        return IsMatchPattern(path.c_str());
+    }
+
     bool IsMatchPattern(const char* pPath)
     {
         if (m_isRegexPattern)
@@ -447,7 +456,7 @@ public:
     void StartParseThread()
     {
         bool testVal = false;
-        if (m_parsingStarted.compare_exchange_strong(testVal, true))
+        if (!m_parsingStarted.compare_exchange_strong(testVal, true))
             return;
         m_quitThread = false;
         m_parseThread = thread(&FileIterator_Impl::ParseProc, this);
@@ -477,7 +486,7 @@ public:
     {
         bool ret = true;
 #if (defined(__cplusplus) && __cplusplus >= 201703L) || (defined(_MSVC_LANG) && _MSVC_LANG >= 201703L)
-        fs::path dirFullPath = m_baseDirPath/subDirPath;
+        fs::path dirFullPath = fs::path(m_baseDirPath)/fs::path(subDirPath);
         fs::directory_iterator dirIter(dirFullPath);
         for (auto const& dirEntry : dirIter)
         {
@@ -485,7 +494,7 @@ public:
                 break;
             if (m_isRecursive && IsSubDirectory(dirEntry))
             {
-                const fs::path subDirPath2 = subDirPath/dirEntry.path();
+                const fs::path subDirPath2 = fs::path(subDirPath)/dirEntry.path().filename();
                 if (!ParseOneDir(subDirPath2.string(), pathList))
                 {
                     ret = false;
@@ -494,7 +503,12 @@ public:
             }
             else if (IsCorrectFileType(dirEntry) && IsMatchPattern(dirEntry.path().string()))
             {
-                const fs::path filePath = subDirPath/dirEntry.path();
+                const fs::path filePath = fs::path(subDirPath)/dirEntry.path().filename();
+                if (pathList.empty())
+                {
+                    m_quickSample = filePath.string();
+                    m_isQuickSampleReady = true;
+                }
                 pathList.push_back(filePath.string());
             }
         }
@@ -513,11 +527,17 @@ public:
         {
             if (m_quitThread)
                 break;
-            ostringstream pathOss; pathOss << subDirPath << _PATH_SEPARATOR << ent->d_name;
+            const string filename(ent->d_name);
+            if (filename == "." || filename == "..")
+                continue;
+            ostringstream pathOss;
+            if (!subDirPath.empty())
+                pathOss << subDirPath << _PATH_SEPARATOR;
+            pathOss << filename;
             const string relativePath = pathOss.str();
             if (m_isRecursive && IsSubDirectory(ent, relativePath))
             {
-                if (!ParseOneDir(pathOss.str(), pathList))
+                if (!ParseOneDir(relativePath, pathList))
                 {
                     ret = false;
                     break;
@@ -525,13 +545,12 @@ public:
             }
             else if (IsCorrectFileType(ent, relativePath) && IsMatchPattern(ent->d_name))
             {
-                ostringstream pathOss; pathOss << subDirPath << _PATH_SEPARATOR << ent->d_name;
                 if (pathList.empty())
                 {
-                    m_quickSample = pathOss.str();
+                    m_quickSample = relativePath;
                     m_isQuickSampleReady = true;
                 }
-                pathList.push_back(pathOss.str());
+                pathList.push_back(relativePath);
             }
         }
         closedir(pSubDir);

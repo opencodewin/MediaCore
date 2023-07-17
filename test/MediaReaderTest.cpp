@@ -456,7 +456,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
             string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
             g_mediaParser = MediaParser::CreateInstance();
             if (g_isImageSequence)
-                g_mediaParser->OpenImageSequence({25, 1}, filePathName, ".+_([[:digit:]]{1,})\\.png", false);
+                g_mediaParser->OpenImageSequence({25, 1}, filePathName, ".+_([[:digit:]]{1,})\\.png", false, true);
             else
                 g_mediaParser->Open(filePathName);
             g_isOpening = true;

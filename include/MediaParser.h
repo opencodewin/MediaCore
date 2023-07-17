@@ -35,7 +35,7 @@ struct MediaParser
 
     virtual bool Open(const std::string& url) = 0;
     virtual bool OpenImageSequence(const Ratio& frameRate,
-            const std::string& dirPath, const std::string& regexPattern, bool caseSensitive) = 0;
+            const std::string& dirPath, const std::string& regexPattern, bool caseSensitive, bool includeSubDir = false) = 0;
     virtual void Close() = 0;
 
     enum InfoType
