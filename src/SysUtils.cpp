@@ -18,6 +18,11 @@
 #include <sstream>
 #include <cstdio>
 #include <regex>
+#include <vector>
+#include <list>
+#include <atomic>
+#include <thread>
+#include <chrono>
 #include "SysUtils.h"
 #include "Logger.h"
 #if defined(_WIN32) && !defined(__MINGW64__)
@@ -180,66 +185,23 @@ bool IsDirectory(const string& path)
 #endif
 }
 
-class FileIterator_Dummy : public FileIterator
-{
-public:
-    FileIterator_Dummy(const string& baseDirPath) {}
-    virtual ~FileIterator_Dummy() {}
-    Holder Clone() const override
-    { return nullptr; }
-    bool SetFilterPattern(const string& filterPattern, bool isRegexPattern) override
-    { return false; }
-    void SetCaseSensitive(bool sensitive) override
-    { return; }
-    string GetBaseDirPath() const override
-    { return ""; }
-    string GetNextFilePath() override
-    { return ""; }
-    uint32_t GetNextFileIndex() const override
-    { return 0; }
-    vector<string> GetAllFilePaths() override
-    { return {}; }
-    uint32_t GetValidFileCount(bool refresh) override
-    { return 0; }
-    bool SeekToValidFile(uint32_t index) override
-    { return false; }
-    string JoinBaseDirPath(const string& relativeFilePath) const override
-    { return ""; }
-    string GetError() const override
-    { return ""; }
-};
-
-#if (defined(__cplusplus) && __cplusplus >= 201703L) || (defined(_MSVC_LANG) && _MSVC_LANG >= 201703L)
-typedef FileIterator_Dummy FileIterator_Impl;
-#pragma message("Need to implement 'FileIterator' in this ENV.")
-#elif defined(_WIN32) && !defined(__MINGW64__)
-typedef FileIterator_Dummy FileIterator_Impl;
-#pragma message("Need to implement 'FileIterator' in this ENV.")
-#else
 class FileIterator_Impl : public FileIterator
 {
 public:
     FileIterator_Impl(const string& baseDirPath)
     {
-        if (!baseDirPath.empty())
-            m_pDIR = opendir(baseDirPath.c_str());
+        if (baseDirPath.back() != _PATH_SEPARATOR)
+            m_baseDirPath = baseDirPath+_PATH_SEPARATOR;
         else
-            m_pDIR = NULL;
-        if (m_pDIR)
-        {
-            if (baseDirPath.back() != '/' && baseDirPath.back() != '\\')
-                m_baseDirPath = baseDirPath+'/';
-            else
-                m_baseDirPath = baseDirPath;
-        }
+            m_baseDirPath = baseDirPath;
     }
 
     virtual ~FileIterator_Impl()
     {
-        if (m_pDIR)
+        if (m_parseThread.joinable())
         {
-            closedir(m_pDIR);
-            m_pDIR = NULL;
+            m_quitThread = true;
+            m_parseThread.join();
         }
     }
 
@@ -248,6 +210,23 @@ public:
         Holder hNewIns = CreateInstance(m_baseDirPath);
         hNewIns->SetCaseSensitive(m_caseSensitive);
         hNewIns->SetFilterPattern(m_filterPattern, m_isRegexPattern);
+        hNewIns->SetRecursive(m_isRecursive);
+        if (m_isQuickSampleReady)
+        {
+            FileIterator_Impl* pFileIter = dynamic_cast<FileIterator_Impl*>(hNewIns.get());
+            pFileIter->m_quickSample = m_quickSample;
+            pFileIter->m_isQuickSampleReady = true;
+        }
+        if (m_isParsed && !m_parseFailed)
+        {
+            FileIterator_Impl* pFileIter = dynamic_cast<FileIterator_Impl*>(hNewIns.get());
+            pFileIter->m_paths = m_paths;
+            pFileIter->m_isParsed = true;
+        }
+        else
+        {
+            hNewIns->StartParsing();
+        }
         return hNewIns;
     }
 
@@ -277,124 +256,106 @@ public:
         }
     }
 
+    void SetRecursive(bool recursive) override
+    {
+        m_isRecursive = recursive;
+    }
+
+    void StartParsing() override
+    {
+        StartParseThread();
+    }
+
+    std::string GetQuickSample() override
+    {
+        if (!m_isQuickSampleReady && !m_isParsed)
+        {
+            StartParseThread();
+            while (!m_isQuickSampleReady && !m_isParsed)
+                this_thread::sleep_for(chrono::milliseconds(5));
+        }
+        return m_quickSample;
+    }
+
     string GetBaseDirPath() const override
     {
         return m_baseDirPath;
     }
 
-    string GetNextFilePath() override
+    string GetCurrFilePath() override
     {
-        if (m_pDIR == NULL)
+        if (!m_isParsed)
         {
-            m_errMsg = "DIR pointer is NULL!";
+            StartParseThread();
+            while (!m_isParsed)
+                this_thread::sleep_for(chrono::milliseconds(5));
+        }
+        if (m_fileIndex >= m_paths.size())
+        {
+            m_errMsg = "End of path list.";
             return "";
         }
-        struct dirent *ent;
-        while ((ent = readdir(m_pDIR)) != NULL)
+        return m_paths[m_fileIndex];
+    }
+
+    string GetNextFilePath() override
+    {
+        if (!m_isParsed)
         {
-            if (IsCorrectFileType(ent))
-            {
-                if (IsMatchPattern(ent->d_name))
-                    break;
-            }
+            StartParseThread();
+            while (!m_isParsed)
+                this_thread::sleep_for(chrono::milliseconds(5));
         }
-        if (ent == NULL)
+        if (m_fileIndex+1 >= m_paths.size())
         {
-            m_errMsg = "DIR eof.";
+            m_errMsg = "End of path list.";
             return "";
         }
         m_fileIndex++;
-        return string(ent->d_name);
+        return m_paths[m_fileIndex];
     }
 
-    uint32_t GetNextFileIndex() const override
+    uint32_t GetCurrFileIndex() const override
     {
         return m_fileIndex;
     }
 
     vector<string> GetAllFilePaths() override
     {
-        if (m_pDIR == NULL)
+        if (!m_isParsed)
         {
-            m_errMsg = "DIR pointer is NULL!";
-            return {};
+            StartParseThread();
+            while (!m_isParsed)
+                this_thread::sleep_for(chrono::milliseconds(5));
         }
-        auto dirPos = telldir(m_pDIR);
-        rewinddir(m_pDIR);
-        vector<string> paths;
-        struct dirent *ent;
-        while ((ent = readdir(m_pDIR)) != NULL)
-        {
-            if (IsCorrectFileType(ent))
-            {
-                if (IsMatchPattern(ent->d_name))
-                    paths.push_back(string(ent->d_name));
-            }
-        }
-        seekdir(m_pDIR, dirPos);
-        return paths;
+        return vector<string>(m_paths);
     }
 
     uint32_t GetValidFileCount(bool refresh) override
     {
-        if (m_validFileCountReady && !refresh)
-            return m_validFileCount;
-
-        if (m_pDIR == NULL)
+        if (!m_isParsed)
         {
-            m_errMsg = "DIR pointer is NULL!";
-            return 0;
+            StartParseThread();
+            while (!m_isParsed)
+                this_thread::sleep_for(chrono::milliseconds(5));
         }
-        auto dirPos = telldir(m_pDIR);
-        rewinddir(m_pDIR);
-        uint32_t cnt = 0;
-        struct dirent *ent;
-        while ((ent = readdir(m_pDIR)) != NULL)
-        {
-            if (IsCorrectFileType(ent))
-            {
-                if (IsMatchPattern(ent->d_name))
-                    cnt++;
-            }
-        }
-        seekdir(m_pDIR, dirPos);
-        m_validFileCount = cnt;
-        m_validFileCountReady = true;
-        return cnt;
+        return m_paths.size();
     }
 
     bool SeekToValidFile(uint32_t index) override
     {
-        if (m_pDIR == NULL)
+        if (!m_isParsed)
         {
-            m_errMsg = "DIR pointer is NULL!";
+            StartParseThread();
+            while (!m_isParsed)
+                this_thread::sleep_for(chrono::milliseconds(5));
+        }
+        if (index >= m_paths.size())
+        {
+            m_errMsg = "Arugment 'index' is out of valid range!";
             return false;
         }
-        if (m_fileIndex == index)
-            return true;
-        if (index < m_fileIndex)
-        {
-            rewinddir(m_pDIR);
-            m_fileIndex = 0;
-        }
-        if (index == 0)
-            return true;
-
-        struct dirent *ent;
-        while (m_fileIndex < index && (ent = readdir(m_pDIR)) != NULL)
-        {
-            if (IsCorrectFileType(ent))
-            {
-                if (IsMatchPattern(ent->d_name))
-                    m_fileIndex++;
-            }
-        }
-        if (ent == NULL)
-        {
-            ostringstream oss; oss << "Eof before seeking to the " << index << "th valid file position.";
-            m_errMsg = oss.str();
-            return false;
-        }
+        m_fileIndex = index;
         return true;
     }
 
@@ -415,23 +376,58 @@ public:
         return m_errMsg;
     }
 
-    bool IsCorrectFileType(struct dirent* ent)
+#if (defined(__cplusplus) && __cplusplus >= 201703L) || (defined(_MSVC_LANG) && _MSVC_LANG >= 201703L)
+    bool IsCorrectFileType(const fs::directory_entry& dirEntry)
+    {
+        if (dirEntry.is_regular_file())
+            return true;
+        if (dirEntry.is_syslink() && dirEntry.status().type() == fs::file_type::regular)
+            return true;
+        return false;
+    }
+
+    bool IsSubDirectory(const fs::directory_entry& dirEntry)
+    {
+        return dirEntry.is_directory();
+    }
+#elif defined(_WIN32) && !defined(__MINGW64__)
+#else
+    bool IsCorrectFileType(const struct dirent* ent, const string& relativePath)
     {
 #ifdef _DIRENT_HAVE_D_TYPE
         if (ent->d_type == DT_REG)
             return true;
 #endif
         struct stat fileStat;
-        string fullPath = JoinBaseDirPath(ent->d_name);
+        const string fullPath = JoinBaseDirPath(relativePath);
         int ret;
         if ((ret = stat(fullPath.c_str(), &fileStat)) < 0)
         {
-            Log(Error) << "FAILED to invoke 'stat' on file '" << ent->d_name << "' in directory '" << m_baseDirPath << "'! ret=" << ret << "." << endl;
+            Log(Error) << "FAILED to invoke 'stat' on file '" << relativePath << "' in directory '" << m_baseDirPath << "'! ret=" << ret << "." << endl;
             return false;
         }
         const auto st_mode = fileStat.st_mode;
         return (st_mode&S_IFREG)!=0 && (st_mode&S_IREAD)!=0;
     }
+
+    bool IsSubDirectory(const struct dirent* ent, const string& relativePath)
+    {
+#ifdef _DIRENT_HAVE_D_TYPE
+        if (ent->d_type == DT_DIR)
+            return true;
+#endif
+        struct stat fileStat;
+        const string fullPath = JoinBaseDirPath(relativePath);
+        int ret;
+        if ((ret = stat(fullPath.c_str(), &fileStat)) < 0)
+        {
+            Log(Error) << "FAILED to invoke 'stat' on file '" << relativePath << "' in directory '" << m_baseDirPath << "'! ret=" << ret << "." << endl;
+            return false;
+        }
+        const auto st_mode = fileStat.st_mode;
+        return (st_mode&S_IFDIR)!=0;
+    }
+#endif
 
     bool IsMatchPattern(const char* pPath)
     {
@@ -448,20 +444,119 @@ public:
         return false;
     }
 
+    void StartParseThread()
+    {
+        bool testVal = false;
+        if (m_parsingStarted.compare_exchange_strong(testVal, true))
+            return;
+        m_quitThread = false;
+        m_parseThread = thread(&FileIterator_Impl::ParseProc, this);
+    }
+
+    void ParseProc()
+    {
+        list<string> pathList;
+        if (!ParseOneDir("", pathList))
+        {
+            m_isParsed = true;
+            m_parseFailed = true;
+            return;
+        }
+        pathList.sort();
+        m_paths.clear();
+        m_paths.reserve(pathList.size());
+        while (!pathList.empty())
+        {
+            m_paths.push_back(std::move(pathList.front()));
+            pathList.pop_front();
+        }
+        m_isParsed = true;
+    }
+
+    bool ParseOneDir(const string& subDirPath, list<string>& pathList)
+    {
+        bool ret = true;
+#if (defined(__cplusplus) && __cplusplus >= 201703L) || (defined(_MSVC_LANG) && _MSVC_LANG >= 201703L)
+        fs::path dirFullPath = m_baseDirPath/subDirPath;
+        fs::directory_iterator dirIter(dirFullPath);
+        for (auto const& dirEntry : dirIter)
+        {
+            if (m_quitThread)
+                break;
+            if (m_isRecursive && IsSubDirectory(dirEntry))
+            {
+                const fs::path subDirPath2 = subDirPath/dirEntry.path();
+                if (!ParseOneDir(subDirPath2.string(), pathList))
+                {
+                    ret = false;
+                    break;
+                }
+            }
+            else if (IsCorrectFileType(dirEntry) && IsMatchPattern(dirEntry.path().string()))
+            {
+                const fs::path filePath = subDirPath/dirEntry.path();
+                pathList.push_back(filePath.string());
+            }
+        }
+#elif defined(_WIN32) && !defined(__MINGW64__)
+#else
+        string dirFullPath = JoinBaseDirPath(subDirPath);
+        DIR* pSubDir = opendir(dirFullPath.c_str());
+        if (!pSubDir)
+        {
+            ostringstream oss; oss << "FAILED to open directory '" << dirFullPath << "'!";
+            m_errMsg = oss.str();
+            return false;
+        }
+        struct dirent *ent;
+        while ((ent = readdir(pSubDir)) != NULL)
+        {
+            if (m_quitThread)
+                break;
+            ostringstream pathOss; pathOss << subDirPath << _PATH_SEPARATOR << ent->d_name;
+            const string relativePath = pathOss.str();
+            if (m_isRecursive && IsSubDirectory(ent, relativePath))
+            {
+                if (!ParseOneDir(pathOss.str(), pathList))
+                {
+                    ret = false;
+                    break;
+                }
+            }
+            else if (IsCorrectFileType(ent, relativePath) && IsMatchPattern(ent->d_name))
+            {
+                ostringstream pathOss; pathOss << subDirPath << _PATH_SEPARATOR << ent->d_name;
+                if (pathList.empty())
+                {
+                    m_quickSample = pathOss.str();
+                    m_isQuickSampleReady = true;
+                }
+                pathList.push_back(pathOss.str());
+            }
+        }
+        closedir(pSubDir);
+#endif
+        return ret;
+    }
+
 private:
     string m_baseDirPath;
-    DIR* m_pDIR;
+    bool m_isParsed{false};
+    bool m_parseFailed{false};
+    bool m_quitThread{false};
+    atomic_bool m_parsingStarted{false};
+    thread m_parseThread;
+    vector<string> m_paths;
+    string m_quickSample;
+    bool m_isQuickSampleReady{false};
+    bool m_isRecursive{false};
     string m_filterPattern;
     bool m_caseSensitive{true};
     bool m_isRegexPattern;
     regex m_filterRegex;
     uint32_t m_fileIndex{0};
-    bool m_validFileCountReady{false};
-    uint32_t m_validFileCount{0};
     string m_errMsg;
 };
-#endif
-
 
 static const auto FILE_ITERATOR_HOLDER_DELETER = [] (FileIterator* p) {
     FileIterator_Impl* ptr = dynamic_cast<FileIterator_Impl*>(p);

@@ -127,6 +127,8 @@ public:
         }
         m_hFileIter->SetCaseSensitive(caseSensitive);
         m_hFileIter->SetFilterPattern(regexPattern, true);
+        m_hFileIter->StartParsing();
+        m_url = dirPath;
 
         TaskHolder hTask(new ParseTask());
         hTask->taskProc = bind(&MediaParser_Impl::ParseGeneralMediaInfo, this, _1);
@@ -186,17 +188,24 @@ public:
             if (iter == m_taskTable.end())
             {
                 hTask = TaskHolder(new ParseTask());
+                ostringstream oss;
                 switch (infoType)
                 {
                     case MEDIA_INFO:
                         hTask->taskProc = bind(&MediaParser_Impl::ParseGeneralMediaInfo, this, _1);
                         break;
                     case VIDEO_SEEK_POINTS:
-                        hTask->taskProc = bind(&MediaParser_Impl::ParseVideoSeekPoints, this, _1);
+                        if (!m_isImageSequence)
+                            hTask->taskProc = bind(&MediaParser_Impl::ParseVideoSeekPoints, this, _1);
+                        else
+                        {
+                            m_errMsg = "Image sequence do NOT support parsing seek-points!";
+                            return false;
+                        }
                         break;
                     default:
-                        m_errMsg = string("Invalid argument value! There is no method to parse 'infoType'(")
-                            +to_string((int)infoType)+").";
+                        oss << "Invalid argument value! There is no method to parse 'infoType'(" << to_string((int)infoType) << ").";
+                        m_errMsg = oss.str();
                         return false;
                 }
                 m_taskTable[infoType] = hTask;
@@ -433,7 +442,7 @@ private:
 
         m_hMediaInfo = MediaInfo::Holder(new MediaInfo());
         m_hMediaInfo->url = dirPath;
-        auto filePath = m_hFileIter->GetNextFilePath();
+        auto filePath = m_hFileIter->GetQuickSample();
         if (!filePath.empty())
         {
             auto fullPath = m_hFileIter->JoinBaseDirPath(filePath);
@@ -462,7 +471,6 @@ private:
                 vidstm->frameNum = m_hFileIter->GetValidFileCount();
                 vidstm->duration = (double)vidstm->frameNum*(double)m_imgsqFrameRate.den/m_imgsqFrameRate.num;
             }
-            m_hFileIter->SeekToValidFile(0);
             m_logger->Log(INFO) << "Parse general media info of media '" << fullPath << "' done." << endl;
         }
 

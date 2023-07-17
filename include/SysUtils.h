@@ -40,9 +40,13 @@ struct FileIterator
 
     virtual bool SetFilterPattern(const std::string& filterPattern, bool isRegexPattern) = 0;
     virtual void SetCaseSensitive(bool sensitive) = 0;
+    virtual void SetRecursive(bool recursive) = 0;
+    virtual void StartParsing() = 0;
+    virtual std::string GetQuickSample() = 0;
     virtual std::string GetBaseDirPath() const = 0;
+    virtual std::string GetCurrFilePath() = 0;
+    virtual uint32_t GetCurrFileIndex() const = 0;
     virtual std::string GetNextFilePath() = 0;
-    virtual uint32_t GetNextFileIndex() const = 0;
     virtual std::vector<std::string> GetAllFilePaths() = 0;
     virtual uint32_t GetValidFileCount(bool refresh = false) = 0;
     virtual bool SeekToValidFile(uint32_t index) = 0;
