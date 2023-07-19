@@ -84,6 +84,7 @@ struct TextureManager
     virtual void SetUiThread(const std::thread::id& threadId) = 0;
     virtual bool UpdateTextureState() = 0;  // run this method in UI thread
     virtual void Release() = 0;
+    virtual bool IsTextureFrom(const std::string& poolName, ManagedTexture::Holder hTx) = 0;
 
     virtual std::string GetError() const = 0;
     virtual void SetLogLevel(Logger::Level l) = 0;

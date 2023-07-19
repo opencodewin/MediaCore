@@ -299,13 +299,14 @@ public:
         auto wait1 = GetTimePoint();
         auto wait0 = wait1;
         const int64_t hungupWarnInternal = 3000;
+        const bool zeroCache = m_cacheFrameCount.first == 0 && m_cacheFrameCount.second == 0;
         VideoFrame::Holder hVfrm;
         while (!m_quitThread)
         {
+            if (!zeroCache)
             {
                 lock_guard<mutex> _lk(m_vfrmQLock);
-                auto iter = m_vfrmQ.end();
-                iter = find_if(m_vfrmQ.begin(), m_vfrmQ.end(), [pts] (auto& vf) {
+                auto iter = find_if(m_vfrmQ.begin(), m_vfrmQ.end(), [pts] (auto& vf) {
                     return vf->Pts() > pts;
                 });
                 if (iter != m_vfrmQ.end())
@@ -325,6 +326,16 @@ public:
                     if (pts >= pVf->pts && pts < pVf->pts+pVf->dur || pVf->isEofFrame)
                         hVfrm = m_vfrmQ.back();
                 }
+            }
+            else
+            {
+                lock_guard<mutex> _lk(m_vfrmQLock);
+                auto iter = find_if(m_vfrmQ.begin(), m_vfrmQ.end(), [pts] (auto& vf) {
+                    auto pVf = dynamic_cast<VideoFrame_Impl*>(vf.get());
+                    return pts >= pVf->pts && pts < pVf->pts+pVf->dur || pVf->isEofFrame && pts >= pVf->pts;
+                });
+                if (iter != m_vfrmQ.end())
+                    hVfrm = *iter;
             }
             if (hVfrm || !wait)
                 break;
@@ -983,7 +994,8 @@ private:
             }
 
             const uint32_t frontFileIndex = cacheRange.first <= 0 ? 0 : (uint32_t)cacheRange.first;
-            const uint32_t endFileIndex = cacheRange.second <= 0 ? 0 : (uint32_t)cacheRange.second;
+            uint32_t endFileIndex = cacheRange.second <= 0 ? 0 : (uint32_t)cacheRange.second;
+            if (endFileIndex >= m_hFileIter->GetValidFileCount()) endFileIndex = m_hFileIter->GetValidFileCount()-1;
             list<VideoFrame::Holder> undecodedFrames;
             const bool readForward = m_readForward;
             {
@@ -1016,15 +1028,15 @@ private:
             for (auto& hVfrm : undecodedFrames)
             {
                 VideoFrame_Impl* pVfrm = dynamic_cast<VideoFrame_Impl*>(hVfrm.get());
+                const uint32_t fileIndex = (uint32_t)pVfrm->pts;
                 if (pVfrm->imageFilePath.empty())
                 {
-                    uint32_t fileIndex = (uint32_t)pVfrm->pts;
                     if (!m_hFileIter->SeekToValidFile(fileIndex))
                     {
                         m_logger->Log(Error) << "FAILED to seek to img-sq file index " << fileIndex << "." << endl;
                         continue;
                     }
-                    auto filePath = m_hFileIter->GetNextFilePath();
+                    auto filePath = m_hFileIter->GetCurrFilePath();
                     if (filePath.empty())
                     {
                         m_logger->Log(Error) << "FAILED to get the img-sq file path by index " << fileIndex << "." << endl;
@@ -1037,7 +1049,7 @@ private:
                     if (!hDecCtx->isBusy)
                     {
                         pVfrm->hDecCtx = hDecCtx;
-                        m_logger->Log(VERBOSE) << "-> StartDecode: '" << pVfrm->imageFilePath << "'" << endl;
+                        m_logger->Log(INFO) << "-> StartDecode[idx=" << fileIndex << ", pos=" << pVfrm->pos << "]: '" << pVfrm->imageFilePath << "'" << endl;
                         hDecCtx->StartDecode(pVfrm->imageFilePath, pVfrm);
                         idleLoop = false;
                         break;
@@ -1067,7 +1079,6 @@ private:
             {
                 lock_guard<mutex> _lk(m_vfrmQLock);
                 auto iter = m_vfrmQ.begin();
-                bool firstGreaterPts = true;
                 while (iter != m_vfrmQ.end())
                 {
                     VideoFrame_Impl* pVf = dynamic_cast<VideoFrame_Impl*>(iter->get());
@@ -1083,13 +1094,8 @@ private:
                     }
                     else if (pVf->pts > m_cacheRange.second)
                     {
-                        if (firstGreaterPts)
-                            firstGreaterPts = false;
-                        else
-                        {
-                            // m_logger->Log(VERBOSE) << "   --------- Set remove=true : pVf->pts(" << pVf->pts << ") > cacheRange.second(" << m_cacheRange.second << ")" << endl;
-                            remove = true;
-                        }
+                        // m_logger->Log(VERBOSE) << "   --------- Set remove=true : pVf->pts(" << pVf->pts << ") > cacheRange.second(" << m_cacheRange.second << ")" << endl;
+                        remove = true;
                     }
                     if (remove)
                     {

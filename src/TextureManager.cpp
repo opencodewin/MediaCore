@@ -30,6 +30,7 @@ struct _TextureContainer
     virtual void UpdateTextureState() = 0;
     virtual bool RequestTextureID(ManagedTexture* pMtx) = 0;
     virtual void GetAttributes(Vec2<int32_t>& txSize, ImDataType& dtype) = 0;
+    virtual bool HasTexture(ManagedTexture::Holder hTx) = 0;
 };
 
 class TextureManager_Impl : public TextureManager
@@ -47,6 +48,20 @@ private:
         Rect<float> GetDisplayRoi() const override { return (Rect<float>)m_roiRect/(Vec2<float>)m_textureSize; }
 
         bool IsValid() const override { return m_valid; }
+
+        bool IsDiscarded() const { return m_discarded; }
+
+        void Discard()
+        {
+            if (!m_discarded)
+            {
+                Invalidate();
+                m_renderMat.release();
+                m_discarded = true;
+            }
+        }
+
+        void Reuse() { m_discarded = false; }
 
         void Invalidate() override
         {
@@ -197,6 +212,7 @@ private:
         ImTextureID m_tid{nullptr};
         bool m_ownTx{false};
         bool m_valid{false};
+        bool m_discarded{false};
         Vec2<int32_t> m_textureSize;
         Vec2<int32_t> m_roiSize;
         Rect<int32_t> m_roiRect;
@@ -268,6 +284,8 @@ private:
 
         void GetAttributes(Vec2<int32_t>& txSize, ImDataType& dtype) override {}
 
+        bool HasTexture(ManagedTexture::Holder hTx) override { return m_hTx == hTx; }
+
         TextureManager_Impl* m_owner;
         string m_name;
         ManagedTexture::Holder m_hTx;
@@ -306,10 +324,15 @@ private:
             if (m_needRelease) return nullptr;
             lock_guard<mutex> lk(m_txPoolLock);
             auto iter = find_if(m_txPool.begin(), m_txPool.end(), [] (auto& hTx) {
-                return !hTx->IsValid();
+                ManagedTexture_Impl* pTx = dynamic_cast<ManagedTexture_Impl*>(hTx.get());
+                return pTx->IsDiscarded();
             });
             if (iter != m_txPool.end())
+            {
+                ManagedTexture_Impl* pTx = dynamic_cast<ManagedTexture_Impl*>(iter->get());
+                pTx->Reuse();
                 return *iter;  // found a invalidated texture in the pool
+            }
             if (m_maxPoolSize > 0 && m_txPool.size() >= (size_t)m_maxPoolSize) // pool is full
             {
                 m_owner->m_logger->Log(WARN) << "! The count of pooled textures has reached the limitation " << m_maxPoolSize << "!" << endl;
@@ -335,6 +358,7 @@ private:
                 while (iter != m_txPool.end())
                 {
                     auto& hTx = *iter;
+                    ManagedTexture_Impl* pTx = dynamic_cast<ManagedTexture_Impl*>(hTx.get());
                     if (hTx.use_count() == 1)
                     {
                         if (removeCap > 0)
@@ -346,11 +370,11 @@ private:
                         }
                         else
                         {
-                            hTx->Invalidate();
+                            pTx->Discard();
+                            continue;
                         }
                     }
 
-                    ManagedTexture_Impl* pTx = dynamic_cast<ManagedTexture_Impl*>(hTx.get());
                     if (!pTx->m_renderMat.empty())
                         renderList.push_back(hTx);
                     iter++;
@@ -377,6 +401,14 @@ private:
         {
             txSize = m_textureSize;
             dtype = m_dataType;
+        }
+
+        bool HasTexture(ManagedTexture::Holder hTx) override
+        {
+            bool found = false;
+            lock_guard<mutex> lk(m_txPoolLock);
+            auto iter = find(m_txPool.begin(), m_txPool.end(), hTx);
+            return iter != m_txPool.end();
         }
 
         TextureManager_Impl* m_owner;
@@ -467,10 +499,15 @@ private:
             if (m_needRelease) return nullptr;
             lock_guard<mutex> lk(m_txPoolLock);
             auto iter = find_if(m_txPool.begin(), m_txPool.end(), [] (auto& hTx) {
-                return !hTx->IsValid();
+                ManagedTexture_Impl* pTx = dynamic_cast<ManagedTexture_Impl*>(hTx.get());
+                return pTx->IsDiscarded();
             });
             if (iter != m_txPool.end())
+            {
+                ManagedTexture_Impl* pTx = dynamic_cast<ManagedTexture_Impl*>(iter->get());
+                pTx->Reuse();
                 return *iter;  // found a invalidated texture in the pool
+            }
             if (m_maxTxCnt > 0 && m_gridTxPool.size() >= (size_t)m_maxTxCnt) // pool is full
             {
                 m_owner->m_logger->Log(WARN) << "! The count of pooled grid textures has reached the limitation " << m_maxTxCnt << "="
@@ -487,25 +524,6 @@ private:
 
         void UpdateTextureState() override
         {
-            list<ManagedTexture::Holder> renderList;
-            {
-                lock_guard<mutex> lk(m_txPoolLock);
-                auto iter = m_txPool.begin();
-                while (iter != m_txPool.end())
-                {
-                    auto& hTx = *iter++;
-                    ManagedTexture_Impl* pTx = dynamic_cast<ManagedTexture_Impl*>(hTx.get());
-                    if (!pTx->m_renderMat.empty())
-                        renderList.push_back(hTx);
-                }
-            }
-            // render textures
-            for (auto& hTx : renderList)
-            {
-                ManagedTexture_Impl* pTx = dynamic_cast<ManagedTexture_Impl*>(hTx.get());
-                pTx->DoRender();
-            }
-
             // release over min-threshold count grid textures
             if (m_gridTxPool.size() > m_minPoolSize)
             {
@@ -517,10 +535,13 @@ private:
                     bool unused = true;
                     for (auto& hTx : pGtx->m_txs)
                     {
+                        ManagedTexture_Impl* pTx = dynamic_cast<ManagedTexture_Impl*>(hTx.get());
                         if (hTx.use_count() > 2)
                             unused = false;
-                        else
-                            hTx->Invalidate();
+                        else if (!pTx->IsDiscarded())
+                        {
+                            pTx->Discard();
+                        }
                     }
                     if (unused)
                     {
@@ -550,6 +571,25 @@ private:
                         delIter++;
                     }
                 }
+            }
+
+            list<ManagedTexture::Holder> renderList;
+            {
+                lock_guard<mutex> lk(m_txPoolLock);
+                auto iter = m_txPool.begin();
+                while (iter != m_txPool.end())
+                {
+                    auto& hTx = *iter++;
+                    ManagedTexture_Impl* pTx = dynamic_cast<ManagedTexture_Impl*>(hTx.get());
+                    if (!pTx->m_renderMat.empty())
+                        renderList.push_back(hTx);
+                }
+            }
+            // render textures
+            for (auto& hTx : renderList)
+            {
+                ManagedTexture_Impl* pTx = dynamic_cast<ManagedTexture_Impl*>(hTx.get());
+                pTx->DoRender();
             }
         }
 
@@ -598,6 +638,14 @@ private:
         {
             txSize = m_textureSize;
             dtype = m_dataType;
+        }
+
+        bool HasTexture(ManagedTexture::Holder hTx) override
+        {
+            bool found = false;
+            lock_guard<mutex> lk(m_txPoolLock);
+            auto iter = find(m_txPool.begin(), m_txPool.end(), hTx);
+            return iter != m_txPool.end();
         }
 
         TextureManager_Impl* m_owner;
@@ -786,6 +834,35 @@ public:
         auto& hCont = iter->second;
         hCont->GetAttributes(textureSize, dataType);
         return true;
+    }
+
+    bool IsTextureFrom(const std::string& poolName, ManagedTexture::Holder hTx) override
+    {
+        lock_guard<mutex> lk(m_containersLock);
+        if (!poolName.empty())
+        {
+            auto iter = m_containers.find(poolName);
+            if (iter == m_containers.end())
+            {
+                ostringstream oss; oss << "CANNOT find any texture container with name '" << poolName << "'!";
+                m_errMsg = oss.str();
+                return false;
+            }
+            return iter->second->HasTexture(hTx);
+        }
+        else
+        {
+            bool found = false;
+            for (auto& elem : m_containers)
+            {
+                if (elem.second->HasTexture(hTx))
+                {
+                    found = true;
+                    break;
+                }
+            }
+            return found;
+        }
     }
 
     void SetUiThread(const thread::id& threadId) override { m_uiThreadId = threadId; }

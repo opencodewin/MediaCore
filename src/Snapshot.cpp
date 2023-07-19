@@ -28,6 +28,7 @@
 #include <algorithm>
 #include "imgui_helper.h"
 #include "Snapshot.h"
+#include "MediaReader.h"
 #include "FFUtils.h"
 #include "SysUtils.h"
 #include "DebugHelper.h"
@@ -142,7 +143,6 @@ public:
         m_vidStmIdx = -1;
         m_audStmIdx = -1;
         m_vidStream = nullptr;
-        m_audStream = nullptr;
         m_viddec = nullptr;
         m_hParser = nullptr;
         m_hMediaInfo = nullptr;
@@ -542,6 +542,11 @@ public:
         m_vidPreferUseHw = enable;
     }
 
+    void SetLogLevel(Logger::Level l) override
+    {
+        m_logger->SetShowLevels(l);
+    }
+
     string GetError() const override
     {
         return m_errMsg;
@@ -567,12 +572,12 @@ private:
 
     int64_t CvtVidPtsToMts(int64_t pts)
     {
-        return av_rescale_q(pts-m_vidStartPts, m_vidStream->time_base, MILLISEC_TIMEBASE);
+        return av_rescale_q(pts-m_vidStartPts, m_vidTimebase, MILLISEC_TIMEBASE);
     }
 
     int64_t CvtVidMtsToPts(int64_t mts)
     {
-        return av_rescale_q(mts, MILLISEC_TIMEBASE, m_vidStream->time_base)+m_vidStartPts;
+        return av_rescale_q(mts, MILLISEC_TIMEBASE, m_vidTimebase)+m_vidStartPts;
     }
 
     void CalcWindowVariables()
@@ -583,7 +588,7 @@ private:
             m_ssIntvMts = m_vidfrmIntvMts;
         else if (m_ssIntvMts-m_vidfrmIntvMts <= 0.5)
             m_ssIntvMts = m_vidfrmIntvMts;
-        m_ssIntvPts = m_ssIntvMts*m_vidStream->time_base.den/(1000.*m_vidStream->time_base.num); //av_rescale_q(m_ssIntvMts*1000, MICROSEC_TIMEBASE, m_vidStream->time_base);
+        m_ssIntvPts = m_ssIntvMts*m_pVidstm->timebase.den/(1000.*m_pVidstm->timebase.num); //av_rescale_q(m_ssIntvMts*1000, MICROSEC_TIMEBASE, m_vidStream->time_base);
         m_vidMaxIndex = (uint32_t)floor(((double)m_vidDurMts-m_vidfrmIntvMts)/m_ssIntvMts);
         m_maxCacheSize = (uint32_t)ceil(m_wndFrmCnt*m_cacheFactor);
         uint32_t intWndFrmCnt = (uint32_t)ceil(m_wndFrmCnt);
@@ -599,12 +604,15 @@ private:
 
     bool OpenMedia(MediaParser::Holder hParser)
     {
-        int fferr = avformat_open_input(&m_avfmtCtx, hParser->GetUrl().c_str(), nullptr, nullptr);
-        if (fferr < 0)
+        if (!hParser->IsImageSequence())
         {
-            m_avfmtCtx = nullptr;
-            m_errMsg = FFapiFailureMessage("avformat_open_input", fferr);
-            return false;
+            int fferr = avformat_open_input(&m_avfmtCtx, hParser->GetUrl().c_str(), nullptr, nullptr);
+            if (fferr < 0)
+            {
+                m_avfmtCtx = nullptr;
+                m_errMsg = FFapiFailureMessage("avformat_open_input", fferr);
+                return false;
+            }
         }
 
         m_hMediaInfo = hParser->GetMediaInfo();
@@ -613,34 +621,34 @@ private:
         if (m_vidStmIdx < 0)
         {
             ostringstream oss;
-            oss << "No video stream can be found in '" << m_avfmtCtx->url << "'.";
+            oss << "No video stream can be found in '" << hParser->GetUrl() << "'.";
             m_errMsg = oss.str();
             return false;
         }
 
-        VideoStream* vidStream = dynamic_cast<VideoStream*>(m_hMediaInfo->streams[m_vidStmIdx].get());
-        m_vidStartMts = (int64_t)(vidStream->startTime*1000);
-        m_vidDurMts = (int64_t)(vidStream->duration*1000);
-        m_vidFrmCnt = vidStream->frameNum;
-        AVRational timebase = { vidStream->timebase.num, vidStream->timebase.den };
+        m_pVidstm = dynamic_cast<VideoStream*>(m_hMediaInfo->streams[m_vidStmIdx].get());
+        m_vidStartMts = (int64_t)(m_pVidstm->startTime*1000);
+        m_vidDurMts = (int64_t)(m_pVidstm->duration*1000);
+        m_vidFrmCnt = m_pVidstm->frameNum;
+        m_vidTimebase = { m_pVidstm->timebase.num, m_pVidstm->timebase.den };
         AVRational frameRate;
-        if (Ratio::IsValid(vidStream->avgFrameRate))
-            frameRate = { vidStream->avgFrameRate.num, vidStream->avgFrameRate.den };
-        else if (Ratio::IsValid(vidStream->realFrameRate))
-            frameRate = { vidStream->realFrameRate.num, vidStream->realFrameRate.den };
+        if (Ratio::IsValid(m_pVidstm->avgFrameRate))
+            frameRate = { m_pVidstm->avgFrameRate.num, m_pVidstm->avgFrameRate.den };
+        else if (Ratio::IsValid(m_pVidstm->realFrameRate))
+            frameRate = { m_pVidstm->realFrameRate.num, m_pVidstm->realFrameRate.den };
         else
-            frameRate = av_inv_q(timebase);
+            frameRate = av_inv_q(m_vidTimebase);
         m_vidfrmIntvMts = av_q2d(av_inv_q(frameRate))*1000.;
         m_vidfrmIntvMtsHalf = ceil(m_vidfrmIntvMts)/2;
-        m_vidfrmIntvPts = av_rescale_q(1, av_inv_q(frameRate), timebase);
+        m_vidfrmIntvPts = av_rescale_q(1, av_inv_q(frameRate), m_vidTimebase);
         m_vidfrmIntvPtsHalf = m_vidfrmIntvPts/2;
 
         if (m_useRszFactor)
         {
-            uint32_t outWidth = (uint32_t)ceil(vidStream->width*m_ssWFacotr);
+            uint32_t outWidth = (uint32_t)ceil(m_pVidstm->width*m_ssWFacotr);
             if ((outWidth&0x1) == 1)
                 outWidth++;
-            uint32_t outHeight = (uint32_t)ceil(vidStream->height*m_ssHFacotr);
+            uint32_t outHeight = (uint32_t)ceil(m_pVidstm->height*m_ssHFacotr);
             if ((outHeight&0x1) == 1)
                 outHeight++;
             if (!m_frmCvt.SetOutSize(outWidth, outHeight))
@@ -664,59 +672,57 @@ private:
         }
 
         lock_guard<recursive_mutex> lk(m_apiLock, adopt_lock);
-        m_hParser->EnableParseInfo(MediaParser::VIDEO_SEEK_POINTS);
-        m_hSeekPoints = m_hParser->GetVideoSeekPoints();
-        if (!m_hSeekPoints)
+        if (!m_hParser->IsImageSequence())
         {
-            m_errMsg = "FAILED to retrieve video seek points!";
-            m_logger->Log(Error) << m_errMsg << endl;
-            return false;
-        }
-
-        int fferr;
-        fferr = avformat_find_stream_info(m_avfmtCtx, nullptr);
-        if (fferr < 0)
-        {
-            m_errMsg = FFapiFailureMessage("avformat_open_input", fferr);
-            return false;
-        }
-
-        if (HasVideo())
-        {
-            m_vidStream = m_avfmtCtx->streams[m_vidStmIdx];
-            m_vidStartPts = m_vidStream->start_time;
-
-            m_viddec = avcodec_find_decoder(m_vidStream->codecpar->codec_id);
-            if (m_viddec == nullptr)
+            m_hParser->EnableParseInfo(MediaParser::VIDEO_SEEK_POINTS);
+            m_hSeekPoints = m_hParser->GetVideoSeekPoints();
+            if (!m_hSeekPoints)
             {
-                ostringstream oss;
-                oss << "Can not find video decoder by codec_id " << m_vidStream->codecpar->codec_id << "!";
-                m_errMsg = oss.str();
+                m_errMsg = "FAILED to retrieve video seek points!";
+                m_logger->Log(Error) << m_errMsg << endl;
                 return false;
             }
 
-            if (m_vidPreferUseHw)
+            int fferr;
+            fferr = avformat_find_stream_info(m_avfmtCtx, nullptr);
+            if (fferr < 0)
             {
-                if (!OpenHwVideoDecoder())
-                    if (!OpenVideoDecoder())
-                        return false;
-            }
-            else if (!OpenVideoDecoder())
+                m_errMsg = FFapiFailureMessage("avformat_open_input", fferr);
                 return false;
-            m_logger->Log(INFO) << "SnapshotGenerator for file '" << m_hParser->GetUrl() << "' opened video decoder '" << 
-                m_viddecCtx->codec->name << "'(" << (m_viddecDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(m_viddecDevType)) << ")." << endl;
+            }
 
+            if (HasVideo())
+            {
+                m_vidStream = m_avfmtCtx->streams[m_vidStmIdx];
+                m_vidStartPts = m_vidStream->start_time;
+
+                m_viddec = avcodec_find_decoder(m_vidStream->codecpar->codec_id);
+                if (m_viddec == nullptr)
+                {
+                    ostringstream oss;
+                    oss << "Can not find video decoder by codec_id " << m_vidStream->codecpar->codec_id << "!";
+                    m_errMsg = oss.str();
+                    return false;
+                }
+
+                if (m_vidPreferUseHw)
+                {
+                    if (!OpenHwVideoDecoder())
+                        if (!OpenVideoDecoder())
+                            return false;
+                }
+                else if (!OpenVideoDecoder())
+                    return false;
+                m_logger->Log(INFO) << "SnapshotGenerator for file '" << m_hParser->GetUrl() << "' opened video decoder '" << 
+                    m_viddecCtx->codec->name << "'(" << (m_viddecDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(m_viddecDevType)) << ")." << endl;
+
+                CalcWindowVariables();
+                ResetGopDecodeTaskList();
+            }
+        }
+        else
+        {
             CalcWindowVariables();
-            ResetGopDecodeTaskList();
-        }
-
-        if (HasAudio())
-        {
-            m_audStream = m_avfmtCtx->streams[m_audStmIdx];
-
-            // wyvern: disable opening audio decoder because we don't use it now
-            // if (!OpenAudioDecoder())
-            //     return false;
         }
 
         {
@@ -1282,20 +1288,126 @@ private:
         m_logger->Log(VERBOSE) << "Leave UpdateSnapshotThreadProc()." << endl;
     }
 
+    void BuildSnapshotFromImageSequenceProc()
+    {
+        m_logger->Log(VERBOSE) << "Enter BuildSnapshotFromImageSequence()." << endl;
+
+        if (!m_prepared && !Prepare())
+        {
+            if (!m_quit)
+                m_logger->Log(Error) << "Prepare() FAILED! Error is '" << m_errMsg << "'." << endl;
+            return;
+        }
+
+        list<ImgsqDecodeContext::Holder> imgsqDecCtxList;
+        for (auto i = 0; i < m_maxImgsqDecNum; i++)
+            imgsqDecCtxList.push_back(CreateImgsqDecodeContext());
+
+        while (!m_quit)
+        {
+            bool idleLoop = true;
+
+            UpdateImgsqDecodeTaskList();
+
+            // find the task to decode
+            int32_t distToVwnd = INT32_MAX;
+            GopDecodeTaskHolder hTaskToDecode;
+            for (auto& hTask : m_goptskList)
+            {
+                if (hTask->ssImgList.empty())
+                {
+                    if (hTask->IsInView())
+                    {
+                        hTaskToDecode = hTask;
+                        break;
+                    }
+                    else if (hTask->DistanceToViewWnd() < distToVwnd)
+                    {
+                        hTaskToDecode = hTask;
+                        distToVwnd = hTask->DistanceToViewWnd();
+                    }
+                }
+            }
+
+            // assign imgsq reader
+            if (hTaskToDecode)
+            {
+                auto idleDecIter = find_if(imgsqDecCtxList.begin(), imgsqDecCtxList.end(), [] (auto& hImgsqDecCtx) {
+                    return hImgsqDecCtx->isIdle;
+                });
+                if (idleDecIter != imgsqDecCtxList.end())
+                {
+                    const int32_t ssIdx = hTaskToDecode->TaskRange().SsIdx().first;
+                    _Picture::Holder ss(new _Picture(this, ssIdx, nullptr, 0));
+                    ss->img->mTimestampMs = CalcSnapshotMts(ssIdx);
+                    hTaskToDecode->ssImgList.push_back(ss);
+                    AssignDecodeContextToSs(ss, *idleDecIter);
+                    idleLoop = false;
+                }
+            }
+
+            // trigger decoding and check decoded mat
+            for (auto& hImgsqDecCtx : imgsqDecCtxList)
+            {
+                if (!hImgsqDecCtx->m_hVfrm && hImgsqDecCtx->m_hSs)
+                {
+                    bool eof = false;
+                    auto hVfrm = hImgsqDecCtx->m_hImgsqReader->ReadVideoFrame(hImgsqDecCtx->pos, eof, false);
+                    if (hVfrm)
+                    {
+                        hVfrm->SetAutoConvertToMat(true);
+                        hImgsqDecCtx->m_hVfrm = hVfrm;
+                    }
+                    else if (eof)
+                    {
+                        hImgsqDecCtx->isIdle = true;
+                        hImgsqDecCtx->m_hVfrm = nullptr;
+                        hImgsqDecCtx->m_hSs = nullptr;
+                        idleLoop = false;
+                    }
+                }
+                if (hImgsqDecCtx->m_hVfrm && hImgsqDecCtx->m_hVfrm->IsReady())
+                {
+                    if (!hImgsqDecCtx->m_hVfrm->GetMat(hImgsqDecCtx->m_hSs->img->mImgMat))
+                        m_logger->Log(WARN) << "FAILED to GetMat for image-sequence at ss index@" << hImgsqDecCtx->m_hSs->index << ", pos@" << hImgsqDecCtx->m_hSs->img->mTimestampMs << "." << endl;
+                    m_logger->Log(INFO) << "<--- Finished decoding ss-idx=" << hImgsqDecCtx->m_hSs->index << ", pos=" << hImgsqDecCtx->m_hSs->img->mTimestampMs <<
+                            ", mat.timestamp=" << hImgsqDecCtx->m_hSs->img->mImgMat.time_stamp << "." << endl;
+                    hImgsqDecCtx->isIdle = true;
+                    hImgsqDecCtx->m_hVfrm = nullptr;
+                    hImgsqDecCtx->m_hSs = nullptr;
+                    idleLoop = false;
+                }
+            }
+
+            if (idleLoop)
+                this_thread::sleep_for(chrono::milliseconds(5));
+        }
+        m_logger->Log(VERBOSE) << "Leave BuildSnapshotFromImageSequence()." << endl;
+    }
+
     void StartAllThreads()
     {
         string fileName = SysUtils::ExtractFileName(m_hParser->GetUrl());
         ostringstream thnOss;
         m_quit = false;
-        m_demuxThread = thread(&Generator_Impl::DemuxThreadProc, this);
-        thnOss << "SsgDmx-" << fileName;
-        SysUtils::SetThreadName(m_demuxThread, thnOss.str());
-        m_viddecThread = thread(&Generator_Impl::VideoDecodeThreadProc, this);
-        thnOss.str(""); thnOss << "SsgVdc-" << fileName;
-        SysUtils::SetThreadName(m_viddecThread, thnOss.str());
-        m_updateSsThread = thread(&Generator_Impl::UpdateSnapshotThreadProc, this);
-        thnOss.str(""); thnOss << "SsgUss-" << fileName;
-        SysUtils::SetThreadName(m_updateSsThread, thnOss.str());
+        if (!IsImageSequence())
+        {
+            m_demuxThread = thread(&Generator_Impl::DemuxThreadProc, this);
+            thnOss << "SsgDmx-" << fileName;
+            SysUtils::SetThreadName(m_demuxThread, thnOss.str());
+            m_viddecThread = thread(&Generator_Impl::VideoDecodeThreadProc, this);
+            thnOss.str(""); thnOss << "SsgVdc-" << fileName;
+            SysUtils::SetThreadName(m_viddecThread, thnOss.str());
+            m_updateSsThread = thread(&Generator_Impl::UpdateSnapshotThreadProc, this);
+            thnOss.str(""); thnOss << "SsgUss-" << fileName;
+            SysUtils::SetThreadName(m_updateSsThread, thnOss.str());
+        }
+        else
+        {
+            m_updateSsThread = thread(&Generator_Impl::BuildSnapshotFromImageSequenceProc, this);
+            thnOss.str(""); thnOss << "SsgUss-" << fileName;
+            SysUtils::SetThreadName(m_updateSsThread, thnOss.str());
+        }
     }
 
     void WaitAllThreadsQuit()
@@ -1317,11 +1429,6 @@ private:
             m_updateSsThread.join();
             m_updateSsThread = thread();
         }
-        if (m_freeGoptskThread.joinable())
-        {
-            m_freeGoptskThread.join();
-            m_freeGoptskThread = thread();
-        }
     }
 
     void FlushAllQueues()
@@ -1338,7 +1445,7 @@ private:
         _Picture(Generator_Impl* owner, int32_t _index, SelfFreeAVFramePtr _frm, uint32_t _bias)
             : m_owner(owner), img(new Image()), index(_index), frm(_frm), bias(_bias)
         {
-            pts = _frm->pts;
+            pts = _frm ? _frm->pts : 0;
         }
 
         Generator_Impl* m_owner;
@@ -1349,6 +1456,55 @@ private:
         int64_t bias;
         bool fixed{false};
     };
+
+    struct ImgsqDecodeContext
+    {
+        using Holder = shared_ptr<ImgsqDecodeContext>;
+
+        ImgsqDecodeContext() {}
+        _Picture::Holder m_hSs;
+        int64_t pos;
+        bool isIdle{true};
+        MediaReader::Holder m_hImgsqReader;
+        MediaReader::VideoFrame::Holder m_hVfrm;
+    };
+
+    ImgsqDecodeContext::Holder CreateImgsqDecodeContext()
+    {
+        ImgsqDecodeContext::Holder hImgsqDecCtx(new ImgsqDecodeContext());
+        hImgsqDecCtx->m_hImgsqReader = MediaReader::CreateImageSequenceInstance();
+        auto hImgsqReader = hImgsqDecCtx->m_hImgsqReader;
+        if (!hImgsqReader->Open(m_hParser))
+        {
+            ostringstream oss; oss << "FAILED to open image-sequence reader! Error is '" << hImgsqReader->GetError() << "'.";
+            m_errMsg = oss.str();
+            return nullptr;
+        }
+        const auto outW = m_frmCvt.GetOutWidth();
+        const auto outH = m_frmCvt.GetOutHeight();
+        const auto outClrfmt = m_frmCvt.GetOutColorFormat();
+        const auto outDtype = m_frmCvt.GetOutDataType();
+        const auto rszInterp = m_frmCvt.GetResizeInterpolateMode();
+        if (!hImgsqReader->ConfigVideoReader(outW, outH, outClrfmt, outDtype, rszInterp))
+        {
+            ostringstream oss; oss << "FAILED to configure image-sequence reader! Error is '" << hImgsqReader->GetError() << "'.";
+            m_errMsg = oss.str();
+            return nullptr;
+        }
+        hImgsqReader->SetCacheFrames(true, 0, 0);
+        return hImgsqDecCtx;
+    }
+
+    void AssignDecodeContextToSs(_Picture::Holder hSs, ImgsqDecodeContext::Holder hImgsqDecCtx)
+    {
+        hImgsqDecCtx->m_hSs = hSs;
+        hImgsqDecCtx->pos = hSs->img->mTimestampMs;
+        hImgsqDecCtx->isIdle = false;
+        hImgsqDecCtx->m_hImgsqReader->SeekTo(hImgsqDecCtx->pos);
+        if (!hImgsqDecCtx->m_hImgsqReader->IsStarted())
+            hImgsqDecCtx->m_hImgsqReader->Start();
+        m_logger->Log(DEBUG) << "--> Assign decode context: ss-idx=" << hSs->index << ", pos=" << hImgsqDecCtx->pos << "." << endl;
+    }
 
     struct _SnapWindow
     {
@@ -1380,6 +1536,7 @@ private:
         class Range
         {
         public:
+            Range() {}
             Range(const pair<int64_t, int64_t>& seekPts, const pair<int32_t, int32_t>& ssIdx, bool isInView, int32_t distanceToViewWnd)
                 : m_seekPts(seekPts), m_ssIdx(ssIdx), m_isInView(isInView), m_distanceToViewWnd(distanceToViewWnd)
             {}
@@ -1392,6 +1549,56 @@ private:
             bool IsInView() const { return m_isInView; }
             void SetInView(bool isInView) { m_isInView = isInView; }
             int32_t DistanceToViewWindow() const { return m_distanceToViewWnd; }
+            void SetDistanceToViewWindow(int32_t distanceToViewWnd) { m_distanceToViewWnd = distanceToViewWnd; }
+            bool HasOverlapWith(const Range& r)
+            {
+                return m_ssIdx.first < r.m_ssIdx.second && m_ssIdx.first >= r.m_ssIdx.first ||
+                        m_ssIdx.second > r.m_ssIdx.first && m_ssIdx.second <= r.m_ssIdx.second ||
+                        m_ssIdx.first < r.m_ssIdx.first && m_ssIdx.second > r.m_ssIdx.second;
+            }
+
+            void MergeWith(const Range& r)
+            {
+                if (r.m_seekPts.first < m_seekPts.first)
+                    m_seekPts.first = r.m_seekPts.first;
+                if (r.m_seekPts.second > m_seekPts.second)
+                    m_seekPts.second = r.m_seekPts.second;
+                if (r.m_ssIdx.first < m_ssIdx.first)
+                    m_ssIdx.first = r.m_ssIdx.first;
+                if (r.m_ssIdx.second > m_ssIdx.second)
+                    m_ssIdx.second = r.m_ssIdx.second;
+                if (r.m_distanceToViewWnd < m_distanceToViewWnd)
+                    m_distanceToViewWnd = r.m_distanceToViewWnd;
+            }
+
+            bool ExcludeFrom(const Range& r, Range& newRange)
+            {
+                newRange = Range();
+                if (r.m_ssIdx.first <= m_ssIdx.first && r.m_ssIdx.second >= m_ssIdx.second)
+                    return false;
+                if (r.m_ssIdx.first >= m_ssIdx.second || r.m_ssIdx.second <= m_ssIdx.first)
+                    return true;
+                if (r.m_ssIdx.first > m_ssIdx.first && r.m_ssIdx.first < m_ssIdx.second)
+                {
+                    if (r.m_ssIdx.second < m_ssIdx.second)
+                    {
+                        newRange.m_ssIdx = {r.m_ssIdx.second, m_ssIdx.second};
+                        newRange.m_seekPts = {r.m_seekPts.second, m_seekPts.second};
+                        newRange.m_distanceToViewWnd = 0;
+                        newRange.m_isInView = false;
+                    }
+                    m_ssIdx.second = r.m_ssIdx.first;
+                    m_seekPts.second = r.m_seekPts.first;
+                    m_distanceToViewWnd = 0;
+                }
+                else
+                {
+                    m_ssIdx.first = r.m_ssIdx.second;
+                    m_seekPts.first = r.m_seekPts.second;
+                    m_distanceToViewWnd = 0;
+                }
+                return true;
+            }
 
             friend bool operator==(const Range& oprnd1, const Range& oprnd2)
             {
@@ -1462,8 +1669,18 @@ private:
         int32_t index1 = CalcSsIndexFromTs(wndpos+m_snapWindowSize);
         int32_t cacheIdx0 = index0-(int32_t)m_prevWndCacheSize;
         int32_t cacheIdx1 = cacheIdx0+(int32_t)m_maxCacheSize-1;
-        pair<int64_t, int64_t> seekPos0 = GetSeekPosBySsIndex(cacheIdx0);
-        pair<int64_t, int64_t> seekPos1 = GetSeekPosBySsIndex(cacheIdx1);
+        pair<int64_t, int64_t> seekPos0, seekPos1;
+        if (!IsImageSequence())
+        {
+            seekPos0 = GetSeekPosBySsIndex(cacheIdx0);
+            seekPos1 = GetSeekPosBySsIndex(cacheIdx1);
+        }
+        else
+        {
+            seekPos0 = seekPos1 = {0, 0};
+            if (cacheIdx0 < 0) cacheIdx0 = index0;
+            if (cacheIdx1 > m_vidMaxIndex) cacheIdx1 = index1;
+        }
         return { wndpos, index0, index1, cacheIdx0, cacheIdx1, seekPos0.first, seekPos1.first };
     }
 
@@ -1681,6 +1898,211 @@ private:
         }
     }
 
+    void UpdateImgsqDecodeTaskList()
+    {
+        list<Viewer::Holder> viewers;
+        {
+            lock_guard<mutex> lk(m_viewerListLock);
+            viewers = m_viewers;
+        }
+        // Check if view window changed
+        bool taskRangeChanged = false;
+        for (auto& hViewer : viewers)
+        {
+            Viewer_Impl* viewer = dynamic_cast<Viewer_Impl*>(hViewer.get());
+            if (viewer->IsTaskRangeChanged())
+            {
+                taskRangeChanged = true;
+                break;
+            }
+        }
+        if (!taskRangeChanged)
+            return;
+
+        // Aggregate all _GopDecodeTask::Range(s) from all the Viewer(s)
+        list<_GopDecodeTask::Range> totalTaskRanges;
+        for (auto& hViewer : viewers)
+        {
+            Viewer_Impl* viewer = dynamic_cast<Viewer_Impl*>(hViewer.get());
+            list<_GopDecodeTask::Range> taskRanges = viewer->CheckTaskRanges();
+            for (auto& tskrng : taskRanges)
+            {
+                bool hasOverlap = false;
+                auto aggrngIter = totalTaskRanges.begin();
+                while (aggrngIter != totalTaskRanges.end())
+                {
+                    auto& aggrng = *aggrngIter;
+                    if (tskrng.HasOverlapWith(aggrng))
+                    {
+                        if (tskrng.IsInView() == aggrng.IsInView())
+                            aggrng.MergeWith(tskrng);
+                        else if (tskrng.IsInView())
+                        {
+                            _GopDecodeTask::Range newRange;
+                            if (aggrng.ExcludeFrom(tskrng, newRange))
+                            {
+                                totalTaskRanges.insert(aggrngIter, tskrng);
+                                if (newRange.SsIdx().first >= 0)
+                                    totalTaskRanges.insert(aggrngIter, newRange);
+                            }
+                            else
+                                aggrng = tskrng;
+                        }
+                        else
+                        {
+                            _GopDecodeTask::Range newRange;
+                            if (tskrng.ExcludeFrom(aggrng, newRange))
+                            {
+                                totalTaskRanges.insert(aggrngIter, tskrng);
+                                if (newRange.SsIdx().first >= 0)
+                                    totalTaskRanges.insert(aggrngIter, newRange);
+                            }
+                        }
+                        hasOverlap = true;
+                        break;
+                    }
+                    else
+                        aggrngIter++;
+                }
+                if (!hasOverlap)
+                    totalTaskRanges.push_back(tskrng);
+            }
+        }
+        // aggregate 'totalTaskRanges' itself
+        if (totalTaskRanges.size() > 1)
+        {
+            auto iter1 = totalTaskRanges.begin();
+            while (iter1 != totalTaskRanges.end())
+            {
+                bool needRemove = false;
+                auto iter2 = iter1; iter2++;
+                while (iter2 != totalTaskRanges.end())
+                {
+                    auto& r1 = *iter1;
+                    auto& r2 = *iter2;
+                    if (r1.HasOverlapWith(r2))
+                    {
+                        if (r1.IsInView() == r2.IsInView())
+                        {
+                            r2.MergeWith(r1);
+                            needRemove = true;
+                            break;
+                        }
+                        else if (r1.IsInView())
+                        {
+                            _GopDecodeTask::Range newRange;
+                            if (r2.ExcludeFrom(r1, newRange))
+                            {
+                                if (newRange.SsIdx().first >= 0)
+                                    totalTaskRanges.insert(iter2, newRange);
+                                iter2++;
+                            }
+                            else
+                                iter2 = totalTaskRanges.erase(iter2);
+                        }
+                        else
+                        {
+                            _GopDecodeTask::Range newRange;
+                            if (r1.ExcludeFrom(r2, newRange))
+                            {
+                                if (newRange.SsIdx().first >= 0)
+                                    totalTaskRanges.insert(iter2, newRange);
+                                iter2++;
+                            }
+                            else
+                            {
+                                needRemove = true;
+                                break;
+                            }
+                        }
+                    }
+                    else
+                        iter2++;
+                }
+                if (needRemove)
+                    iter1 = totalTaskRanges.erase(iter1);
+                else
+                    iter1++;
+            }
+        }
+        m_logger->Log(DEBUG) << ">>>>> Aggregated task ranges <<<<<<<" << endl << "\t";
+        for (auto& range : totalTaskRanges)
+            m_logger->Log(DEBUG) << "[" << range.SsIdx().first << ", " << range.SsIdx().second << "), ";
+        m_logger->Log(DEBUG) << endl;
+
+        // Update _GopDecodeTask prepare list
+        bool updated = false;
+        // 1. remove the tasks that are no longer in the cache range
+        auto taskIter = m_goptskPrepareList.begin();
+        while (taskIter != m_goptskPrepareList.end())
+        {
+            auto& task = *taskIter;
+            auto iter = find_if(totalTaskRanges.begin(), totalTaskRanges.end(), [task] (const _GopDecodeTask::Range& range) {
+                return task->m_range.SsIdx().first >= range.SsIdx().first && task->m_range.SsIdx().first < range.SsIdx().second;
+            });
+            if (iter == totalTaskRanges.end())
+            {
+                m_logger->Log(DEBUG) << "~~~~> Erase UNUSED task range [" << (*taskIter)->TaskRange().SsIdx().first << ", " << (*taskIter)->TaskRange().SsIdx().second << ")" << endl;
+                task->cancel = true;
+                taskIter = m_goptskPrepareList.erase(taskIter);
+                updated = true;
+            }
+            else
+                taskIter++;
+        }
+        // 2. refresh tasks in cache range
+        for (auto& range : totalTaskRanges)
+        {
+            for (int32_t idx = range.SsIdx().first; idx < range.SsIdx().second; idx++)
+            {
+                int32_t distanceToViewWnd = range.IsInView() ? 0 : INT32_MAX;
+                if (!range.IsInView())
+                {
+                    for (auto& range2 : totalTaskRanges)
+                    {
+                        if (!range2.IsInView()) continue;
+                        int32_t dist = abs(idx-range2.SsIdx().first);
+                        if (dist < distanceToViewWnd) distanceToViewWnd = dist;
+                        dist = abs(idx-range2.SsIdx().second);
+                        if (dist < distanceToViewWnd) distanceToViewWnd = dist;
+                    }
+                }
+
+                auto iter = find_if(m_goptskPrepareList.begin(), m_goptskPrepareList.end(), [idx] (auto& task) {
+                    return task->TaskRange().SsIdx().first == idx;
+                });
+                if (iter == m_goptskPrepareList.end())
+                {
+                    GopDecodeTaskHolder hTask(new _GopDecodeTask(this, _GopDecodeTask::Range({0, 0}, {idx, idx+1}, range.IsInView(), distanceToViewWnd)));
+                    m_goptskPrepareList.push_back(hTask);
+                    updated = true;
+                }
+                else
+                {
+                    auto& hTask = *iter;
+                    if (hTask->IsInView() != range.IsInView())
+                    {
+                        hTask->m_range.SetInView(range.IsInView());
+                        updated = true;
+                    }
+                    if (!range.IsInView() && hTask->DistanceToViewWnd() != distanceToViewWnd)
+                    {
+                        hTask->m_range.SetDistanceToViewWindow(distanceToViewWnd);
+                        updated = true;
+                    }
+                }
+            }
+        }
+        m_logger->Log(DEBUG) << ">>>>> GopTask prepare list updated=" << updated << endl;
+
+        // Update _GopDecodeTask list
+        if (updated)
+        {
+            lock_guard<mutex> lk(m_goptskListReadLocks[0]);
+            m_goptskList = m_goptskPrepareList;
+        }
+    }
+
     GopDecodeTaskHolder FindNextDemuxTask()
     {
         GopDecodeTaskHolder candidateTask = nullptr;
@@ -1845,6 +2267,11 @@ private:
         return true;
     }
 
+    bool IsImageSequence()
+    {
+        return m_hParser->IsImageSequence();
+    }
+
 public:
     class Viewer_Impl : public Viewer
     {
@@ -1900,6 +2327,11 @@ public:
             // AutoSection _as("UpdSsTx");
             for (auto& img : snapshots)
             {
+                if (img->mhTx)
+                {
+                    if (!hTxMgr->IsTextureFrom("", img->mhTx))
+                        m_owner->m_logger->Log(Error) << "ABNORMAL! dangling texture!" << endl;
+                }
                 if (img->mTextureReady)
                     continue;
                 if (!img->mhTx)
@@ -1930,33 +2362,52 @@ public:
         void UpdateSnapwnd(double wndpos, bool force = false)
         {
             // AutoSection _as("UpdSnapWnd");
-            _SnapWindow snapwnd = m_owner->CreateSnapWindow(wndpos);
-            list<_GopDecodeTask::Range> taskRanges;
             bool taskRangeChanged = false;
+            list<_GopDecodeTask::Range> taskRanges;
+            _SnapWindow snapwnd = m_owner->CreateSnapWindow(wndpos);
             if ((force || snapwnd.viewIdx0 != m_snapwnd.viewIdx0 || snapwnd.viewIdx1 != m_snapwnd.viewIdx1) &&
                 (snapwnd.seekPos00 != INT64_MIN || snapwnd.seekPos10 != INT64_MIN))
             {
-                int32_t buildIdx0 = snapwnd.cacheIdx0 >= 0 ? snapwnd.cacheIdx0 : 0;
-                int32_t buildIdx1 = snapwnd.cacheIdx1 <= m_owner->m_vidMaxIndex ? snapwnd.cacheIdx1 : m_owner->m_vidMaxIndex;
-                list<GopDecodeTaskHolder> goptskList;
-                while (buildIdx0 <= buildIdx1)
+                if (!m_owner->IsImageSequence())
                 {
-                    auto ptsPair = m_owner->GetSeekPosBySsIndex(buildIdx0);
-                    auto ssIdxPair = m_owner->CalcSsIndexPairFromPtsPair(ptsPair, buildIdx0);
-                    if (ssIdxPair.second <= buildIdx0)
+                    int32_t buildIdx0 = snapwnd.cacheIdx0 >= 0 ? snapwnd.cacheIdx0 : 0;
+                    int32_t buildIdx1 = snapwnd.cacheIdx1 <= m_owner->m_vidMaxIndex ? snapwnd.cacheIdx1 : m_owner->m_vidMaxIndex;
+                    list<GopDecodeTaskHolder> goptskList;
+                    while (buildIdx0 <= buildIdx1)
                     {
-                        m_logger->Log(WARN) << "Snap window DOESN'T PROCEED! 'buildIdx0'(" << buildIdx0 << ") is NOT INCLUDED in the next 'ssIdxPair'["
-                            << ssIdxPair.first << ", " << ssIdxPair.second << ")." << endl;
-                        buildIdx0++;
-                        continue;
+                        auto ptsPair = m_owner->GetSeekPosBySsIndex(buildIdx0);
+                        auto ssIdxPair = m_owner->CalcSsIndexPairFromPtsPair(ptsPair, buildIdx0);
+                        if (ssIdxPair.second <= buildIdx0)
+                        {
+                            m_logger->Log(WARN) << "Snap window DOESN'T PROCEED! 'buildIdx0'(" << buildIdx0 << ") is NOT INCLUDED in the next 'ssIdxPair'["
+                                << ssIdxPair.first << ", " << ssIdxPair.second << ")." << endl;
+                            buildIdx0++;
+                            continue;
+                        }
+                        bool isInView = (snapwnd.IsInView(ssIdxPair.first) && m_owner->IsSsIdxValid(ssIdxPair.first)) ||
+                                        (snapwnd.IsInView(ssIdxPair.second) && m_owner->IsSsIdxValid(ssIdxPair.second));
+                        int32_t distanceToViewWnd = isInView ? 0 : (ssIdxPair.second <= snapwnd.viewIdx0 ?
+                                snapwnd.viewIdx0-ssIdxPair.second : ssIdxPair.first-snapwnd.viewIdx1);
+                        if (distanceToViewWnd < 0) distanceToViewWnd = -distanceToViewWnd;
+                        taskRanges.push_back(_GopDecodeTask::Range(ptsPair, ssIdxPair, isInView, distanceToViewWnd));
+                        buildIdx0 = ssIdxPair.second;
                     }
-                    bool isInView = (snapwnd.IsInView(ssIdxPair.first) && m_owner->IsSsIdxValid(ssIdxPair.first)) ||
-                                    (snapwnd.IsInView(ssIdxPair.second) && m_owner->IsSsIdxValid(ssIdxPair.second));
-                    int32_t distanceToViewWnd = isInView ? 0 : (ssIdxPair.second <= snapwnd.viewIdx0 ?
-                            snapwnd.viewIdx0-ssIdxPair.second : ssIdxPair.first-snapwnd.viewIdx1);
-                    if (distanceToViewWnd < 0) distanceToViewWnd = -distanceToViewWnd;
-                    taskRanges.push_back(_GopDecodeTask::Range(ptsPair, ssIdxPair, isInView, distanceToViewWnd));
-                    buildIdx0 = ssIdxPair.second;
+                }
+                else
+                {
+                    pair<int64_t, int64_t> ptsPair = {0, 0};
+                    pair<int32_t, int32_t> ssIdxPair = {snapwnd.viewIdx0, snapwnd.viewIdx1};
+                    taskRanges.push_back(_GopDecodeTask::Range(ptsPair, ssIdxPair, true, 0));
+                    if (snapwnd.cacheIdx0 < snapwnd.viewIdx0)
+                    {
+                        ssIdxPair = {snapwnd.cacheIdx0, snapwnd.viewIdx0};
+                        taskRanges.push_back(_GopDecodeTask::Range(ptsPair, ssIdxPair, false, 0));
+                    }
+                    if (snapwnd.viewIdx1 < snapwnd.cacheIdx1)
+                    {
+                        ssIdxPair = {snapwnd.viewIdx1, snapwnd.cacheIdx1};
+                        taskRanges.push_back(_GopDecodeTask::Range(ptsPair, ssIdxPair, false, 0));
+                    }
                 }
                 taskRangeChanged = true;
             }
@@ -1998,6 +2449,8 @@ private:
 
     MediaParser::Holder m_hParser;
     MediaInfo::Holder m_hMediaInfo;
+    VideoStream* m_pVidstm{nullptr};
+    AVRational m_vidTimebase;
     MediaParser::SeekPointsHolder m_hSeekPoints;
     bool m_opened{false};
     bool m_prepared{false};
@@ -2008,7 +2461,6 @@ private:
     int m_vidStmIdx{-1};
     int m_audStmIdx{-1};
     AVStream* m_vidStream{nullptr};
-    AVStream* m_audStream{nullptr};
     AVCodecPtr m_viddec{nullptr};
     AVCodecContext* m_viddecCtx{nullptr};
     bool m_vidPreferUseHw{true};
@@ -2024,8 +2476,6 @@ private:
     thread m_viddecThread;
     // update snapshots thread
     thread m_updateSsThread;
-    // free gop task thread
-    thread m_freeGoptskThread;
 
     int64_t m_vidStartMts{0};
     int64_t m_vidStartPts{0};
@@ -2053,6 +2503,7 @@ private:
     Overview::Holder m_hOverview;
     list<Image::Holder> m_ovssimgs;
     bool m_isOvssComplete{false};
+    int32_t m_maxImgsqDecNum{4};
 
     bool m_useRszFactor{false};
     bool m_ssSizeChanged{false};

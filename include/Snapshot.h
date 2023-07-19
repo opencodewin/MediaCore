@@ -98,6 +98,7 @@ namespace Snapshot
 
         virtual bool IsHwAccelEnabled() const = 0;
         virtual void EnableHwAccel(bool enable) = 0;
+        virtual void SetLogLevel(Logger::Level l) = 0;
         virtual std::string GetError() const = 0;
     };
 

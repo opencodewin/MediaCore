@@ -27,6 +27,8 @@ static TextureManager::Holder g_txmgr;
 static string g_snapTxPoolName = "SnapshotGridTexturePool";
 const string c_imguiIniPath = "ms_test.ini";
 const string c_bookmarkPath = "bookmark.ini";
+static bool g_isImageSequence = false;
+static MediaParser::Holder g_mediaParser;
 
 // Application Framework Functions
 static void MediaSnapshot_Initialize(void** handle)
@@ -58,6 +60,7 @@ static void MediaSnapshot_Initialize(void** handle)
     g_movr = Overview::CreateInstance();
     g_movr->SetSnapshotSize(320, 180);
     g_ssgen = Snapshot::Generator::CreateInstance();
+    g_ssgen->SetLogLevel(DEBUG);
     // g_ssgen->SetSnapshotResizeFactor(0.5f, 0.5f);
     g_ssgen->SetCacheFactor(3);
     g_ssvw1 = g_ssgen->CreateViewer(0);
@@ -105,6 +108,10 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
                                                     filters, "~/Videos/", 1, nullptr, 
                                                     ImGuiFileDialogFlags_ShowBookmark | ImGuiFileDialogFlags_Modal);
         }
+
+        ImGui::SameLine();
+        ImGui::Checkbox("Open image sequence", &g_isImageSequence);
+
         ImGui::SameLine();
         if (ImGui::Button("Refresh snapwnd configuration"))
             g_ssgen->ConfigSnapWindow(g_windowSize, g_windowFrames, true);
@@ -183,10 +190,16 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
 		{
             g_ssgen->Close();
             string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
-            // g_movr->Open(filePathName, 10);
-            // g_movr->GetMediaParser()->EnableParseInfo(MediaParser::VIDEO_SEEK_POINTS);
-            // g_ssgen->Open(g_movr->GetMediaParser());
-            g_ssgen->Open(filePathName);
+            g_mediaParser = MediaParser::CreateInstance();
+            if (g_isImageSequence)
+                g_mediaParser->OpenImageSequence({25, 1}, filePathName, ".+_([[:digit:]]{1,})\\.png", false);
+            else
+            {
+                g_mediaParser->Open(filePathName);
+                g_mediaParser->EnableParseInfo(MediaParser::VIDEO_SEEK_POINTS);
+            }
+            // g_movr->Open(g_mediaParser, 10);
+            g_ssgen->Open(g_mediaParser);
             g_windowPos = (float)g_ssgen->GetVideoMinPos()/1000.f;
             g_windowSize = (float)g_ssgen->GetVideoDuration()/10000.f;
             g_ssgen->ConfigSnapWindow(g_windowSize, g_windowFrames);
