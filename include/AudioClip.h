@@ -32,7 +32,7 @@ namespace MediaCore
         virtual ~AudioFilter() {}
 
         virtual void ApplyTo(AudioClip* clip) = 0;
-        virtual ImGui::ImMat FilterPcm(const ImGui::ImMat& amat, int64_t pos) = 0;
+        virtual ImGui::ImMat FilterPcm(const ImGui::ImMat& amat, int64_t pos, int64_t dur) = 0;
     };
 
     struct AudioClip
