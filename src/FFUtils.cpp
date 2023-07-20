@@ -2202,8 +2202,11 @@ namespace FFUtils
                 if (!needValidation || _CheckVideoDecoderValidity(pAvfmtCtx, videoStreamIndex, &hwResult))
                     *result = hwResult;
                 else
+                {
                     Log(DEBUG) << "FAILED on validity check for HW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url
                         << "! Error is '" << hwResult.errMsg << "'." << endl;
+                    ret = false;
+                }
             }
             else
                 Log(DEBUG) << "FAILED to open HW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url
@@ -2217,8 +2220,11 @@ namespace FFUtils
                 if (!needValidation || _CheckVideoDecoderValidity(pAvfmtCtx, videoStreamIndex, &swResult))
                     *result = swResult;
                 else
+                {
                     Log(DEBUG) << "FAILED on validity check for SW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url
                         << "'! Error is '" << swResult.errMsg << "'." << endl;
+                    ret = false;
+                }
             }
             else
                 Log(DEBUG) << "FAILED to open SW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url
