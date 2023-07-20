@@ -304,7 +304,7 @@ public:
             m_eof = eof = true;
 
         if (m_filter && readSamples > 0)
-            amat = m_filter->FilterPcm(amat, (int64_t)(amat.time_stamp*1000)-m_start);
+            amat = m_filter->FilterPcm(amat, (int64_t)(amat.time_stamp*1000)-m_start, Duration());
         return amat;
     }
 
