@@ -200,10 +200,12 @@ public:
         }
         if (m_hasOvlp)
         {
+            m_outFrames.clear();
             m_hOvlp->ProcessSourceFrame(m_readPos-m_hOvlp->Start(), m_outFrames, m_outMat, m_srcVf1, m_srcVf2);
         }
         else if (m_hClip1)
         {
+            m_outFrames.clear();
             m_hClip1->ProcessSourceFrame(m_readPos-m_hClip1->Start(), m_outFrames, m_outMat, m_srcVf1);
         }
         m_outMat.time_stamp = (double)m_readPos/1000;
