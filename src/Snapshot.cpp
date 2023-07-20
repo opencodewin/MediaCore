@@ -231,21 +231,15 @@ public:
         }
         if (m_ovssimgs.empty())
         {
-            ImGui::ImMat prevMat;
+            Image::Holder hPrevImg;
             const int loopCnt = images.size();
             for (int i = 0; i < loopCnt; i++)
             {
                 auto& img = images[i];
                 if (!img)
-                {
-                    img = Image::Holder(new Image());
-                    img->mImgMat = prevMat;
-                    img->mTimestampMs = CalcSnapshotMts(idx0+i);
-                }
+                    img = hPrevImg;
                 else
-                {
-                    prevMat = img->mImgMat;
-                }
+                    hPrevImg = img;
             }
         }
         else
@@ -267,9 +261,7 @@ public:
                         candMs1 = candMs2;
                         candMs2 = candIter2 == m_ovssimgs.end() ? INT64_MAX : (*candIter2)->mTimestampMs;
                     }
-                    img = Image::Holder(new Image());
-                    *img = **candIter1;
-                    img->mTimestampMs = currSsMs;
+                    img = *candIter1;
                 }
             }
         }
@@ -377,7 +369,7 @@ public:
             return false;
         }
         m_cacheFactor = cacheFactor;
-        m_maxCacheSize = (uint32_t)ceil(m_wndFrmCnt*m_cacheFactor);
+        m_maxCacheSize = (uint32_t)ceil((floor(m_wndFrmCnt)+2)*m_cacheFactor);
         if (m_prepared)
             ResetGopDecodeTaskList();
         return true;
@@ -590,8 +582,8 @@ private:
             m_ssIntvMts = m_vidfrmIntvMts;
         m_ssIntvPts = m_ssIntvMts*m_pVidstm->timebase.den/(1000.*m_pVidstm->timebase.num); //av_rescale_q(m_ssIntvMts*1000, MICROSEC_TIMEBASE, m_vidStream->time_base);
         m_vidMaxIndex = (uint32_t)floor(((double)m_vidDurMts-m_vidfrmIntvMts)/m_ssIntvMts);
-        m_maxCacheSize = (uint32_t)ceil(m_wndFrmCnt*m_cacheFactor);
-        uint32_t intWndFrmCnt = (uint32_t)ceil(m_wndFrmCnt);
+        m_maxCacheSize = (uint32_t)ceil((floor(m_wndFrmCnt)+2)*m_cacheFactor);
+        uint32_t intWndFrmCnt = (uint32_t)floor(m_wndFrmCnt)+2;
         if (m_maxCacheSize < intWndFrmCnt)
             m_maxCacheSize = intWndFrmCnt;
         m_prevWndCacheSize = (m_maxCacheSize-intWndFrmCnt)/2;
@@ -2327,11 +2319,6 @@ public:
             // AutoSection _as("UpdSsTx");
             for (auto& img : snapshots)
             {
-                if (img->mhTx)
-                {
-                    if (!hTxMgr->IsTextureFrom("", img->mhTx))
-                        m_owner->m_logger->Log(Error) << "ABNORMAL! dangling texture!" << endl;
-                }
                 if (img->mTextureReady)
                     continue;
                 if (!img->mhTx)

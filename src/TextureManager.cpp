@@ -117,7 +117,8 @@ private:
                 ImInterpolateMode interpMode = IM_INTERPOLATE_BICUBIC;
                 if (roiSize.x*roiSize.y < (int32_t)vmat.w*(int32_t)vmat.h)
                     interpMode = IM_INTERPOLATE_AREA;
-                m_owner->m_scaler.Resize(vmat, rszMat, (float)roiSize.x/vmat.w, (float)roiSize.y/vmat.h, interpMode);
+                rszMat.w = roiSize.x; rszMat.h = roiSize.y;
+                m_owner->m_scaler.Resize(vmat, rszMat, 0, 0, interpMode);
                 if (rszMat.empty())
                 {
                     ostringstream oss; oss << "FAILED to resize input 'vmat'(" << vmat.w << "x" << vmat.h << ") to texture size(" << roiSize.x << "," << roiSize.y << ")!";

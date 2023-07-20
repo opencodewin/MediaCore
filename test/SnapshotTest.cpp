@@ -146,7 +146,9 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
         else
             g_ssvw1->UpdateSnapshotTexture(snapshots, g_txmgr, g_snapTxPoolName);
 
-        float startPos = snapshots.size() > 0 ? (float)snapshots[0]->mTimestampMs/1000 : minPos;
+        float startPos = minPos;
+        if (snapshots.size() > 0 && snapshots[0] && snapshots[0]->mTimestampMs != INT64_MIN)
+            startPos = (float)snapshots[0]->mTimestampMs/1000;
         int snapshotCnt = (int)ceil(g_windowFrames);
         for (int i = 0; i < snapshotCnt; i++)
         {
@@ -158,7 +160,7 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
             }
             else
             {
-                string tag = MillisecToString(snapshots[i]->mTimestampMs);
+                string tag = snapshots[i]->mTimestampMs != INT64_MIN ? MillisecToString(snapshots[i]->mTimestampMs) : "N/A";
                 auto hTx = snapshots[i]->mTextureReady ? snapshots[i]->mhTx : nullptr;
                 ImTextureID tid = hTx ? hTx->TextureID() : nullptr;
                 if (!tid)
@@ -198,8 +200,9 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
                 g_mediaParser->Open(filePathName);
                 g_mediaParser->EnableParseInfo(MediaParser::VIDEO_SEEK_POINTS);
             }
-            // g_movr->Open(g_mediaParser, 10);
+            g_movr->Open(g_mediaParser, 20);
             g_ssgen->Open(g_mediaParser);
+            g_ssgen->SetOverview(g_movr);
             g_windowPos = (float)g_ssgen->GetVideoMinPos()/1000.f;
             g_windowSize = (float)g_ssgen->GetVideoDuration()/10000.f;
             g_ssgen->ConfigSnapWindow(g_windowSize, g_windowFrames);

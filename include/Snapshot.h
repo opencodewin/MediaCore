@@ -39,7 +39,7 @@ namespace Snapshot
         }
         bool mTextureReady{false};
         RenderUtils::ManagedTexture::Holder mhTx;
-        int64_t mTimestampMs{0};
+        int64_t mTimestampMs{INT16_MIN};
         ImGui::ImMat mImgMat;
     };
 
