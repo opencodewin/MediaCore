@@ -2319,7 +2319,7 @@ public:
             // AutoSection _as("UpdSsTx");
             for (auto& img : snapshots)
             {
-                if (img->mTextureReady)
+                if (!img || img->mTextureReady)
                     continue;
                 if (!img->mhTx)
                 {
