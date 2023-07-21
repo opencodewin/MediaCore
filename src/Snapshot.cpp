@@ -161,9 +161,9 @@ public:
         m_errMsg = "";
     }
 
-    bool GetSnapshots(double startPos, vector<Image::Holder>& images)
+    bool GetSnapshots(double startPos, vector<Image>& snapshots)
     {
-        images.clear();
+        snapshots.clear();
         if (!IsOpened())
         {
             m_errMsg = "NOT OPENED yet!";
@@ -185,7 +185,7 @@ public:
         if (idx0 > idx1)
             return true;
 
-        images.resize(idx1-idx0+1);
+        snapshots.resize(idx1-idx0+1);
         {
             lock_guard<mutex> readLock(m_goptskListReadLocks[0]);
             for (auto& goptsk : m_goptskList)
@@ -198,7 +198,7 @@ public:
                     auto& ss = *ssIter++;
                     if (ss->index < idx0 || ss->index > idx1)
                         continue;
-                    images[ss->index-idx0] = ss->img;
+                    snapshots[ss->index-idx0] = { ss->index, CalcSnapshotMts(ss->index), ss->img };
                 }
             }
         }
@@ -217,10 +217,10 @@ public:
                     });
                     if (iter == m_ovssimgs.end() || (*iter)->mImgMat.time_stamp > m.time_stamp)
                     {
-                        Image::Holder hImage(new Image());
+                        DisplayData::Holder hImage(new DisplayData());
                         hImage->mImgMat = m;
                         hImage->mTimestampMs = (int64_t)(m.time_stamp*1000);
-                        m_ovssimgs.insert(iter, std::move(hImage));
+                        m_ovssimgs.insert(iter, move(hImage));
                     }
                 }
                 else
@@ -231,15 +231,15 @@ public:
         }
         if (m_ovssimgs.empty())
         {
-            Image::Holder hPrevImg = S_NULL_IMAGE;
-            const int loopCnt = images.size();
+            DisplayData::Holder hPrevDispData = S_NULL_DISPLAY_DATA;
+            const int loopCnt = snapshots.size();
             for (int i = 0; i < loopCnt; i++)
             {
-                auto& img = images[i];
-                if (!img)
-                    img = hPrevImg;
+                auto& img = snapshots[i];
+                if (!img.hDispData)
+                    img = { i+idx0, CalcSnapshotMts(i+idx0), hPrevDispData};
                 else
-                    hPrevImg = img;
+                    hPrevDispData = img.hDispData;
             }
         }
         else
@@ -248,11 +248,11 @@ public:
             auto candIter2 = candIter1; candIter2++;
             int64_t candMs1 = (*candIter1)->mTimestampMs;
             int64_t candMs2 = candIter2 == m_ovssimgs.end() ? INT64_MAX : (*candIter2)->mTimestampMs;
-            const int loopCnt = images.size();
+            const int loopCnt = snapshots.size();
             for (int i = 0; i < loopCnt; i++)
             {
-                auto& img = images[i];
-                if (!img)
+                auto& img = snapshots[i];
+                if (!img.hDispData)
                 {
                     const int64_t currSsMs = CalcSnapshotMts(idx0+i);
                     while (currSsMs >= candMs2)
@@ -261,7 +261,7 @@ public:
                         candMs1 = candMs2;
                         candMs2 = candIter2 == m_ovssimgs.end() ? INT64_MAX : (*candIter2)->mTimestampMs;
                     }
-                    img = *candIter1;
+                    img = { i+idx0, CalcSnapshotMts(i+idx0), *candIter1};
                 }
             }
         }
@@ -1261,8 +1261,8 @@ private:
                             if (ss->bias < (*imgIter)->bias)
                                 *imgIter = ss;
                             else if (ss->bias > (*imgIter)->bias)
-                                m_logger->Log(WARN) << "DISCARD SS Image #" << ss->index << ", pts=" << ss->pts << "(" << MillisecToString(CvtVidPtsToMts(ss->pts))
-                                    << ") due to an EXISTING BETTER SS Image, pts=" << (*imgIter)->pts << "(" << MillisecToString(CvtVidPtsToMts((*imgIter)->pts))
+                                m_logger->Log(WARN) << "DISCARD SS DisplayData #" << ss->index << ", pts=" << ss->pts << "(" << MillisecToString(CvtVidPtsToMts(ss->pts))
+                                    << ") due to an EXISTING BETTER SS DisplayData, pts=" << (*imgIter)->pts << "(" << MillisecToString(CvtVidPtsToMts((*imgIter)->pts))
                                     << "), bias " << ss->bias << "(new) >= " << (*imgIter)->bias << "." << endl;
                         }
                         else
@@ -1435,13 +1435,13 @@ private:
         using Holder = shared_ptr<_Picture>;
 
         _Picture(Generator_Impl* owner, int32_t _index, SelfFreeAVFramePtr _frm, uint32_t _bias)
-            : m_owner(owner), img(new Image()), index(_index), frm(_frm), bias(_bias)
+            : m_owner(owner), img(new DisplayData()), index(_index), frm(_frm), bias(_bias)
         {
             pts = _frm ? _frm->pts : 0;
         }
 
         Generator_Impl* m_owner;
-        Image::Holder img;
+        DisplayData::Holder img;
         int32_t index;
         SelfFreeAVFramePtr frm;
         int64_t pts;
@@ -1717,7 +1717,7 @@ private:
                 tasks.clear();
             }
         }
-        return std::move(tasks);
+        return move(tasks);
     }
 
     int32_t CheckFrameSsBias(int64_t pts, uint32_t& bias)
@@ -2286,7 +2286,7 @@ public:
             return m_snapwnd.wndpos;
         }
 
-        bool GetSnapshots(double startPos, vector<Image::Holder>& snapshots) override
+        bool GetSnapshots(double startPos, vector<Image>& snapshots) override
         {
             // AutoSection _as("GetSs");
             UpdateSnapwnd(startPos);
@@ -2314,23 +2314,24 @@ public:
             return m_owner->GetError();
         }
 
-        bool UpdateSnapshotTexture(std::vector<Image::Holder>& snapshots, RenderUtils::TextureManager::Holder hTxMgr, const std::string& gridPoolName) override
+        bool UpdateSnapshotTexture(vector<Image>& snapshots, RenderUtils::TextureManager::Holder hTxMgr, const string& gridPoolName) override
         {
             // AutoSection _as("UpdSsTx");
             for (auto& img : snapshots)
             {
-                if (!img || img->mTextureReady)
+                auto& hDispData = img.hDispData;
+                if (!hDispData || hDispData->mTextureReady)
                     continue;
-                if (!img->mhTx)
+                if (!hDispData->mhTx)
                 {
-                    img->mhTx = hTxMgr->GetGridTextureFromPool(gridPoolName);
-                    if (!img->mhTx)
+                    hDispData->mhTx = hTxMgr->GetGridTextureFromPool(gridPoolName);
+                    if (!hDispData->mhTx)
                         m_logger->Log(WARN) << "FAILED to get grid texture from 'TextureManager'! Error is '" << hTxMgr->GetError() << "'." << endl;
                 }
-                if (!img->mImgMat.empty() && img->mhTx)
+                if (!hDispData->mImgMat.empty() && hDispData->mhTx)
                 {
-                    img->mhTx->RenderMatToTexture(img->mImgMat);
-                    img->mTextureReady = true;
+                    hDispData->mhTx->RenderMatToTexture(hDispData->mImgMat);
+                    hDispData->mTextureReady = true;
                 }
             }
             return true;
@@ -2343,7 +2344,7 @@ public:
             lock_guard<mutex> lk(m_taskRangeLock);
             list<_GopDecodeTask::Range> taskRanges(m_taskRanges);
             m_taskRangeChanged = false;
-            return std::move(taskRanges);
+            return move(taskRanges);
         }
 
         void UpdateSnapwnd(double wndpos, bool force = false)
@@ -2488,7 +2489,7 @@ private:
     atomic_int32_t m_pendingVidfrmCnt{0};
     int32_t m_maxPendingVidfrmCnt{2};
     Overview::Holder m_hOverview;
-    list<Image::Holder> m_ovssimgs;
+    list<DisplayData::Holder> m_ovssimgs;
     bool m_isOvssComplete{false};
     int32_t m_maxImgsqDecNum{4};
 
@@ -2497,10 +2498,10 @@ private:
     float m_ssWFacotr{1.f}, m_ssHFacotr{1.f};
     AVFrameToImMatConverter m_frmCvt;
 
-    static const Image::Holder S_NULL_IMAGE;
+    static const DisplayData::Holder S_NULL_DISPLAY_DATA;
 };
 
-const Image::Holder Generator_Impl::S_NULL_IMAGE = Image::Holder(new Image());
+const DisplayData::Holder Generator_Impl::S_NULL_DISPLAY_DATA = DisplayData::Holder(new DisplayData());
 
 static const auto SNAPSHOT_VIEWER_HOLDER_DELETER = [] (Viewer* p) {
     Generator_Impl::Viewer_Impl* ptr = dynamic_cast<Generator_Impl::Viewer_Impl*>(p);

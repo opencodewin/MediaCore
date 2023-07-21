@@ -136,7 +136,7 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
 
         ImGui::Spacing();
 
-        vector<Snapshot::Image::Holder> snapshots;
+        vector<Snapshot::Image> snapshots;
         // auto t0 = GetTimePoint();
         bool ret = g_ssvw1->GetSnapshots(pos, snapshots);
         // auto t1 = GetTimePoint();
@@ -147,8 +147,8 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
             g_ssvw1->UpdateSnapshotTexture(snapshots, g_txmgr, g_snapTxPoolName);
 
         float startPos = minPos;
-        if (snapshots.size() > 0 && snapshots[0] && snapshots[0]->mTimestampMs != INT64_MIN)
-            startPos = (float)snapshots[0]->mTimestampMs/1000;
+        if (snapshots.size() > 0 && snapshots[0].hDispData && snapshots[0].hDispData->mTimestampMs != INT64_MIN)
+            startPos = (float)snapshots[0].hDispData->mTimestampMs/1000;
         int snapshotCnt = (int)ceil(g_windowFrames);
         for (int i = 0; i < snapshotCnt; i++)
         {
@@ -160,8 +160,9 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
             }
             else
             {
-                string tag = snapshots[i]->mTimestampMs != INT64_MIN ? MillisecToString(snapshots[i]->mTimestampMs) : "N/A";
-                auto hTx = snapshots[i]->mTextureReady ? snapshots[i]->mhTx : nullptr;
+                auto& hDispData = snapshots[i].hDispData;
+                string tag = hDispData->mTimestampMs != INT64_MIN ? MillisecToString(hDispData->mTimestampMs) : "N/A";
+                auto hTx = hDispData->mTextureReady ? hDispData->mhTx : nullptr;
                 ImTextureID tid = hTx ? hTx->TextureID() : nullptr;
                 if (!tid)
                 {

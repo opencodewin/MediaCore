@@ -29,10 +29,10 @@ namespace MediaCore
 {
 namespace Snapshot
 {
-    struct Image
+    struct DisplayData
     {
-        using Holder = std::shared_ptr<Image>;
-        ~Image()
+        using Holder = std::shared_ptr<DisplayData>;
+        ~DisplayData()
         {
             mImgMat.release();
             if (mhTx) mhTx->Invalidate();
@@ -43,14 +43,21 @@ namespace Snapshot
         ImGui::ImMat mImgMat;
     };
 
+    struct Image
+    {
+        int32_t ssIndex;
+        int64_t ssTimestampMs{-1};
+        DisplayData::Holder hDispData;
+    };
+
     struct Viewer
     {
         using Holder = std::shared_ptr<Viewer>;
 
         virtual bool Seek(double pos) = 0;
         virtual double GetCurrWindowPos() const = 0;
-        virtual bool GetSnapshots(double startPos, std::vector<Image::Holder>& snapshots) = 0;
-        virtual bool UpdateSnapshotTexture(std::vector<Image::Holder>& snapshots, RenderUtils::TextureManager::Holder hTxMgr, const std::string& gridPoolName) = 0;
+        virtual bool GetSnapshots(double startPos, std::vector<Image>& snapshots) = 0;
+        virtual bool UpdateSnapshotTexture(std::vector<Image>& snapshots, RenderUtils::TextureManager::Holder hTxMgr, const std::string& gridPoolName) = 0;
 
         virtual Holder CreateViewer(double pos = 0) = 0;
         virtual void Release() = 0;
