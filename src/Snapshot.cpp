@@ -231,7 +231,7 @@ public:
         }
         if (m_ovssimgs.empty())
         {
-            Image::Holder hPrevImg;
+            Image::Holder hPrevImg = S_NULL_IMAGE;
             const int loopCnt = images.size();
             for (int i = 0; i < loopCnt; i++)
             {
@@ -2496,7 +2496,11 @@ private:
     bool m_ssSizeChanged{false};
     float m_ssWFacotr{1.f}, m_ssHFacotr{1.f};
     AVFrameToImMatConverter m_frmCvt;
+
+    static const Image::Holder S_NULL_IMAGE;
 };
+
+const Image::Holder Generator_Impl::S_NULL_IMAGE = Image::Holder(new Image());
 
 static const auto SNAPSHOT_VIEWER_HOLDER_DELETER = [] (Viewer* p) {
     Generator_Impl::Viewer_Impl* ptr = dynamic_cast<Generator_Impl::Viewer_Impl*>(p);
