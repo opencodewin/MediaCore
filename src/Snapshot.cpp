@@ -220,7 +220,7 @@ public:
                         DisplayData::Holder hImage(new DisplayData());
                         hImage->mImgMat = m;
                         hImage->mTimestampMs = (int64_t)(m.time_stamp*1000);
-                        m_ovssimgs.insert(iter, move(hImage));
+                        m_ovssimgs.insert(iter, std::move(hImage));
                     }
                 }
                 else
@@ -1717,7 +1717,7 @@ private:
                 tasks.clear();
             }
         }
-        return move(tasks);
+        return std::move(tasks);
     }
 
     int32_t CheckFrameSsBias(int64_t pts, uint32_t& bias)
@@ -2344,7 +2344,7 @@ public:
             lock_guard<mutex> lk(m_taskRangeLock);
             list<_GopDecodeTask::Range> taskRanges(m_taskRanges);
             m_taskRangeChanged = false;
-            return move(taskRanges);
+            return std::move(taskRanges);
         }
 
         void UpdateSnapwnd(double wndpos, bool force = false)
