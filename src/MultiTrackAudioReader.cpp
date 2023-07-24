@@ -318,6 +318,7 @@ public:
             }
             else
             {
+                lock_guard<mutex> lk(m_seekStateLock);
                 m_prevSeekPos = m_seekPos = pos;
                 m_seekPosChanged = true;
                 m_probeMode = true;
@@ -325,15 +326,17 @@ public:
         }
         else
         {
+            lock_guard<mutex> lk(m_seekStateLock);
             // disable probe mode effect if there is any
-            m_probeMode = false;
-            m_aeFilter->SetMuted(false);
             m_prevSeekPos = INT64_MIN;
-
             m_seekPos = pos;
             m_seekPosChanged = true;
+            m_probeMode = false;
+            m_probeStage = 0;
             m_inSeeking = true;
             m_samplePos = pos*m_outSampleRate/1000;
+
+            m_aeFilter->SetMuted(false);
             m_readSamples = m_samplePos;
         }
         return true;
@@ -734,7 +737,17 @@ private:
             bool idleLoop = true;
             int fferr;
 
-            if (!m_probeMode && m_seekPosChanged.exchange(false))
+            bool seekPosChanged;
+            int64_t seekPos;
+            bool probeMode;
+            {
+                lock_guard<mutex> lk(m_seekStateLock);
+                seekPosChanged = m_seekPosChanged;
+                seekPos = m_seekPos;
+                probeMode = m_probeMode;
+                m_seekPosChanged = false; // update 'm_seekPosChanged'
+            }
+            if (!probeMode && seekPosChanged)
             {
                 {
                     lock_guard<mutex> lk(m_outputMatsLock);
@@ -743,9 +756,10 @@ private:
                 {
                     lock_guard<recursive_mutex> lk(m_trackLock);
                     for (auto track : m_tracks)
-                        track->SeekTo(m_seekPos);
+                        track->SeekTo(seekPos);
                 }
-                m_inSeeking = false;
+                if (!m_seekPosChanged)
+                    m_inSeeking = false;
             }
 
             int64_t mixingPos = m_samplePos*1000/m_outSampleRate;
@@ -753,43 +767,40 @@ private:
             if (m_outputMats.size() < m_outputMatsMaxCount)
             {
                 // handle probe mode transition
-                if (m_probeMode)
+                if (probeMode)
                 {
-                    if (m_seekPosChanged.exchange(false))
+                    if (seekPosChanged)
                     {
-                        m_probeStage = -1;
-                        m_aeFilter->SetMuted(true);
-                        m_logger->Log(DEBUG) << "ProbeMode: stage=-1" << endl;
+                        if (m_probeStage == 0)
+                            m_probeStage = -1;
+                        else if (m_probeStage == -2)
+                            m_probeStage = 1;
                     }
-                    else if (m_seekPos != INT64_MIN)
+                    if (m_probeStage == 1)
                     {
                         {
                             lock_guard<recursive_mutex> lk(m_trackLock);
                             for (auto track : m_tracks)
-                                track->SeekTo(m_seekPos);
+                                track->SeekTo(seekPos);
                         }
-                        m_seekPos = INT64_MIN;
-                        m_probeStage = 1;
                         m_aeFilter->SetMuted(false);
                         m_probeSampleDur = 0;
-                        m_logger->Log(DEBUG) << "ProbeMode: stage=+1" << endl;
-                    }
-                    else if (m_probeStage == 1)
-                    {
                         m_probeStage = 0;
-                        m_logger->Log(DEBUG) << "ProbeMode: stage= 0" << endl;
                     }
                     else if (m_probeStage == -1)
+                    {
+                        m_aeFilter->SetMuted(true);
+                        m_probeStage = seekPosChanged ? 1 : -2;
+                    }
+                    else if (m_probeStage == 0 && m_probeSampleDur >= m_probeDuration)
+                    {
+                        m_probeStage = -1;
+                    }
+                    else if (m_probeStage == -2)
                     {
                         // stop reading more samples
                         this_thread::sleep_for(chrono::milliseconds(5));
                         continue;
-                    }
-                    else if (m_probeSampleDur >= m_probeDuration)
-                    {
-                        m_probeStage = -1;
-                        m_aeFilter->SetMuted(true);
-                        m_logger->Log(DEBUG) << "ProbeMode: m_probeSampleDur=" << m_probeSampleDur << endl;
                     }
                 }
 
@@ -933,10 +944,11 @@ private:
     bool m_readForward{true};
     bool m_eof{false};
     bool m_probeMode{false};
-    int32_t m_probeStage;  // -1 : fade out; 1 : fade in; 0 : do nothing
+    int32_t m_probeStage{0};  // -1: fade out; 1: fade in; 0: normal playback; -2: after fade out
     int64_t m_probeDuration{200};  // 200 milliseconds
     int64_t m_probeSampleDur{0};
-    atomic_bool m_seekPosChanged{false};
+    mutex m_seekStateLock;
+    bool m_seekPosChanged{false};
     atomic_bool m_inSeeking{false};
     int64_t m_seekPos{INT64_MIN};
     int64_t m_prevSeekPos{INT64_MIN};
