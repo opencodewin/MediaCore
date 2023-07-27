@@ -267,6 +267,10 @@ public:
                 size_t elemSize = m_pcmFrameSize/channels;
                 silenceMat.create((int)silenceSamples, 1, channels, elemSize);
                 memset(silenceMat.data, 0, silenceMat.total()*silenceMat.elemsize);
+                silenceMat.rate.num = m_srcReader->GetAudioOutSampleRate();
+                silenceMat.rate.den = 1;
+                silenceMat.elempack = m_srcReader->IsPlanar() ? 1 : m_srcReader->GetAudioOutChannels();
+                silenceMat.flags |= IM_MAT_FLAGS_AUDIO_FRAME;
                 amat = silenceMat;
                 m_logger->Log(DEBUG) << "! Return silence mat with " << silenceSamples << " samples !" << endl;
                 amat.time_stamp = (double)(expectedReadPos-m_startOffset+m_start)/1000;
