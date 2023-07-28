@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0.0)
+cmake_minimum_required(VERSION 3.5.0)
 project(MediaCore)
 
 option(MEDIACORE_STATIC              "Build MediaCore as static library" OFF)
