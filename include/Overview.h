@@ -45,6 +45,8 @@ struct Overview
         double aggregateDuration;
         float minSample{0}, maxSample{0};
         std::vector<std::vector<float>> pcm;
+        int64_t validSampleCount{0};
+        bool parseDone{false};
     };
     virtual Waveform::Holder GetWaveform() const = 0;
     virtual bool SetSingleFramePixels(uint32_t pixels) = 0;

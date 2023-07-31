@@ -1578,6 +1578,7 @@ private:
                 wfIdx = currWfIdx;
                 m_hWaveform->maxSample = maxSmp;
                 m_hWaveform->minSample = minSmp;
+                m_hWaveform->validSampleCount = wfIdx;
 
                 if (dstfrm != srcfrm)
                     av_frame_free(&dstfrm);
@@ -1590,6 +1591,7 @@ private:
             if (idleLoop)
                 this_thread::sleep_for(chrono::milliseconds(1));
         }
+        m_hWaveform->parseDone = true;
         m_genWfEof = true;
         m_logger->Log(DEBUG) << "Leave GenWaveformThreadProc(), " << wfIdx << " samples generated." << endl;
     }
