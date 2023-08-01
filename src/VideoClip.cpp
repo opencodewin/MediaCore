@@ -102,8 +102,6 @@ public:
         loggerNameOss.str(""); loggerNameOss << "VRdr-" << fileName.substr(0, 4) << "-" << idstr;
         m_hReader = MediaReader::CreateVideoInstance(loggerNameOss.str());
         // m_hReader->SetLogLevel(DEBUG);
-        // if (id == 1683885307465914)
-        //     m_hReader->SetLogLevel(VERBOSE);
         m_hReader->EnableHwAccel(VideoClip::USE_HWACCEL);
         if (!m_hReader->Open(hParser))
             throw runtime_error(m_hReader->GetError());
@@ -356,17 +354,17 @@ public:
 
     void SeekTo(int64_t pos) override
     {
-        if (pos < 0 || pos > Duration())
-        {
-            m_logger->Log(DEBUG) << "!! INVALID seek, pos=" << pos << " is out of the valid range [0, " << Duration() << "] !!" << endl;
-            return;
-        }
+        if (pos < 0) pos = 0;
+        else if (pos > Duration()) pos = Duration();
         auto seekPos = pos+m_startOffset;
         if (seekPos > m_srcDuration) seekPos = m_srcDuration;
-        m_logger->Log(DEBUG) << "-> VidClip.SeekTo(" << seekPos << ")" << endl;
-        if (!m_hReader->SeekTo(seekPos))
-            throw runtime_error(m_hReader->GetError());
-        m_eof = false;
+        if (seekPos != m_hReader->GetReadPos())
+        {
+            m_logger->Log(DEBUG) << "-> VidClip.SeekTo(" << seekPos << ")" << endl;
+            if (!m_hReader->SeekTo(seekPos))
+                throw runtime_error(m_hReader->GetError());
+            m_eof = false;
+        }
     }
 
     void NotifyReadPos(int64_t trackPos) override
@@ -386,7 +384,8 @@ public:
             int64_t seekPos = clipPos < 0 ? 0 : (clipPos > dur ? dur : clipPos);
             seekPos += m_startOffset;
             if (seekPos > m_srcDuration) seekPos = m_srcDuration;
-            m_hReader->SeekTo(seekPos);
+            if (seekPos != m_hReader->GetReadPos())
+                m_hReader->SeekTo(seekPos);
             m_hReader->Wakeup();
             m_logger->Log(DEBUG) << ">>>> Clip#" << m_id <<" is WAKEUP." << endl;
         }
