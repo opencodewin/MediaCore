@@ -1345,7 +1345,7 @@ private:
                                 mixedFrame = vmat;
                             else
                                 mixedFrame = m_hMixBlender->Blend(vmat, mixedFrame);
-                            if (timestamp != vmat.time_stamp)
+                            if (abs(timestamp-vmat.time_stamp) > 0.001)
                                 m_logger->Log(WARN) << "'vmat' read from track #" << trk->Id() << " has WRONG TIMESTAMP! timestamp("
                                     << timestamp << ") != vmat(" << vmat.time_stamp << ")." << endl;
                         }
