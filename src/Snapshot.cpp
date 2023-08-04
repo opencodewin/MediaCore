@@ -2470,8 +2470,8 @@ private:
     int64_t m_vidDurMts{0};
     int64_t m_vidFrmCnt{0};
     uint32_t m_vidMaxIndex;
-    double m_snapWindowSize;
-    double m_wndFrmCnt;
+    double m_snapWindowSize{0};
+    double m_wndFrmCnt{0};
     double m_vidfrmIntvMts{0};
     double m_vidfrmIntvMtsHalf{0};
     int64_t m_vidfrmIntvPts{0};
