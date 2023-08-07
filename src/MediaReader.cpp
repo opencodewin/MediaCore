@@ -738,7 +738,6 @@ public:
             m.flags |= IM_MAT_FLAGS_AUDIO_FRAME;
             if (readSize < matBufSize)
                 m.w = readSize/outFrmSize;
-            readSamples = m.w;
         }
         return ret;
     }
@@ -1534,6 +1533,10 @@ private:
             needLoop = ((readTask && !readTask->cancel) || (!readTask && wait) || !idleLoop) && toReadSize > readSize && !m_audReadEof && !m_close;
             if (needLoop && idleLoop)
                 this_thread::sleep_for(chrono::milliseconds(5));
+
+            // if (!needLoop && readSize < toReadSize)
+            //     m_logger->Log(WARN) << "Quit 'ReadAudioSamples()' before 'readSize'(" << readSize << ") reaches 'toReadSize'(" << toReadSize << ")! readTask is " << (readTask ? "non-NULL" : "NULL")
+            //             << ", readTask->cancel=" << (readTask && readTask->cancel) << ", wait=" << wait << ", idleLoop=" << idleLoop << ", m_audReadEof=" << m_audReadEof << ", m_close=" << m_close << "." << endl;
         } while (needLoop);
         size = IsPlanar() ? readSize*outChannels : readSize;
         return true;

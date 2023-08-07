@@ -19,6 +19,7 @@
 #include <functional>
 #include <cmath>
 #include "AudioClip.h"
+#include "MatUtils.h"
 #include "Logger.h"
 #include "SysUtils.h"
 
@@ -237,7 +238,7 @@ public:
         bool readForward = m_hReader->IsDirectionForward();
         // if expected read position does not match the real read position, use silence or skip samples to compensate
         bool skip = false;
-        int64_t diffSamples = abs(sourceReadPos-expectedReadPos)*sampleRate/1000;
+        uint32_t diffSamples = (uint32_t)(abs(sourceReadPos-expectedReadPos)*sampleRate/1000);
         if (diffSamples > MAX_ALLOWED_MISMATCH_SAMPLES)
         {
             m_logger->Log(DEBUG) << "! expectedReadPos(" << expectedReadPos << ") != sourceReadPos(" << sourceReadPos << "), diffSamples=" << diffSamples << " !" << endl;
@@ -248,12 +249,13 @@ public:
             diffSamples = 0;
         }
         bool srcEof{false};
+        uint32_t silenceSamples = 0;
         if (diffSamples > 0)
         {
             if (skip)
             {
                 ImGui::ImMat skipMat;
-                int64_t skipSamples = diffSamples;
+                uint32_t skipSamples = diffSamples;
                 if (skipSamples > sampleRate)
                     m_logger->Log(WARN) << "! Skip sample count " << skipSamples << " is TOO LARGE !" << endl;
                 if (!m_hReader->ReadAudioSamples(skipMat, skipSamples, srcEof))
@@ -262,17 +264,17 @@ public:
             }
             else
             {
-                int64_t silenceSamples = diffSamples > readSamples ? readSamples : diffSamples;
-                ImGui::ImMat silenceMat;
+                silenceSamples = diffSamples > readSamples ? readSamples : diffSamples;
                 size_t elemSize = m_pcmFrameSize/channels;
-                silenceMat.create((int)silenceSamples, 1, channels, elemSize);
+                ImGui::ImMat silenceMat;
+                silenceMat.create((int)readSamples, 1, channels, elemSize);
                 memset(silenceMat.data, 0, silenceMat.total()*silenceMat.elemsize);
                 silenceMat.rate.num = m_hReader->GetAudioOutSampleRate();
                 silenceMat.rate.den = 1;
                 silenceMat.elempack = m_hReader->IsPlanar() ? 1 : m_hReader->GetAudioOutChannels();
                 silenceMat.flags |= IM_MAT_FLAGS_AUDIO_FRAME;
                 amat = silenceMat;
-                m_logger->Log(DEBUG) << "! Return silence mat with " << silenceSamples << " samples !" << endl;
+                m_logger->Log(DEBUG) << "! silenceSamples = " << silenceSamples << " !" << endl;
                 amat.time_stamp = (double)(expectedReadPos-m_startOffset+m_start)/1000;
             }
         }
@@ -280,9 +282,21 @@ public:
         // read from source
         if (!m_eof && amat.empty())
         {
-            uint32_t toReadSamples = readSamples;
-            if (!m_hReader->ReadAudioSamples(amat, toReadSamples, srcEof))
-                throw runtime_error(m_hReader->GetError());
+            if (silenceSamples == 0)
+            {
+                uint32_t toReadSamples = readSamples;
+                if (!m_hReader->ReadAudioSamples(amat, toReadSamples, srcEof))
+                    throw runtime_error(m_hReader->GetError());
+            }
+            else if (silenceSamples < readSamples)
+            {
+                uint32_t toReadSamples = readSamples-silenceSamples;
+                ImGui::ImMat remainMat;
+                if (!m_hReader->ReadAudioSamples(remainMat, toReadSamples, srcEof))
+                    throw runtime_error(m_hReader->GetError());
+                m_logger->Log(WARN) << "--> Merge silence mat and read mat, silence samples=" << silenceSamples << ", src samples=" << remainMat.w << "." << endl;
+                MatUtils::CopyAudioMatSamples(amat, remainMat, silenceSamples, 0);
+            }
             if (amat.w > 0)
             {
                 int64_t actualReadPos = (int64_t)(amat.time_stamp*1000);
@@ -526,9 +540,12 @@ public:
         }
 
         bool eof1{false};
-        ImGui::ImMat amat1 = m_frontClip->ReadAudioSamples(readSamples, eof1);
+        auto toReadSize1 = readSamples;
+        ImGui::ImMat amat1 = m_frontClip->ReadAudioSamples(toReadSize1, eof1);
         bool eof2{false};
-        ImGui::ImMat amat2 = m_rearClip->ReadAudioSamples(readSamples, eof2);
+        auto toReadSize2 = readSamples;
+        ImGui::ImMat amat2 = m_rearClip->ReadAudioSamples(toReadSize2, eof2);
+        assert(("Front clip and rear clip returns different read sample count!", toReadSize1 == toReadSize2));
         AudioTransition::Holder transition = m_transition;
         ImGui::ImMat amat = transition->MixTwoAudioMats(amat1, amat2, (int64_t)(amat1.time_stamp*1000));
         eof = eof1 || eof2;

@@ -70,7 +70,7 @@ endif(MEDIACORE_STATIC)
 
 set(MEDIACORE_VERSION_MAJOR 1)
 set(MEDIACORE_VERSION_MINOR 8)
-set(MEDIACORE_VERSION_PATCH 4)
+set(MEDIACORE_VERSION_PATCH 5)
 string(TIMESTAMP MEDIACORE_VERSION_BUILD "%y%m%d")
 set(MEDIACORE_VERSION_STRING ${MEDIACORE_VERSION_MAJOR}.${MEDIACORE_VERSION_MINOR}.${MEDIACORE_VERSION_PATCH})
 add_definitions(-DMEDIACORE_VERSION_MAJOR=${MEDIACORE_VERSION_MAJOR})
@@ -90,6 +90,7 @@ add_library(MediaCore ${LIBRARY}
     ${LIB_SRC_DIR}/FontManager_Fontconfig.cpp
     ${LIB_SRC_DIR}/ImageSequenceReader.cpp
     ${LIB_SRC_DIR}/Logger.cpp
+    ${LIB_SRC_DIR}/MatUtils.cpp
     ${LIB_SRC_DIR}/MediaEncoder.cpp
     ${LIB_SRC_DIR}/MediaInfo.cpp
     ${LIB_SRC_DIR}/MediaParser.cpp
