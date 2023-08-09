@@ -130,7 +130,7 @@ public:
 
     int64_t ReadPos() const override
     {
-        return m_readSamples*1000/m_hReader->GetAudioOutSampleRate()+m_start;
+        return round((double)m_readSamples*1000/m_hReader->GetAudioOutSampleRate())+m_start;
     }
 
     uint32_t OutChannels() const override

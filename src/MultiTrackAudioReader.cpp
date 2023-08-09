@@ -21,6 +21,7 @@
 #include <atomic>
 #include <list>
 #include <algorithm>
+#include <cmath>
 #include "AudioTrack.h"
 #include "MultiTrackAudioReader.h"
 #include "FFUtils.h"
@@ -545,7 +546,7 @@ public:
 
     int64_t ReadPos() const override
     {
-        return m_readSamples*1000/m_outSampleRate;
+        return round((double)m_readSamples*1000/m_outSampleRate);
     }
 
     string GetError() const override
@@ -849,6 +850,7 @@ private:
                             amat.flags = IM_MAT_FLAGS_AUDIO_FRAME;
                             amat.rate = { (int)m_outSampleRate, 1 };
                             amat.elempack = outChannels;
+                            amat.index_count = outfrm->pts;
                             av_frame_unref(outfrm.get());
                             list<ImGui::ImMat> aeOutMats;
                             if (!m_aeFilter->ProcessData(amat, aeOutMats))
@@ -897,6 +899,7 @@ private:
                         m_samplePos += m_outSamplesPerFrame;
                     else
                         m_samplePos -= m_outSamplesPerFrame;
+                    amat.index_count = m_samplePos;
                     corFrames[0].frame = amat;
                     lock_guard<mutex> lk(m_outputMatsLock);
                     m_outputMats.push_back(corFrames);

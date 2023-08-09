@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <atomic>
 #include <thread>
+#include <cmath>
 #include <cassert>
 #include "VideoTrack.h"
 #include "MediaCore.h"
@@ -515,7 +516,7 @@ public:
     int64_t ReadPos(int64_t frameIndex) const
     {
         const auto frameRate = m_hSettings->VideoOutFrameRate();
-        return frameIndex*1000*frameRate.den/frameRate.num;
+        return round((double)frameIndex*1000*frameRate.den/frameRate.num);
     }
 
     bool Direction() const override

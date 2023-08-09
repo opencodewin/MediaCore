@@ -667,7 +667,7 @@ public:
     int64_t ReadPos() const override
     {
         const auto frameRate = m_hSettings->VideoOutFrameRate();
-        return m_readFrameIdx*1000*frameRate.den/frameRate.num;
+        return round((double)m_readFrameIdx*1000*frameRate.den/frameRate.num);
     }
 
     SubtitleTrackHolder BuildSubtitleTrackFromFile(int64_t id, const string& url, int64_t insertAfterId) override
@@ -1355,8 +1355,12 @@ private:
                     {
                         mixedFrame.create_type(outWidth, outHeight, 4, matDtype);
                         memset(mixedFrame.data, 0, mixedFrame.total()*mixedFrame.elemsize);
-                        mixedFrame.time_stamp = timestamp;
                     }
+                    mixedFrame.time_stamp = timestamp;
+                    mixedFrame.flags |= IM_MAT_FLAGS_VIDEO_FRAME;
+                    mixedFrame.rate.num = frameRate.num;
+                    mixedFrame.rate.den = frameRate.den;
+                    mixedFrame.index_count = mft->frameIndex;
                     frames[0].frame = mixedFrame;
                     mft->outputFrames = frames;
                     m_seekingFlash = std::move(frames);
