@@ -323,6 +323,7 @@ public:
         m_clips2.push_back(hClip);
         if (hClip->End() > m_duration2)
             m_duration2 = hClip->End();
+        UpdateClipOverlap();
         m_clipChanged = true;
     }
 
@@ -352,6 +353,7 @@ public:
             }
             m_duration2 = newDuration;
         }
+        UpdateClipOverlap();
         m_clipChanged = true;
     }
 
@@ -412,6 +414,7 @@ public:
             }
             m_duration2 = newDuration;
         }
+        UpdateClipOverlap();
         m_clipChanged = true;
     }
 
@@ -439,6 +442,7 @@ public:
             }
             m_duration2 = newDuration;
         }
+        UpdateClipOverlap();
         m_clipChanged = true;
         return hClip;
     }
@@ -470,6 +474,7 @@ public:
             }
             m_duration2 = newDuration;
         }
+        UpdateClipOverlap();
         m_clipChanged = true;
         return hClip;
     }
@@ -482,7 +487,7 @@ public:
 
     list<VideoOverlap::Holder> GetOverlapList() override
     {
-        lock_guard<mutex> lk(m_ovlpUpdateLock);
+        lock_guard<recursive_mutex> lk(m_clipChangeLock);
         return list<VideoOverlap::Holder>(m_overlaps);
     }
 
@@ -613,6 +618,7 @@ public:
             if (!m_clipChanged)
                 return;
             m_clips = m_clips2;
+            m_overlaps = m_overlaps2;
             m_clipChanged = false;
         }
         // udpate duration
@@ -626,9 +632,6 @@ public:
             auto& tail = m_clips.back();
             m_duration = tail->End();
         }
-        // update overlap
-        UpdateClipOverlap();
-
         m_needUpdateReadIter = true;
     }
 
@@ -767,7 +770,8 @@ private:
 
     bool CheckClipRangeValid(int64_t clipId, int64_t start, int64_t end)
     {
-        for (auto& overlap : m_overlaps)
+        // make sure a time span can only be overlapped by two clips at most, no more layers of overlap is allowed
+        for (auto& overlap : m_overlaps2)
         {
             if (clipId == overlap->FrontClip()->Id() || clipId == overlap->RearClip()->Id())
                 continue;
@@ -780,17 +784,16 @@ private:
 
     void UpdateClipOverlap()
     {
-        lock_guard<mutex> lk(m_ovlpUpdateLock);
-        if (m_clips.empty())
+        if (m_clips2.empty())
         {
-            m_overlaps.clear();
+            m_overlaps2.clear();
             return;
         }
 
         list<VideoOverlap::Holder> newOverlaps;
-        auto clipIter1 = m_clips.begin();
+        auto clipIter1 = m_clips2.begin();
         auto clipIter2 = clipIter1; clipIter2++;
-        while (clipIter2 != m_clips.end())
+        while (clipIter2 != m_clips2.end())
         {
             const auto& clip1 = *clipIter1;
             const auto& clip2 = *clipIter2++;
@@ -798,8 +801,8 @@ private:
             const auto cid2 = clip2->Id();
             if (VideoOverlap::HasOverlap(clip1, clip2))
             {
-                auto ovlpIter = m_overlaps.begin();
-                while (ovlpIter != m_overlaps.end())
+                auto ovlpIter = m_overlaps2.begin();
+                while (ovlpIter != m_overlaps2.end())
                 {
                     const auto& ovlp = *ovlpIter;
                     const auto fid = ovlp->FrontClip()->Id();
@@ -811,7 +814,7 @@ private:
                     }
                     break;
                 }
-                if (ovlpIter != m_overlaps.end())
+                if (ovlpIter != m_overlaps2.end())
                 {
                     auto& ovlp = *ovlpIter;
                     ovlp->Update();
@@ -823,7 +826,7 @@ private:
                     newOverlaps.push_back(VideoOverlap::CreateInstance(0, clip1, clip2));
                 }
             }
-            if (clipIter2 == m_clips.end())
+            if (clipIter2 == m_clips2.end())
             {
                 clipIter1++;
                 clipIter2 = clipIter1;
@@ -831,8 +834,8 @@ private:
             }
         }
 
-        m_overlaps = std::move(newOverlaps);
-        m_overlaps.sort(OVERLAP_SORT_CMP);
+        m_overlaps2 = std::move(newOverlaps);
+        m_overlaps2.sort(OVERLAP_SORT_CMP);
     }
 
     void UpdateReadIterator(int64_t readPos)
@@ -1015,7 +1018,7 @@ private:
     recursive_mutex m_clipChangeLock;
     list<VideoOverlap::Holder> m_overlaps;
     list<VideoOverlap::Holder>::iterator m_readOverlapIter;
-    mutex m_ovlpUpdateLock;
+    list<VideoOverlap::Holder> m_overlaps2;
     int64_t m_duration{0}, m_duration2{0};
     bool m_readForward{true};
     bool m_visible{true};
@@ -1048,9 +1051,10 @@ VideoTrack::Holder VideoTrack_Impl::Clone(SharedSettings::Holder hSettings)
         auto newClip = clip->Clone(hSettings);
         newClip->SetTrackId(m_id);
         newInstance->m_clips2.push_back(newClip);
-        newInstance->m_clipChanged = true;
-        newInstance->UpdateClipState();
     }
+    newInstance->UpdateClipOverlap();
+    newInstance->m_clipChanged = true;
+    newInstance->UpdateClipState();
     // clone the transitions on the overlaps
     for (auto overlap : m_overlaps)
     {
