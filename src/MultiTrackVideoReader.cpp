@@ -365,8 +365,7 @@ public:
         m_readForward = forward;
         for (auto& track : m_tracks)
             track->SetDirection(forward);
-        int64_t seekPos = pos >= 0 ? pos : ReadPos();
-        SeekTo(seekPos);
+        SeekToByIdx(m_readFrameIdx);
 
         StartMixingThread();
         return true;
@@ -381,9 +380,22 @@ public:
             return false;
         }
         m_logger->Log(DEBUG) << "------> SeekTo pos=" << pos << endl;
+        auto frmIdx = MillsecToFrameIndex(pos);
+        return SeekToByIdx(frmIdx);
+    }
+
+    bool SeekToByIdx(int64_t frmIdx) override
+    {
+        lock_guard<recursive_mutex> lk(m_apiLock);
+        if (!m_started)
+        {
+            m_errMsg = "This MultiTrackVideoReader instance is NOT started yet!";
+            return false;
+        }
+        m_logger->Log(DEBUG) << "------> SeekTo frameIndex=" << frmIdx << endl;
         ClearAllMixFrameTasks();
         m_prevOutFrame = nullptr;
-        m_readFrameIdx = MillsecToFrameIndex(pos);
+        m_readFrameIdx = frmIdx;
         int step = m_readForward ? 1 : -1;
         AddMixFrameTask(m_readFrameIdx, false, true);
         AddMixFrameTask(m_readFrameIdx+step, false, false);

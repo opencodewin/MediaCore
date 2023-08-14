@@ -420,7 +420,7 @@ public:
         int64_t pts = CvtMtsToPts(pos);
         if (m_readForward && pts > m_readPos || !m_readForward && pts < m_readPos)
             UpdateReadPos(pts);
-        m_logger->Log(VERBOSE) << ">> TO READ frame: pts=" << pts << ", ts=" << pos << "." << endl;
+        m_logger->Log(DEBUG) << ">> TO READ frame: pts=" << pts << ", ts=" << pos << "." << endl;
 
         auto wait1 = GetTimePoint();
         auto wait0 = wait1;
@@ -479,6 +479,7 @@ public:
         }
 
         m_prevReadResult = {pos, hVfrm};
+        m_logger->Log(DEBUG) << "<< RETURN frame: pts=" << hVfrm->Pts() << ", ts=" << hVfrm->Pos() << "." << endl;
         return hVfrm;
     }
 
@@ -1043,7 +1044,8 @@ private:
                 minPtsAfterSeek = INT64_MAX;
                 demuxEof = false;
                 afterSeek = true;
-                isStartPacket = true;
+                if (m_readForward || seekPts <= m_vidStartTime)
+                    isStartPacket = true;
             }
 
             // check read packet condition
@@ -1275,7 +1277,7 @@ private:
                 if (fferr == 0)
                 {
                     m_logger->Log(VERBOSE) << "========== Got video frame: pts=" << pAvfrm->pts << ", bets=" << pAvfrm->best_effort_timestamp
-                            << ", ts=" << (double)CvtPtsToMts(pAvfrm->pts)/1000 << "." << endl;
+                            << ", mts=" << CvtPtsToMts(pAvfrm->pts) << "." << endl;
                     pAvfrm->pts = pAvfrm->best_effort_timestamp;
                     if (pAvfrm->pts < m_vidStartTime || pAvfrm->pts > m_vidDurationPts)
                     {
