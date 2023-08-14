@@ -64,7 +64,7 @@ public:
         m_logger = Snapshot::GetLogger();
     }
 
-    bool Open(const string& url) override
+    bool Open(const string& url, const Ratio& ssFrameRate) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (IsOpened())
@@ -78,7 +78,7 @@ public:
         }
         hParser->EnableParseInfo(MediaParser::VIDEO_SEEK_POINTS);
 
-        if (!OpenMedia(hParser))
+        if (!OpenMedia(hParser, ssFrameRate))
         {
             Close();
             return false;
@@ -91,7 +91,7 @@ public:
         return true;
     }
 
-    bool Open(MediaParser::Holder hParser) override
+    bool Open(MediaParser::Holder hParser, const Ratio& ssFrameRate) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!hParser || !hParser->IsOpened())
@@ -104,7 +104,7 @@ public:
         if (IsOpened())
             Close();
 
-        if (!OpenMedia(hParser))
+        if (!OpenMedia(hParser, ssFrameRate))
         {
             Close();
             return false;
@@ -559,7 +559,7 @@ private:
 
     double CalcMinWindowSize(double windowFrameCount) const
     {
-        return m_vidfrmIntvMts*windowFrameCount/1000.;
+        return m_ssMinIntvMts*windowFrameCount/1000.;
     }
 
     int64_t CvtVidPtsToMts(int64_t pts)
@@ -576,10 +576,8 @@ private:
     {
         // AutoSection _as("CalcWnd");
         m_ssIntvMts = m_snapWindowSize*1000./m_wndFrmCnt;
-        if (m_ssIntvMts < m_vidfrmIntvMts)
-            m_ssIntvMts = m_vidfrmIntvMts;
-        else if (m_ssIntvMts-m_vidfrmIntvMts <= 0.5)
-            m_ssIntvMts = m_vidfrmIntvMts;
+        if (m_ssIntvMts-m_ssMinIntvMts <= 0.5)
+            m_ssIntvMts = m_ssMinIntvMts;
         m_ssIntvPts = m_ssIntvMts*m_pVidstm->timebase.den/(1000.*m_pVidstm->timebase.num); //av_rescale_q(m_ssIntvMts*1000, MICROSEC_TIMEBASE, m_vidStream->time_base);
         m_vidMaxIndex = (uint32_t)floor(((double)m_vidDurMts-m_vidfrmIntvMts)/m_ssIntvMts);
         m_maxCacheSize = (uint32_t)ceil((floor(m_wndFrmCnt)+2)*m_cacheFactor);
@@ -594,7 +592,7 @@ private:
         return idx >= 0 && idx <= (int32_t)m_vidMaxIndex;
     }
 
-    bool OpenMedia(MediaParser::Holder hParser)
+    bool OpenMedia(MediaParser::Holder hParser, const Ratio& ssFrameRate)
     {
         if (!hParser->IsImageSequence())
         {
@@ -631,9 +629,10 @@ private:
         else
             frameRate = av_inv_q(m_vidTimebase);
         m_vidfrmIntvMts = av_q2d(av_inv_q(frameRate))*1000.;
-        m_vidfrmIntvMtsHalf = ceil(m_vidfrmIntvMts)/2;
         m_vidfrmIntvPts = av_rescale_q(1, av_inv_q(frameRate), m_vidTimebase);
         m_vidfrmIntvPtsHalf = m_vidfrmIntvPts/2;
+        m_ssFrameRate = Ratio::IsValid(ssFrameRate) ? ssFrameRate : Ratio(frameRate.num, frameRate.den);
+        m_ssMinIntvMts = av_q2d(av_inv_q({ssFrameRate.num, ssFrameRate.den}))*1000.;
 
         if (m_useRszFactor)
         {
@@ -1440,6 +1439,12 @@ private:
             pts = _frm ? _frm->pts : 0;
         }
 
+        _Picture(Generator_Impl* owner, int32_t _index, DisplayData::Holder hDispData, int64_t _pts, uint32_t _bias)
+            : m_owner(owner), img(hDispData), index(_index), pts(_pts), bias(_bias)
+        {
+            pts = _pts;
+        }
+
         Generator_Impl* m_owner;
         DisplayData::Holder img;
         int32_t index;
@@ -2205,57 +2210,66 @@ private:
             }
         });
         m_pendingVidfrmCnt++;
-        _Picture::Holder ss(new _Picture(this, ssIdx, frm, bias));
 
-        bool ssAdopted = false;
-        for (auto& t : ssGopTasks)
-        {
-            lock_guard<mutex> lk(t->ssAvfrmListLock);
-            bool ssAdopt = false;
-            // m_logger->Log(DEBUG) << "Adding SS#" << ssIdx << "." << endl;
-            auto ssIter = find_if(t->ssAvfrmList.begin(), t->ssAvfrmList.end(), [ssIdx] (auto& elem) {
-                return elem->index == ssIdx;
-            });
-            if (ssIter == t->ssAvfrmList.end() || (*ssIter)->bias > bias)
-                ssAdopt = true;
-            auto ssIter2 = find_if(t->ssImgList.begin(), t->ssImgList.end(), [ssIdx] (auto& elem) {
-                return elem->index == ssIdx;
-            });
-            if (ssIter2 != t->ssImgList.end() && (*ssIter2)->bias <= bias)
-                ssAdopt = false;
+        DisplayData::Holder hDispData;
+        auto ssIdxNxt = (int32_t)round((double)(frm->pts+m_vidfrmIntvPts)/m_ssIntvPts);
+        
 
-            if (ssAdopt)
+        do {
+            _Picture::Holder ss;
+            if (hDispData)
+                ss = _Picture::Holder(new _Picture(this, ssIdx, hDispData, frm->pts, bias));
+            else
+                ss = _Picture::Holder(new _Picture(this, ssIdx, frm, bias));
+            for (auto& t : ssGopTasks)
             {
-                if (ssIter == t->ssAvfrmList.end())
-                    t->ssAvfrmList.push_back(ss);
-                else
-                    *ssIter = ss;
-                ssAdopted = true;
-            }
-            // check if all the candidate SS of this task has been decoded, if so then stop current decoding task.
-            auto candIter = t->ssCandidates.find(ssIdx);
-            if (candIter != t->ssCandidates.end())
-            {
-                candIter->second.frmEnqueued = true;
-                bool allCandDecoded = true;
-                for (auto& elem : t->ssCandidates)
+                lock_guard<mutex> lk(t->ssAvfrmListLock);
+                bool ssAdopt = false;
+                // m_logger->Log(DEBUG) << "Adding SS#" << ssIdx << "." << endl;
+                auto ssIter = find_if(t->ssAvfrmList.begin(), t->ssAvfrmList.end(), [ssIdx] (auto& elem) {
+                    return elem->index == ssIdx;
+                });
+                if (ssIter == t->ssAvfrmList.end() || (*ssIter)->bias > bias)
+                    ssAdopt = true;
+                auto ssIter2 = find_if(t->ssImgList.begin(), t->ssImgList.end(), [ssIdx] (auto& elem) {
+                    return elem->index == ssIdx;
+                });
+                if (ssIter2 != t->ssImgList.end() && (*ssIter2)->bias <= bias)
+                    ssAdopt = false;
+
+                if (ssAdopt)
                 {
-                    if (!elem.second.frmEnqueued)
+                    if (ssIter == t->ssAvfrmList.end())
+                        t->ssAvfrmList.push_back(ss);
+                    else
+                        *ssIter = ss;
+                }
+                // check if all the candidate SS of this task has been decoded, if so then stop current decoding task.
+                auto candIter = t->ssCandidates.find(ssIdx);
+                if (candIter != t->ssCandidates.end())
+                {
+                    candIter->second.frmEnqueued = true;
+                    bool allCandDecoded = true;
+                    for (auto& elem : t->ssCandidates)
                     {
-                        allCandDecoded = false;
-                        break;
+                        if (!elem.second.frmEnqueued)
+                        {
+                            allCandDecoded = false;
+                            break;
+                        }
+                    }
+                    t->allCandDecoded = allCandDecoded;
+                    if (allCandDecoded)
+                    {
+                        m_logger->Log(DEBUG) << "--> Set 'allCandDecoded' of _GopDecodeTask:{ ssidx=[" << t->TaskRange().SsIdx().first << ", "
+                            << t->TaskRange().SsIdx().second << "). Also set 'decoderEof'." << endl;
+                        t->decoderEof = true;
+                        t->demuxerEof = true;  // also stop demuxing task if it's not stopped already
                     }
                 }
-                t->allCandDecoded = allCandDecoded;
-                if (allCandDecoded)
-                {
-                    m_logger->Log(DEBUG) << "--> Set 'allCandDecoded' of _GopDecodeTask:{ ssidx=[" << t->TaskRange().SsIdx().first << ", "
-                        << t->TaskRange().SsIdx().second << "). Also set 'decoderEof'." << endl;
-                    t->decoderEof = true;
-                    t->demuxerEof = true;  // also stop demuxing task if it's not stopped already
-                }
             }
-        }
+            ssIdx++;
+        } while (ssIdx < ssIdxNxt);
         return true;
     }
 
@@ -2473,12 +2487,13 @@ private:
     double m_snapWindowSize{0};
     double m_wndFrmCnt{0};
     double m_vidfrmIntvMts{0};
-    double m_vidfrmIntvMtsHalf{0};
     int64_t m_vidfrmIntvPts{0};
     int64_t m_vidfrmIntvPtsHalf{0};
     double m_ssIntvMts{0};
     double m_ssIntvPts{0};
     double m_cacheFactor{10.0};
+    Ratio m_ssFrameRate;
+    double m_ssMinIntvMts{0};
     uint32_t m_maxCacheSize{0};
     uint32_t m_prevWndCacheSize;
     list<Viewer::Holder> m_viewers;

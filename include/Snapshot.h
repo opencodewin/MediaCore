@@ -71,8 +71,8 @@ namespace Snapshot
         using Holder = std::shared_ptr<Generator>;
         static MEDIACORE_API Holder CreateInstance();
 
-        virtual bool Open(const std::string& url) = 0;
-        virtual bool Open(MediaParser::Holder hParser) = 0;
+        virtual bool Open(const std::string& url, const Ratio& ssFrameRate) = 0;
+        virtual bool Open(MediaParser::Holder hParser, const Ratio& ssFrameRate = Ratio()) = 0;
         virtual MediaParser::Holder GetMediaParser() const = 0;
         virtual void Close() = 0;
 

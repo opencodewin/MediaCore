@@ -54,10 +54,14 @@ struct MultiTrackVideoReader
     virtual bool StopConsecutiveSeek() = 0;
     virtual bool SetTrackVisible(int64_t id, bool visible) = 0;
     virtual bool IsTrackVisible(int64_t id) = 0;
-    virtual bool ReadVideoFrameEx(int64_t pos, std::vector<CorrelativeFrame>& frames, bool nonblocking = false, bool precise = true) = 0;
-    virtual bool ReadVideoFrame(int64_t pos, ImGui::ImMat& vmat, bool nonblocking = false) = 0;
+    virtual bool ReadVideoFrameByPosEx(int64_t pos, std::vector<CorrelativeFrame>& frames, bool nonblocking = false, bool precise = true) = 0;
+    virtual bool ReadVideoFrameByPos(int64_t pos, ImGui::ImMat& vmat, bool nonblocking = false) = 0;
+    virtual bool ReadVideoFrameByIdxEx(int64_t frmIdx, std::vector<CorrelativeFrame>& frames, bool nonblocking = false, bool precise = true) = 0;
+    virtual bool ReadVideoFrameByIdx(int64_t frmIdx, ImGui::ImMat& vmat, bool nonblocking = false) = 0;
     virtual bool ReadNextVideoFrameEx(std::vector<CorrelativeFrame>& frames) = 0;
     virtual bool ReadNextVideoFrame(ImGui::ImMat& vmat) = 0;
+    virtual int64_t MillsecToFrameIndex(int64_t mts) = 0;
+    virtual int64_t FrameIndexToMillsec(int64_t frmIdx) = 0;
     virtual void UpdateDuration() = 0;
     virtual bool Refresh(bool updateDuration = true) = 0;
     virtual bool RefreshTrackView(const std::unordered_set<int64_t>& trackIds) = 0;

@@ -92,6 +92,7 @@ public:
         Close();
 
         m_hSettings = hSettings;
+        m_outFrameRate = hSettings->VideoOutFrameRate();
         m_readFrameIdx = 0;
         m_frameInterval = (double)frameRate.den/frameRate.num;
 
@@ -382,8 +383,7 @@ public:
         m_logger->Log(DEBUG) << "------> SeekTo pos=" << pos << endl;
         ClearAllMixFrameTasks();
         m_prevOutFrame = nullptr;
-        const auto frameRate = m_hSettings->VideoOutFrameRate();
-        m_readFrameIdx = (int64_t)(floor((double)pos*frameRate.num/(frameRate.den*1000)));
+        m_readFrameIdx = MillsecToFrameIndex(pos);
         int step = m_readForward ? 1 : -1;
         AddMixFrameTask(m_readFrameIdx, false, true);
         AddMixFrameTask(m_readFrameIdx+step, false, false);
@@ -400,8 +400,7 @@ public:
         }
         m_logger->Log(DEBUG) << "======> ConsecutiveSeek pos=" << pos << endl;
         m_prevOutFrame = nullptr;
-        const auto frameRate = m_hSettings->VideoOutFrameRate();
-        m_readFrameIdx = (int64_t)(floor((double)pos*frameRate.num/(frameRate.den*1000)));
+        m_readFrameIdx = MillsecToFrameIndex(pos);
         AddSeekingTask(m_readFrameIdx);
         m_inSeeking = true;
         return true;
@@ -453,7 +452,7 @@ public:
         return false;
     }
 
-    bool ReadVideoFrameEx(int64_t pos, vector<CorrelativeFrame>& frames, bool nonblocking, bool precise) override
+    bool ReadVideoFrameByPosEx(int64_t pos, vector<CorrelativeFrame>& frames, bool nonblocking, bool precise) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_started)
@@ -467,8 +466,7 @@ public:
             return false;
         }
 
-        const auto frameRate = m_hSettings->VideoOutFrameRate();
-        int64_t targetIndex = (int64_t)(floor((double)pos*frameRate.num/(frameRate.den*1000)));
+        int64_t targetIndex = MillsecToFrameIndex(pos);
         bool ret = ReadVideoFrameWithoutSubtitle(targetIndex, frames, nonblocking, precise);
         if (ret && !m_subtrks.empty())
         {
@@ -478,10 +476,44 @@ public:
         return ret;
     }
 
-    bool ReadVideoFrame(int64_t pos, ImGui::ImMat& vmat, bool nonblocking) override
+    bool ReadVideoFrameByPos(int64_t pos, ImGui::ImMat& vmat, bool nonblocking) override
     {
         vector<CorrelativeFrame> frames;
-        bool success = ReadVideoFrameEx(pos, frames, nonblocking, true);
+        bool success = ReadVideoFrameByPosEx(pos, frames, nonblocking, true);
+        if (!success)
+            return false;
+        vmat = frames[0].frame;
+        return true;
+    }
+
+
+    bool ReadVideoFrameByIdxEx(int64_t frmIdx, vector<CorrelativeFrame>& frames, bool nonblocking, bool precise) override
+    {
+        lock_guard<recursive_mutex> lk(m_apiLock);
+        if (!m_started)
+        {
+            m_errMsg = "This MultiTrackVideoReader instance is NOT started yet!";
+            return false;
+        }
+        if (frmIdx < 0)
+        {
+            m_errMsg = "Invalid argument value for 'frmIdx'! Can NOT be NEGATIVE.";
+            return false;
+        }
+
+        bool ret = ReadVideoFrameWithoutSubtitle(frmIdx, frames, nonblocking, precise);
+        if (ret && !m_subtrks.empty())
+        {
+            auto& vmat = frames[0].frame;
+            vmat = BlendSubtitle(vmat);
+        }
+        return ret;
+    }
+
+    bool ReadVideoFrameByIdx(int64_t frmIdx, ImGui::ImMat& vmat, bool nonblocking) override
+    {
+        vector<CorrelativeFrame> frames;
+        bool success = ReadVideoFrameByIdxEx(frmIdx, frames, nonblocking, true);
         if (!success)
             return false;
         vmat = frames[0].frame;
@@ -516,6 +548,16 @@ public:
             return false;
         vmat = frames[0].frame;
         return true;
+    }
+
+    int64_t MillsecToFrameIndex(int64_t mts) override
+    {
+        return (int64_t)floor((double)mts*m_outFrameRate.num/(m_outFrameRate.den*1000));
+    }
+
+    int64_t FrameIndexToMillsec(int64_t frmIdx) override
+    {
+        return (int64_t)round((double)frmIdx*m_outFrameRate.den*1000/m_outFrameRate.num);
     }
 
     void UpdateDuration() override
@@ -1491,6 +1533,7 @@ private:
     vector<CorrelativeFrame> m_seekingFlash;
 
     SharedSettings::Holder m_hSettings;
+    Ratio m_outFrameRate;
     double m_frameInterval{0};
     int64_t m_duration{0};
     int64_t m_readFrameIdx{0};

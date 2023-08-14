@@ -447,7 +447,7 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
 
         const int64_t readPos = (int64_t)(playPos*1000);
         vector<CorrelativeFrame> frames;
-        bool readRes = g_mtVidReader->ReadVideoFrameEx(readPos, frames, true, !g_isSeeking && !g_isPlay);
+        bool readRes = g_mtVidReader->ReadVideoFrameByPosEx(readPos, frames, true, !g_isSeeking && !g_isPlay);
         ImGui::ImMat vmat;
         if (s_showClipSourceFrame)
         {
