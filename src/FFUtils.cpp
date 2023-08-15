@@ -1924,49 +1924,77 @@ static bool _OpenHwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codec
     int fferr;
     AVCodecContext* hwDecCtx = nullptr;
     AVHWDeviceType hwDevType = AV_HWDEVICE_TYPE_NONE;
-    for (int i = 0; ; i++)
+    AVHWDeviceType useHardwareType = options->useHardwareType;
+    vector<const MediaCore::HwaccelManager::DeviceInfo*> tryHwDevList;
+    vector<const MediaCore::HwaccelManager::DeviceInfo*>::iterator tryHwDevIter;
+    if (useHardwareType == AV_HWDEVICE_TYPE_NONE && options->hHwaMgr)
     {
-        const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
-        if (!config)
-            break;
-
-        if ((config->methods&AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) != 0 &&
-            (options->useHardwareType == AV_HWDEVICE_TYPE_NONE || options->useHardwareType == config->device_type))
-        {
-            hwDecCtx = avcodec_alloc_context3(codec);
-            if (!hwDecCtx)
-                continue;
-            hwDecCtx->opaque = (void*)options;
-            fferr = avcodec_parameters_to_context(hwDecCtx, codecpar);
-            if (fferr < 0)
-            {
-                avcodec_free_context(&hwDecCtx);
-                hwDecCtx = nullptr;
-                continue;
-            }
-            options->useHwOutputPixfmt = config->pix_fmt;
-            hwDecCtx->get_format = _VideoDecoderCallback_GetFormat;
-            AVBufferRef* devCtx = nullptr;
-            hwDevType = config->device_type;
-            fferr = av_hwdevice_ctx_create(&devCtx, config->device_type, nullptr, nullptr, 0);
-            if (fferr < 0)
-            {
-                if (devCtx) av_buffer_unref(&devCtx);
-                avcodec_free_context(&hwDecCtx);
-                hwDecCtx = nullptr;
-                continue;
-            }
-            hwDecCtx->hw_device_ctx = devCtx;
-            fferr = avcodec_open2(hwDecCtx, codec, nullptr);
-            if (fferr < 0)
-            {
-                avcodec_free_context(&hwDecCtx);
-                hwDecCtx = nullptr;
-                continue;
-            }
-            break;
-        }
+        tryHwDevList = options->hHwaMgr->GetDevices();
+        tryHwDevIter = find_if(tryHwDevList.begin(), tryHwDevList.end(), [] (auto& pDevInfo) {
+            return pDevInfo->usable;
+        });
+        if (tryHwDevIter != tryHwDevList.end())
+            useHardwareType = av_hwdevice_find_type_by_name((*tryHwDevIter)->deviceType.c_str());
     }
+    do {
+        for (int i = 0; ; i++)
+        {
+            const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
+            if (!config)
+                break;
+
+            if ((config->methods&AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) != 0 &&
+                (useHardwareType == AV_HWDEVICE_TYPE_NONE || useHardwareType == config->device_type))
+            {
+                hwDecCtx = avcodec_alloc_context3(codec);
+                if (!hwDecCtx)
+                    continue;
+                hwDecCtx->opaque = (void*)options;
+                fferr = avcodec_parameters_to_context(hwDecCtx, codecpar);
+                if (fferr < 0)
+                {
+                    avcodec_free_context(&hwDecCtx);
+                    hwDecCtx = nullptr;
+                    continue;
+                }
+                options->useHwOutputPixfmt = config->pix_fmt;
+                hwDecCtx->get_format = _VideoDecoderCallback_GetFormat;
+                AVBufferRef* devCtx = nullptr;
+                hwDevType = config->device_type;
+                fferr = av_hwdevice_ctx_create(&devCtx, config->device_type, nullptr, nullptr, 0);
+                if (fferr < 0)
+                {
+                    if (devCtx) av_buffer_unref(&devCtx);
+                    avcodec_free_context(&hwDecCtx);
+                    hwDecCtx = nullptr;
+                    continue;
+                }
+                hwDecCtx->hw_device_ctx = devCtx;
+                fferr = avcodec_open2(hwDecCtx, codec, nullptr);
+                if (fferr < 0)
+                {
+                    avcodec_free_context(&hwDecCtx);
+                    hwDecCtx = nullptr;
+                    continue;
+                }
+                break;
+            }
+        }
+        if (!tryHwDevList.empty() && tryHwDevIter != tryHwDevList.end())
+        {
+            tryHwDevIter++;
+            while (tryHwDevIter != tryHwDevList.end() && !(*tryHwDevIter)->usable)
+                tryHwDevIter++;
+            if (tryHwDevIter != tryHwDevList.end())
+                useHardwareType = av_hwdevice_find_type_by_name((*tryHwDevIter)->deviceType.c_str());
+            else
+                useHardwareType = AV_HWDEVICE_TYPE_NONE;
+        }
+        else
+        {
+            useHardwareType = AV_HWDEVICE_TYPE_NONE;
+        }
+    } while (useHardwareType != AV_HWDEVICE_TYPE_NONE);
 
     if (!hwDecCtx)
     {
@@ -2124,189 +2152,189 @@ static bool _CheckVideoDecoderValidity(const AVFormatContext* pAvfmtCtx, int vid
 
 namespace FFUtils
 {
-    bool OpenVideoDecoder(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, OpenVideoDecoderOptions* options, OpenVideoDecoderResult* result, bool needValidation)
+bool OpenVideoDecoder(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, OpenVideoDecoderOptions* options, OpenVideoDecoderResult* result, bool needValidation)
+{
+    // check arguments are valid
+    if (!result)
+        return false;
+    if (!options)
     {
-        // check arguments are valid
-        if (!result)
-            return false;
-        if (!options)
+        result->errMsg = "Argument 'options' must NOT be NULL!";
+        return false;
+    }
+    if (!pAvfmtCtx)
+    {
+        result->errMsg = "Invalid argument 'pAvfmtCtx'! Null pointer.";
+        return false;
+    }
+    if (videoStreamIndex >= (int)pAvfmtCtx->nb_streams)
+    {
+        ostringstream oss;
+        oss << "Invalid argument 'videoStreamIndex'! Index " << videoStreamIndex << " exceeds the limit of nb_streams " << pAvfmtCtx->nb_streams << ".";
+        result->errMsg = oss.str();
+        return false;
+    }
+    if (videoStreamIndex < 0)
+    {
+        for (int i = 0; i < pAvfmtCtx->nb_streams; i++)
         {
-            result->errMsg = "Argument 'options' must NOT be NULL!";
-            return false;
-        }
-        if (!pAvfmtCtx)
-        {
-            result->errMsg = "Invalid argument 'pAvfmtCtx'! Null pointer.";
-            return false;
-        }
-        if (videoStreamIndex >= (int)pAvfmtCtx->nb_streams)
-        {
-            ostringstream oss;
-            oss << "Invalid argument 'videoStreamIndex'! Index " << videoStreamIndex << " exceeds the limit of nb_streams " << pAvfmtCtx->nb_streams << ".";
-            result->errMsg = oss.str();
-            return false;
-        }
-        if (videoStreamIndex < 0)
-        {
-            for (int i = 0; i < pAvfmtCtx->nb_streams; i++)
+            if (pAvfmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
             {
-                if (pAvfmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
-                {
-                    videoStreamIndex = i;
-                    break;
-                }
+                videoStreamIndex = i;
+                break;
             }
         }
-        if (videoStreamIndex < 0)
-        {
-            result->errMsg = "Can NOT find any VIDEO stream.";
-            return false;
-        }
-        if (pAvfmtCtx->streams[videoStreamIndex]->codecpar->codec_type != AVMEDIA_TYPE_VIDEO)
-        {
-            ostringstream oss;
-            oss << "Invalid argument! 'videoStreamIndex' is " << videoStreamIndex << ", but the specified stream is NOT VIDEO.";
-            result->errMsg = oss.str();
-            return false;
-        }
-
-        AVStream* targetStream = pAvfmtCtx->streams[videoStreamIndex];
-        AVCodecPtr codec;
-        if (!options->designatedDecoderName.empty())
-        {
-            codec = avcodec_find_decoder_by_name(options->designatedDecoderName.c_str());
-            if (!codec)
-            {
-                ostringstream oss; oss << "Can not find the decoder by designated name '" << options->designatedDecoderName << "'!";
-                result->errMsg = oss.str();
-                return false;
-            }
-        }
-        else
-        {
-            codec = (AVCodecPtr)avcodec_find_decoder(targetStream->codecpar->codec_id);
-            if (!codec)
-            {
-                ostringstream oss; oss << "Can not find the decoder by codec_id " << targetStream->codecpar->codec_id << "!";
-                result->errMsg = oss.str();
-                return false;
-            }
-        }
-        OpenVideoDecoderResult hwResult, swResult;
-        bool ret = false;
-        if (!options->onlyUseSoftwareDecoder)
-        {
-            ret = _OpenHwVideoDecoder(codec, targetStream->codecpar, options, &hwResult);
-            if (ret)
-            {
-                if (!needValidation || _CheckVideoDecoderValidity(pAvfmtCtx, videoStreamIndex, &hwResult))
-                    *result = hwResult;
-                else
-                {
-                    Log(DEBUG) << "FAILED on validity check for HW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url
-                        << "! Error is '" << hwResult.errMsg << "'." << endl;
-                    ret = false;
-                }
-            }
-            else
-                Log(DEBUG) << "FAILED to open HW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url
-                        << "! Error is '" << hwResult.errMsg << "'." << endl;
-        }
-        if (!ret)
-        {
-            ret = _OpenSwVideoDecoder(codec, targetStream->codecpar, options, &swResult);
-            if (ret)
-            {
-                if (!needValidation || _CheckVideoDecoderValidity(pAvfmtCtx, videoStreamIndex, &swResult))
-                    *result = swResult;
-                else
-                {
-                    Log(DEBUG) << "FAILED on validity check for SW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url
-                        << "'! Error is '" << swResult.errMsg << "'." << endl;
-                    ret = false;
-                }
-            }
-            else
-                Log(DEBUG) << "FAILED to open SW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url
-                        << "! Error is '" << swResult.errMsg << "'." << endl;
-        }
-        if (!ret)
-        {
-            result->decCtx = nullptr;
-            if (!swResult.errMsg.empty())
-                result->errMsg = std::move(swResult.errMsg);
-            else if (!hwResult.errMsg.empty())
-                result->errMsg = std::move(hwResult.errMsg);
-            else
-                result->errMsg = "No suitable decoder can be found!";
-        }
-        if (hwResult.decCtx && hwResult.decCtx != result->decCtx)
-            avcodec_free_context(&hwResult.decCtx);
-        if (swResult.decCtx && swResult.decCtx != result->decCtx)
-            avcodec_free_context(&swResult.decCtx);
-        return ret;
+    }
+    if (videoStreamIndex < 0)
+    {
+        result->errMsg = "Can NOT find any VIDEO stream.";
+        return false;
+    }
+    if (pAvfmtCtx->streams[videoStreamIndex]->codecpar->codec_type != AVMEDIA_TYPE_VIDEO)
+    {
+        ostringstream oss;
+        oss << "Invalid argument! 'videoStreamIndex' is " << videoStreamIndex << ", but the specified stream is NOT VIDEO.";
+        result->errMsg = oss.str();
+        return false;
     }
 
-    uint32_t CopyPcmDataEx(uint8_t channels, uint8_t bytesPerSample, uint32_t copySamples,
-        bool isDstPlanar,       uint8_t** ppDst, uint32_t dstOffsetSamples,
-        bool isSrcPlanar, const uint8_t** ppSrc, uint32_t srcOffsetSamples)
+    AVStream* targetStream = pAvfmtCtx->streams[videoStreamIndex];
+    AVCodecPtr codec;
+    if (!options->designatedDecoderName.empty())
     {
-        if (channels == 0 || bytesPerSample == 0 || copySamples == 0 ||
-            !ppDst || !ppSrc)
-            return 0;
-        uint32_t dstBeginOffset = bytesPerSample*dstOffsetSamples;
-        if (!isDstPlanar) dstBeginOffset *= channels;
-        uint32_t srcBeginOffset = bytesPerSample*srcOffsetSamples;
-        if (!isSrcPlanar) srcBeginOffset *= channels;
-        if (isDstPlanar)
+        codec = avcodec_find_decoder_by_name(options->designatedDecoderName.c_str());
+        if (!codec)
         {
-            if (isSrcPlanar)
-            {
-                uint32_t copySize = bytesPerSample*copySamples;
-                for (int i = 0; i < channels; i++)
-                    memcpy(ppDst[i]+dstBeginOffset, ppSrc[i]+srcBeginOffset, copySize);
-            }
+            ostringstream oss; oss << "Can not find the decoder by designated name '" << options->designatedDecoderName << "'!";
+            result->errMsg = oss.str();
+            return false;
+        }
+    }
+    else
+    {
+        codec = (AVCodecPtr)avcodec_find_decoder(targetStream->codecpar->codec_id);
+        if (!codec)
+        {
+            ostringstream oss; oss << "Can not find the decoder by codec_id " << targetStream->codecpar->codec_id << "!";
+            result->errMsg = oss.str();
+            return false;
+        }
+    }
+    OpenVideoDecoderResult hwResult, swResult;
+    bool ret = false;
+    if (!options->onlyUseSoftwareDecoder)
+    {
+        ret = _OpenHwVideoDecoder(codec, targetStream->codecpar, options, &hwResult);
+        if (ret)
+        {
+            if (!needValidation || _CheckVideoDecoderValidity(pAvfmtCtx, videoStreamIndex, &hwResult))
+                *result = hwResult;
             else
             {
-                const uint8_t* pSrc = ppSrc[0];
-                uint32_t readOffset = srcBeginOffset;
-                uint32_t writeOffset = dstBeginOffset;
-                for (int j = 0; j < copySamples; j++)
-                {
-                    for (int i = 0; i < channels; i++)
-                    {
-                        memcpy(ppDst[i]+writeOffset, pSrc+readOffset, bytesPerSample);
-                        readOffset += bytesPerSample;
-                    }
-                    writeOffset += bytesPerSample;
-                }
+                Log(DEBUG) << "FAILED on validity check for HW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url
+                    << "! Error is '" << hwResult.errMsg << "'." << endl;
+                ret = false;
             }
         }
         else
+            Log(DEBUG) << "FAILED to open HW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url
+                    << "! Error is '" << hwResult.errMsg << "'." << endl;
+    }
+    if (!ret)
+    {
+        ret = _OpenSwVideoDecoder(codec, targetStream->codecpar, options, &swResult);
+        if (ret)
         {
-            if (isSrcPlanar)
+            if (!needValidation || _CheckVideoDecoderValidity(pAvfmtCtx, videoStreamIndex, &swResult))
+                *result = swResult;
+            else
             {
-                uint8_t* pDst = ppDst[0];
-                uint32_t readOffset = srcBeginOffset;
-                uint32_t writeOffset = dstBeginOffset;
-                for (int j = 0; j < copySamples; j++)
+                Log(DEBUG) << "FAILED on validity check for SW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url
+                    << "'! Error is '" << swResult.errMsg << "'." << endl;
+                ret = false;
+            }
+        }
+        else
+            Log(DEBUG) << "FAILED to open SW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url
+                    << "! Error is '" << swResult.errMsg << "'." << endl;
+    }
+    if (!ret)
+    {
+        result->decCtx = nullptr;
+        if (!swResult.errMsg.empty())
+            result->errMsg = std::move(swResult.errMsg);
+        else if (!hwResult.errMsg.empty())
+            result->errMsg = std::move(hwResult.errMsg);
+        else
+            result->errMsg = "No suitable decoder can be found!";
+    }
+    if (hwResult.decCtx && hwResult.decCtx != result->decCtx)
+        avcodec_free_context(&hwResult.decCtx);
+    if (swResult.decCtx && swResult.decCtx != result->decCtx)
+        avcodec_free_context(&swResult.decCtx);
+    return ret;
+}
+
+uint32_t CopyPcmDataEx(uint8_t channels, uint8_t bytesPerSample, uint32_t copySamples,
+    bool isDstPlanar,       uint8_t** ppDst, uint32_t dstOffsetSamples,
+    bool isSrcPlanar, const uint8_t** ppSrc, uint32_t srcOffsetSamples)
+{
+    if (channels == 0 || bytesPerSample == 0 || copySamples == 0 ||
+        !ppDst || !ppSrc)
+        return 0;
+    uint32_t dstBeginOffset = bytesPerSample*dstOffsetSamples;
+    if (!isDstPlanar) dstBeginOffset *= channels;
+    uint32_t srcBeginOffset = bytesPerSample*srcOffsetSamples;
+    if (!isSrcPlanar) srcBeginOffset *= channels;
+    if (isDstPlanar)
+    {
+        if (isSrcPlanar)
+        {
+            uint32_t copySize = bytesPerSample*copySamples;
+            for (int i = 0; i < channels; i++)
+                memcpy(ppDst[i]+dstBeginOffset, ppSrc[i]+srcBeginOffset, copySize);
+        }
+        else
+        {
+            const uint8_t* pSrc = ppSrc[0];
+            uint32_t readOffset = srcBeginOffset;
+            uint32_t writeOffset = dstBeginOffset;
+            for (int j = 0; j < copySamples; j++)
+            {
+                for (int i = 0; i < channels; i++)
                 {
-                    for (int i = 0; i < channels; i++)
-                    {
-                        memcpy(pDst+writeOffset, ppSrc[i]+readOffset, bytesPerSample);
-                        writeOffset += bytesPerSample;
-                    }
+                    memcpy(ppDst[i]+writeOffset, pSrc+readOffset, bytesPerSample);
                     readOffset += bytesPerSample;
                 }
-            }
-            else
-            {
-                uint32_t copySize = bytesPerSample*copySamples*channels;
-                memcpy(ppDst[0]+dstBeginOffset, ppSrc[0]+srcBeginOffset, copySize);
+                writeOffset += bytesPerSample;
             }
         }
-        return copySamples;
     }
+    else
+    {
+        if (isSrcPlanar)
+        {
+            uint8_t* pDst = ppDst[0];
+            uint32_t readOffset = srcBeginOffset;
+            uint32_t writeOffset = dstBeginOffset;
+            for (int j = 0; j < copySamples; j++)
+            {
+                for (int i = 0; i < channels; i++)
+                {
+                    memcpy(pDst+writeOffset, ppSrc[i]+readOffset, bytesPerSample);
+                    writeOffset += bytesPerSample;
+                }
+                readOffset += bytesPerSample;
+            }
+        }
+        else
+        {
+            uint32_t copySize = bytesPerSample*copySamples*channels;
+            memcpy(ppDst[0]+dstBeginOffset, ppSrc[0]+srcBeginOffset, copySize);
+        }
+    }
+    return copySamples;
+}
 }
 
 static MediaCore::Ratio MediaInfoRatioFromAVRational(const AVRational& src)

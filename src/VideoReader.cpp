@@ -116,7 +116,7 @@ public:
 
     bool ConfigVideoReader(
             uint32_t outWidth, uint32_t outHeight,
-            ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp) override
+            ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp, HwaccelManager::Holder hHwaMgr) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_opened)
@@ -143,6 +143,7 @@ public:
         m_outClrFmt = outClrfmt;
         m_outDtype = outDtype;
         m_interpMode = rszInterp;
+        m_hHwaMgr = hHwaMgr;
         m_vidDurMts = (int64_t)(vidStream->duration*1000);
 
         m_configured = true;
@@ -151,7 +152,7 @@ public:
 
     bool ConfigVideoReader(
             float outWidthFactor, float outHeightFactor,
-            ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp) override
+            ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp, HwaccelManager::Holder hHwaMgr) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_opened)
@@ -178,6 +179,7 @@ public:
         m_outClrFmt = outClrfmt;
         m_outDtype = outDtype;
         m_interpMode = rszInterp;
+        m_hHwaMgr = hHwaMgr;
         m_vidDurMts = (int64_t)(vidStream->duration*1000);
 
         m_configured = true;
@@ -726,6 +728,7 @@ private:
 
         m_viddecOpenOpts.onlyUseSoftwareDecoder = !m_vidPreferUseHw;
         m_viddecOpenOpts.useHardwareType = m_vidUseHwType;
+        m_viddecOpenOpts.hHwaMgr = m_hHwaMgr;
         FFUtils::OpenVideoDecoderResult res;
         if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res))
         {
@@ -1558,6 +1561,7 @@ private:
     ImColorFormat m_outClrFmt;
     ImDataType m_outDtype;
     ImInterpolateMode m_interpMode;
+    HwaccelManager::Holder m_hHwaMgr;
     AVFrameToImMatConverter* m_pFrmCvt{nullptr};
 };
 

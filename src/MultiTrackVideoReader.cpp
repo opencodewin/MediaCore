@@ -122,6 +122,10 @@ public:
             m_errMsg = oss.str();
             return false;
         }
+        if (!hSettings->GetHwaccelManager())
+        {
+            hSettings->SetHwaccelManager(HwaccelManager::GetDefaultInstance());
+        }
 
         m_configured = true;
         return true;

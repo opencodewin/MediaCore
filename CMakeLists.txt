@@ -69,8 +69,8 @@ add_definitions(-DMEDIACORE_SHARED)
 endif(MEDIACORE_STATIC)
 
 set(MEDIACORE_VERSION_MAJOR 1)
-set(MEDIACORE_VERSION_MINOR 8)
-set(MEDIACORE_VERSION_PATCH 8)
+set(MEDIACORE_VERSION_MINOR 9)
+set(MEDIACORE_VERSION_PATCH 0)
 string(TIMESTAMP MEDIACORE_VERSION_BUILD "%y%m%d")
 set(MEDIACORE_VERSION_STRING ${MEDIACORE_VERSION_MAJOR}.${MEDIACORE_VERSION_MINOR}.${MEDIACORE_VERSION_PATCH})
 add_definitions(-DMEDIACORE_VERSION_MAJOR=${MEDIACORE_VERSION_MAJOR})
@@ -79,7 +79,6 @@ add_definitions(-DMEDIACORE_VERSION_PATCH=${MEDIACORE_VERSION_PATCH})
 add_definitions(-DMEDIACORE_VERSION_BUILD=${MEDIACORE_VERSION_BUILD})
 
 add_library(MediaCore ${LIBRARY}
-    ${LIB_SRC_DIR}/MediaCore.cpp
     ${LIB_SRC_DIR}/AudioRender_Impl_Sdl2.cpp
     ${LIB_SRC_DIR}/AudioClip.cpp
     ${LIB_SRC_DIR}/AudioTrack.cpp
@@ -88,9 +87,11 @@ add_library(MediaCore ${LIBRARY}
     ${LIB_SRC_DIR}/FFUtils.cpp
     ${LIB_SRC_DIR}/FontDescriptor.cpp
     ${LIB_SRC_DIR}/FontManager_Fontconfig.cpp
+    ${LIB_SRC_DIR}/HwaccelManager.cpp
     ${LIB_SRC_DIR}/ImageSequenceReader.cpp
     ${LIB_SRC_DIR}/Logger.cpp
     ${LIB_SRC_DIR}/MatUtils.cpp
+    ${LIB_SRC_DIR}/MediaCore.cpp
     ${LIB_SRC_DIR}/MediaEncoder.cpp
     ${LIB_SRC_DIR}/MediaInfo.cpp
     ${LIB_SRC_DIR}/MediaParser.cpp
@@ -218,6 +219,14 @@ target_link_libraries(UnitTest MediaCore)
 add_custom_command(TARGET UnitTest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     $<TARGET_FILE:UnitTest> $<TARGET_FILE_DIR:MediaCore>)
+
+add_executable(HwaccelManagerTest
+    ${LIB_TEST_DIR}/HwaccelManagerTest.cpp
+)
+target_link_libraries(HwaccelManagerTest MediaCore)
+add_custom_command(TARGET HwaccelManagerTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:HwaccelManagerTest> $<TARGET_FILE_DIR:MediaCore>)
 
 endif(BUILD_MEDIACORE_TEST)
 # <<<

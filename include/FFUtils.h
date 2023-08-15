@@ -39,6 +39,7 @@ extern "C"
 }
 
 #include "MediaCore.h"
+#include "HwaccelManager.h"
 
 #if LIBAVFORMAT_VERSION_MAJOR >= 59
 typedef const AVCodec*      AVCodecPtr;
@@ -226,29 +227,30 @@ public:
 
 namespace FFUtils
 {
-    // Find and open a video decoder
-    struct OpenVideoDecoderOptions
-    {
-        std::string designatedDecoderName;
-        bool onlyUseSoftwareDecoder{false};
-        AVHWDeviceType useHardwareType{AV_HWDEVICE_TYPE_NONE};
-        bool preferHwOutputPixfmt{true};
-        AVPixelFormat useHwOutputPixfmt{AV_PIX_FMT_NONE};
-        AVPixelFormat forceOutputPixfmt{AV_PIX_FMT_NONE};
-    };
-    struct OpenVideoDecoderResult
-    {
-        AVCodecContext* decCtx{nullptr};
-        AVHWDeviceType hwDevType{AV_HWDEVICE_TYPE_NONE};
-        SelfFreeAVFramePtr probeFrame;
-        std::string errMsg;
-    };
-    bool OpenVideoDecoder(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, OpenVideoDecoderOptions* options, OpenVideoDecoderResult* result, bool needValidation = true);
+// Find and open a video decoder
+struct OpenVideoDecoderOptions
+{
+    std::string designatedDecoderName;
+    bool onlyUseSoftwareDecoder{false};
+    AVHWDeviceType useHardwareType{AV_HWDEVICE_TYPE_NONE};
+    bool preferHwOutputPixfmt{true};
+    AVPixelFormat useHwOutputPixfmt{AV_PIX_FMT_NONE};
+    AVPixelFormat forceOutputPixfmt{AV_PIX_FMT_NONE};
+    MediaCore::HwaccelManager::Holder hHwaMgr;
+};
+struct OpenVideoDecoderResult
+{
+    AVCodecContext* decCtx{nullptr};
+    AVHWDeviceType hwDevType{AV_HWDEVICE_TYPE_NONE};
+    SelfFreeAVFramePtr probeFrame;
+    std::string errMsg;
+};
+bool OpenVideoDecoder(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, OpenVideoDecoderOptions* options, OpenVideoDecoderResult* result, bool needValidation = true);
 
-    // A function to copy pcm data from one buffer to another, with the considering of sample format and buffer state
-    uint32_t CopyPcmDataEx(uint8_t channels, uint8_t bytesPerSample, uint32_t copySamples,
-        bool isDstPlanar,       uint8_t** ppDst, uint32_t dstOffsetSamples,
-        bool isSrcPlanar, const uint8_t** ppSrc, uint32_t srcOffsetSamples);
+// A function to copy pcm data from one buffer to another, with the considering of sample format and buffer state
+uint32_t CopyPcmDataEx(uint8_t channels, uint8_t bytesPerSample, uint32_t copySamples,
+    bool isDstPlanar,       uint8_t** ppDst, uint32_t dstOffsetSamples,
+    bool isSrcPlanar, const uint8_t** ppSrc, uint32_t srcOffsetSamples);
 }
 
 #include "MediaInfo.h"

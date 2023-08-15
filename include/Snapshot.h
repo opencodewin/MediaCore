@@ -81,7 +81,6 @@ namespace Snapshot
 
         virtual bool IsOpened() const = 0;
         virtual bool HasVideo() const = 0;
-        virtual bool HasAudio() const = 0;
         virtual bool ConfigSnapWindow(double& windowSize, double frameCount, bool forceRefresh = false) = 0;
         virtual bool SetCacheFactor(double cacheFactor) = 0;
         virtual double GetMinWindowSize() const = 0;
@@ -95,7 +94,6 @@ namespace Snapshot
 
         virtual MediaInfo::Holder GetMediaInfo() const = 0;
         virtual const VideoStream* GetVideoStream() const = 0;
-        virtual const AudioStream* GetAudioStream() const = 0;
 
         virtual uint32_t GetVideoWidth() const = 0;
         virtual uint32_t GetVideoHeight() const = 0;

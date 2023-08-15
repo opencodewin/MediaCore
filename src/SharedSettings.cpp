@@ -32,6 +32,11 @@ class SharedSettings_Impl : public SharedSettings
         return m_vidOutDataType;
     }
 
+    HwaccelManager::Holder GetHwaccelManager() const override
+    {
+        return m_hHwaMgr;
+    }
+
     // setters
     void SetVideoOutWidth(uint32_t width) override
     {
@@ -58,12 +63,18 @@ class SharedSettings_Impl : public SharedSettings
         m_vidOutDataType = datatype;
     }
 
+    void SetHwaccelManager(HwaccelManager::Holder hHwaMgr) override
+    {
+        m_hHwaMgr = hHwaMgr;
+    }
+
 private:
     uint32_t m_vidOutWidth{0};
     uint32_t m_vidOutHeight{0};
     Ratio m_vidOutFrameRate;
     ImColorFormat m_vidOutColorFormat{IM_CF_RGBA};
     ImDataType m_vidOutDataType{IM_DT_FLOAT32};
+    HwaccelManager::Holder m_hHwaMgr;
 };
 
 static const auto SHARED_SETTINGS_DELETER = [] (SharedSettings* p) {

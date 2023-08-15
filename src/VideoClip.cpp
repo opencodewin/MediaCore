@@ -124,7 +124,7 @@ public:
         ImInterpolateMode interpMode = IM_INTERPOLATE_BICUBIC;
         if (readerWidth*readerHeight < vidStm->width*vidStm->height)
             interpMode = IM_INTERPOLATE_AREA;
-        if (!m_hReader->ConfigVideoReader(readerWidth, readerHeight, m_outClrfmt, m_outDtype, interpMode))
+        if (!m_hReader->ConfigVideoReader(readerWidth, readerHeight, m_outClrfmt, m_outDtype, interpMode, hSettings->GetHwaccelManager()))
             throw runtime_error(m_hReader->GetError());
         if (frameRate.num <= 0 || frameRate.den <= 0)
             throw invalid_argument("Invalid argument value for 'frameRate'!");
@@ -504,7 +504,7 @@ public:
         ImInterpolateMode interpMode = IM_INTERPOLATE_BICUBIC;
         if (readerWidth*readerHeight < vidStm->width*vidStm->height)
             interpMode = IM_INTERPOLATE_AREA;
-        if (!m_hReader->ConfigVideoReader(readerWidth, readerHeight, m_outClrfmt, m_outDtype, interpMode))
+        if (!m_hReader->ConfigVideoReader(readerWidth, readerHeight, m_outClrfmt, m_outDtype, interpMode, hSettings->GetHwaccelManager()))
             throw runtime_error(m_hReader->GetError());
         if (duration <= 0)
             throw invalid_argument("Argument 'duration' must be positive!");

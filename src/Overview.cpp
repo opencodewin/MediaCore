@@ -22,6 +22,7 @@
 #include <cmath>
 #include "Overview.h"
 #include "MediaReader.h"
+#include "HwaccelManager.h"
 #include "FFUtils.h"
 #include "SysUtils.h"
 extern "C"
@@ -497,6 +498,7 @@ private:
                 m_vidAvStm = m_avfmtCtx->streams[m_vidStmIdx];
 
                 m_viddecOpenOpts.onlyUseSoftwareDecoder = !m_vidPreferUseHw;
+                m_viddecOpenOpts.hHwaMgr = HwaccelManager::GetDefaultInstance();
                 FFUtils::OpenVideoDecoderResult res;
                 if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res))
                 {
@@ -1110,7 +1112,7 @@ private:
         const auto outClrfmt = m_frmCvt.GetOutColorFormat();
         const auto outDtype = m_frmCvt.GetOutDataType();
         const auto rszInterp = m_frmCvt.GetResizeInterpolateMode();
-        if (!hImgsqReader->ConfigVideoReader(outW, outH, outClrfmt, outDtype, rszInterp))
+        if (!hImgsqReader->ConfigVideoReader(outW, outH, outClrfmt, outDtype, rszInterp, HwaccelManager::GetDefaultInstance()))
         {
             ostringstream oss; oss << "FAILED to configure image-sequence reader! Error is '" << hImgsqReader->GetError() << "'.";
             m_errMsg = oss.str();

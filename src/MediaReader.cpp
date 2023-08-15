@@ -128,7 +128,7 @@ public:
 
     bool ConfigVideoReader(
             uint32_t outWidth, uint32_t outHeight,
-            ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp) override
+            ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp, HwaccelManager::Holder hHwaMgr) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_opened)
@@ -173,7 +173,7 @@ public:
 
     bool ConfigVideoReader(
             float outWidthFactor, float outHeightFactor,
-            ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp) override
+            ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp, HwaccelManager::Holder hHwaMgr) override
     {
         if (!m_opened)
         {
@@ -1039,7 +1039,7 @@ private:
             m_viddecOpenOpts.onlyUseSoftwareDecoder = !m_vidPreferUseHw;
             m_viddecOpenOpts.useHardwareType = m_vidUseHwType;
             FFUtils::OpenVideoDecoderResult res;
-            if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res))
+            if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res, false))
             {
                 m_viddecCtx = res.decCtx;
                 AVHWDeviceType hwDevType = res.hwDevType;

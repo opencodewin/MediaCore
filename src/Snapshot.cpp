@@ -29,6 +29,7 @@
 #include "imgui_helper.h"
 #include "Snapshot.h"
 #include "MediaReader.h"
+#include "HwaccelManager.h"
 #include "FFUtils.h"
 #include "SysUtils.h"
 #include "DebugHelper.h"
@@ -49,8 +50,6 @@ extern "C"
 
 using namespace std;
 using namespace Logger;
-
-static AVPixelFormat get_hw_format(AVCodecContext *ctx, const AVPixelFormat *pix_fmts);
 
 namespace MediaCore
 {
@@ -128,22 +127,13 @@ public:
             avcodec_free_context(&m_viddecCtx);
             m_viddecCtx = nullptr;
         }
-        if (m_viddecHwDevCtx)
-        {
-            av_buffer_unref(&m_viddecHwDevCtx);
-            m_viddecHwDevCtx = nullptr;
-        }
-        m_vidHwPixFmt = AV_PIX_FMT_NONE;
-        m_viddecDevType = AV_HWDEVICE_TYPE_NONE;
         if (m_avfmtCtx)
         {
             avformat_close_input(&m_avfmtCtx);
             m_avfmtCtx = nullptr;
         }
         m_vidStmIdx = -1;
-        m_audStmIdx = -1;
         m_vidStream = nullptr;
-        m_viddec = nullptr;
         m_hParser = nullptr;
         m_hMediaInfo = nullptr;
 
@@ -309,11 +299,6 @@ public:
     bool HasVideo() const override
     {
         return m_vidStmIdx >= 0;
-    }
-
-    bool HasAudio() const override
-    {
-        return m_audStmIdx >= 0;
     }
 
     bool ConfigSnapWindow(double& windowSize, double frameCount, bool forceRefresh) override
@@ -485,14 +470,6 @@ public:
         return dynamic_cast<VideoStream*>(hInfo->streams[m_vidStmIdx].get());
     }
 
-    const AudioStream* GetAudioStream() const override
-    {
-        MediaInfo::Holder hInfo = m_hMediaInfo;
-        if (!hInfo || !HasAudio())
-            return nullptr;
-        return dynamic_cast<AudioStream*>(hInfo->streams[m_audStmIdx].get());
-    }
-
     uint32_t GetVideoWidth() const override
     {
         const VideoStream* vidStream = GetVideoStream();
@@ -542,11 +519,6 @@ public:
     string GetError() const override
     {
         return m_errMsg;
-    }
-
-    bool CheckHwPixFmt(AVPixelFormat pixfmt)
-    {
-        return pixfmt == m_vidHwPixFmt;
     }
 
 private:
@@ -607,7 +579,6 @@ private:
 
         m_hMediaInfo = hParser->GetMediaInfo();
         m_vidStmIdx = hParser->GetBestVideoStreamIndex();
-        m_audStmIdx = hParser->GetBestAudioStreamIndex();
         if (m_vidStmIdx < 0)
         {
             ostringstream oss;
@@ -686,26 +657,22 @@ private:
             {
                 m_vidStream = m_avfmtCtx->streams[m_vidStmIdx];
                 m_vidStartPts = m_vidStream->start_time;
-
-                m_viddec = avcodec_find_decoder(m_vidStream->codecpar->codec_id);
-                if (m_viddec == nullptr)
+                m_viddecOpenOpts.onlyUseSoftwareDecoder = !m_vidPreferUseHw;
+                m_viddecOpenOpts.hHwaMgr = HwaccelManager::GetDefaultInstance();
+                FFUtils::OpenVideoDecoderResult res;
+                if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res, false))
+                {
+                    m_viddecCtx = res.decCtx;
+                    m_logger->Log(INFO) << "SnapshotGenerator for file '" << m_hParser->GetUrl() << "' opened video decoder '" << 
+                        m_viddecCtx->codec->name << "'(" << (res.hwDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(res.hwDevType)) << ")." << endl;
+                }
+                else
                 {
                     ostringstream oss;
-                    oss << "Can not find video decoder by codec_id " << m_vidStream->codecpar->codec_id << "!";
+                    oss << "SnapshotGenerator for file '" << m_hParser->GetUrl() << "' FAILED to open video decoder! Error is '" << res.errMsg << "'.";
                     m_errMsg = oss.str();
                     return false;
                 }
-
-                if (m_vidPreferUseHw)
-                {
-                    if (!OpenHwVideoDecoder())
-                        if (!OpenVideoDecoder())
-                            return false;
-                }
-                else if (!OpenVideoDecoder())
-                    return false;
-                m_logger->Log(INFO) << "SnapshotGenerator for file '" << m_hParser->GetUrl() << "' opened video decoder '" << 
-                    m_viddecCtx->codec->name << "'(" << (m_viddecDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(m_viddecDevType)) << ")." << endl;
 
                 CalcWindowVariables();
                 ResetGopDecodeTaskList();
@@ -728,100 +695,6 @@ private:
         m_logger->Log(DEBUG) << ">>>> Prepared: m_snapWindowSize=" << m_snapWindowSize << ", m_wndFrmCnt=" << m_wndFrmCnt
             << ", m_vidMaxIndex=" << m_vidMaxIndex << ", m_maxCacheSize=" << m_maxCacheSize << ", m_prevWndCacheSize=" << m_prevWndCacheSize << endl;
         m_prepared = true;
-        return true;
-    }
-
-    bool OpenVideoDecoder()
-    {
-        m_viddecCtx = avcodec_alloc_context3(m_viddec);
-        if (!m_viddecCtx)
-        {
-            m_errMsg = "FAILED to allocate new AVCodecContext!";
-            return false;
-        }
-        m_viddecCtx->opaque = this;
-
-        int fferr;
-        fferr = avcodec_parameters_to_context(m_viddecCtx, m_vidStream->codecpar);
-        if (fferr < 0)
-        {
-            m_errMsg = FFapiFailureMessage("avcodec_parameters_to_context", fferr);
-            return false;
-        }
-
-        m_viddecCtx->thread_count = 8;
-        // m_viddecCtx->thread_type = FF_THREAD_FRAME;
-        fferr = avcodec_open2(m_viddecCtx, m_viddec, nullptr);
-        if (fferr < 0)
-        {
-            m_errMsg = FFapiFailureMessage("avcodec_open2", fferr);
-            return false;
-        }
-        m_logger->Log(DEBUG) << "Video decoder '" << m_viddec->name << "' opened." << " thread_count=" << m_viddecCtx->thread_count
-            << ", thread_type=" << m_viddecCtx->thread_type << endl;
-        return true;
-    }
-
-    bool OpenHwVideoDecoder()
-    {
-        int fferr;
-        AVHWDeviceType hwDevType = AV_HWDEVICE_TYPE_NONE;
-        AVCodecContext* hwDecCtx = nullptr;
-        AVBufferRef* devCtx;
-        for (int i = 0; ; i++)
-        {
-            const AVCodecHWConfig* config = avcodec_get_hw_config(m_viddec, i);
-            if (!config)
-            {
-                m_vidHwPixFmt = AV_PIX_FMT_NONE;
-                ostringstream oss;
-                oss << "Decoder '" << m_viddec->name << "' does NOT support hardware acceleration.";
-                m_errMsg = oss.str();
-                return false;
-            }
-            if ((config->methods&AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) != 0)
-            {
-                if (m_vidUseHwType == AV_HWDEVICE_TYPE_NONE || m_vidUseHwType == config->device_type)
-                {
-                    m_vidHwPixFmt = config->pix_fmt;
-                    hwDevType = config->device_type;
-                    hwDecCtx = avcodec_alloc_context3(m_viddec);
-                    if (!hwDecCtx)
-                        continue;
-                    hwDecCtx->opaque = this;
-                    fferr = avcodec_parameters_to_context(hwDecCtx, m_vidStream->codecpar);
-                    if (fferr < 0)
-                    {
-                        avcodec_free_context(&hwDecCtx);
-                        continue;
-                    }
-                    hwDecCtx->get_format = get_hw_format;
-                    devCtx = nullptr;
-                    fferr = av_hwdevice_ctx_create(&devCtx, hwDevType, nullptr, nullptr, 0);
-                    if (fferr < 0)
-                    {
-                        avcodec_free_context(&hwDecCtx);
-                        if (devCtx) av_buffer_unref(&devCtx);
-                        continue;
-                    }
-                    hwDecCtx->hw_device_ctx = av_buffer_ref(devCtx);
-                    fferr = avcodec_open2(hwDecCtx, m_viddec, nullptr);
-                    if (fferr < 0)
-                    {
-                        avcodec_free_context(&hwDecCtx);
-                        av_buffer_unref(&devCtx);
-                        continue;
-                    }
-                    break;
-                }
-            }
-        }
-
-        m_viddecDevType = hwDevType;
-        m_viddecCtx = hwDecCtx;
-        m_viddecHwDevCtx = devCtx;
-        m_logger->Log(DEBUG) << "Use hardware device type '" << av_hwdevice_get_type_name(m_viddecDevType) << "'." << endl;
-        m_logger->Log(DEBUG) << "Video decoder(HW) '" << m_viddecCtx->codec->name << "' opened." << endl;
         return true;
     }
 
@@ -1482,7 +1355,7 @@ private:
         const auto outClrfmt = m_frmCvt.GetOutColorFormat();
         const auto outDtype = m_frmCvt.GetOutDataType();
         const auto rszInterp = m_frmCvt.GetResizeInterpolateMode();
-        if (!hImgsqReader->ConfigVideoReader(outW, outH, outClrfmt, outDtype, rszInterp))
+        if (!hImgsqReader->ConfigVideoReader(outW, outH, outClrfmt, outDtype, rszInterp, HwaccelManager::GetDefaultInstance()))
         {
             ostringstream oss; oss << "FAILED to configure image-sequence reader! Error is '" << hImgsqReader->GetError() << "'.";
             m_errMsg = oss.str();
@@ -2461,15 +2334,10 @@ private:
 
     AVFormatContext* m_avfmtCtx{nullptr};
     int m_vidStmIdx{-1};
-    int m_audStmIdx{-1};
     AVStream* m_vidStream{nullptr};
-    AVCodecPtr m_viddec{nullptr};
     AVCodecContext* m_viddecCtx{nullptr};
     bool m_vidPreferUseHw{true};
-    AVHWDeviceType m_vidUseHwType{AV_HWDEVICE_TYPE_NONE};
-    AVPixelFormat m_vidHwPixFmt{AV_PIX_FMT_NONE};
-    AVHWDeviceType m_viddecDevType{AV_HWDEVICE_TYPE_NONE};
-    AVBufferRef* m_viddecHwDevCtx{nullptr};
+    FFUtils::OpenVideoDecoderOptions m_viddecOpenOpts;
 
     // demuxing thread
     thread m_demuxThread;
@@ -2548,22 +2416,4 @@ ALogger* GetLogger()
     return Logger::GetLogger("Snapshot");
 }
 }
-}
-
-static AVPixelFormat get_hw_format(AVCodecContext *ctx, const AVPixelFormat *pix_fmts)
-{
-    MediaCore::Snapshot::Generator_Impl* ms = reinterpret_cast<MediaCore::Snapshot::Generator_Impl*>(ctx->opaque);
-    const AVPixelFormat *p;
-    AVPixelFormat candidateSwfmt = AV_PIX_FMT_NONE;
-    for (p = pix_fmts; *p != AV_PIX_FMT_NONE; p++) {
-        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(*p);
-        if (!(desc->flags & AV_PIX_FMT_FLAG_HWACCEL) && candidateSwfmt == AV_PIX_FMT_NONE)
-        {
-            // save this software format as candidate
-            candidateSwfmt = *p;
-        }
-        if (ms->CheckHwPixFmt(*p))
-            return *p;
-    }
-    return candidateSwfmt;
 }

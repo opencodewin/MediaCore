@@ -91,7 +91,7 @@ public:
         return true;
     }
 
-    bool ConfigVideoReader(uint32_t outWidth, uint32_t outHeight, ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp) override
+    bool ConfigVideoReader(uint32_t outWidth, uint32_t outHeight, ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp, HwaccelManager::Holder hHwaMgr) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_opened)
@@ -118,7 +118,7 @@ public:
         return true;
     }
 
-    bool ConfigVideoReader(float outWidthFactor, float outHeightFactor, ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp) override
+    bool ConfigVideoReader(float outWidthFactor, float outHeightFactor, ImColorFormat outClrfmt, ImDataType outDtype, ImInterpolateMode rszInterp, HwaccelManager::Holder hHwaMgr) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_opened)
