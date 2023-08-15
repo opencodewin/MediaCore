@@ -680,7 +680,7 @@ private:
         for (uint32_t i = 0; i < m_tracks.size(); i++)
             oss << "[in_" << i << "]";
         oss << "amix=inputs=" << m_tracks.size();
-#if (LIBAVFILTER_VERSION_MAJOR > 7) || (LIBAVFILTER_VERSION_MAJOR == 7) && (LIBAVFILTER_VERSION_MINOR > 110)
+#if (LIBAVFILTER_VERSION_MAJOR > 7) || (LIBAVFILTER_VERSION_MAJOR == 7) && (LIBAVFILTER_VERSION_MINOR > 105)
         oss << ":normalize=0";
 #else
         oss << ":sum=1";
