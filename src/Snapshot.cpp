@@ -150,6 +150,7 @@ public:
         m_hSeekPoints = nullptr;
         m_prepared = false;
         m_opened = false;
+        m_started = false;
 
         m_errMsg = "";
     }
@@ -319,32 +320,19 @@ public:
         double maxWndSize = GetMaxWindowSize();
         if (windowSize > maxWndSize)
             windowSize = maxWndSize;
-        if (m_snapWindowSize == windowSize && m_wndFrmCnt == frameCount && !forceRefresh)
+        if (m_setSnapWindowSize == windowSize && m_setWndFrmCnt == frameCount && !forceRefresh)
             return true;
 
-        WaitAllThreadsQuit();
-        FlushAllQueues();
-        if (m_viddecCtx)
-            avcodec_flush_buffers(m_viddecCtx);
+        m_setSnapWindowSize = windowSize;
+        m_setWndFrmCnt = frameCount;
+        if (forceRefresh) m_refreshSnapshots = true;
+        m_logger->Log(DEBUG) << ">>>> Config window: m_setSnapWindowSize=" << m_setSnapWindowSize << ", m_setWndFrmCnt=" << m_setWndFrmCnt << endl;
 
-        m_snapWindowSize = windowSize;
-        m_wndFrmCnt = frameCount;
-
-        if (m_prepared)
+        if (!m_started)
         {
-            CalcWindowVariables();
-            ResetGopDecodeTaskList();
-            for (auto& hViewer : m_viewers)
-            {
-                Viewer_Impl* viewer = dynamic_cast<Viewer_Impl*>(hViewer.get());
-                viewer->UpdateSnapwnd(viewer->GetCurrWindowPos(), true);
-            }
+            StartAllThreads();
+            m_started = true;
         }
-
-        StartAllThreads();
-
-        m_logger->Log(DEBUG) << ">>>> Config window: m_snapWindowSize=" << m_snapWindowSize << ", m_wndFrmCnt=" << m_wndFrmCnt
-            << ", m_vidMaxIndex=" << m_vidMaxIndex << ", m_maxCacheSize=" << m_maxCacheSize << ", m_prevWndCacheSize=" << m_prevWndCacheSize << endl;
         return true;
     }
 
@@ -685,7 +673,6 @@ private:
                     return false;
                 }
 
-                CalcWindowVariables();
                 ResetGopDecodeTaskList();
             }
         }
@@ -1704,6 +1691,7 @@ private:
             m_goptskPrepareList.clear();
         }
 
+        m_refreshSnapshots = true;
         UpdateGopDecodeTaskList();
     }
 
@@ -1714,6 +1702,25 @@ private:
             lock_guard<mutex> lk(m_viewerListLock);
             viewers = m_viewers;
         }
+
+        if (m_setSnapWindowSize != m_snapWindowSize || m_setWndFrmCnt != m_wndFrmCnt || m_refreshSnapshots)
+        {
+            for (auto& task : m_goptskPrepareList)
+                task->cancel = true;
+            m_goptskPrepareList.clear();
+
+            m_snapWindowSize = m_setSnapWindowSize;
+            m_wndFrmCnt = m_setWndFrmCnt;
+            m_refreshSnapshots = false;
+            CalcWindowVariables();
+
+            for (auto& hViewer : viewers)
+            {
+                Viewer_Impl* viewer = dynamic_cast<Viewer_Impl*>(hViewer.get());
+                viewer->UpdateSnapwnd(viewer->GetCurrWindowPos(), true);
+            }
+        }
+
         // Check if view window changed
         bool taskRangeChanged = false;
         for (auto& hViewer : viewers)
@@ -1806,6 +1813,25 @@ private:
             lock_guard<mutex> lk(m_viewerListLock);
             viewers = m_viewers;
         }
+
+        if (m_setSnapWindowSize != m_snapWindowSize || m_setWndFrmCnt != m_wndFrmCnt || m_refreshSnapshots)
+        {
+            for (auto& task : m_goptskPrepareList)
+                task->cancel = true;
+            m_goptskPrepareList.clear();
+
+            m_snapWindowSize = m_setSnapWindowSize;
+            m_wndFrmCnt = m_setWndFrmCnt;
+            m_refreshSnapshots = false;
+            CalcWindowVariables();
+
+            for (auto& hViewer : viewers)
+            {
+                Viewer_Impl* viewer = dynamic_cast<Viewer_Impl*>(hViewer.get());
+                viewer->UpdateSnapwnd(viewer->GetCurrWindowPos(), true);
+            }
+        }
+
         // Check if view window changed
         bool taskRangeChanged = false;
         for (auto& hViewer : viewers)
@@ -2192,6 +2218,7 @@ public:
 
         bool Seek(double pos) override
         {
+            lock_guard<recursive_mutex> lk(m_owner->m_apiLock);
             UpdateSnapwnd(pos);
             return true;
         }
@@ -2203,6 +2230,7 @@ public:
 
         bool GetSnapshots(double startPos, vector<Image>& snapshots) override
         {
+            lock_guard<recursive_mutex> lk(m_owner->m_apiLock);
             // AutoSection _as("GetSs");
             UpdateSnapwnd(startPos);
             auto res = m_owner->GetSnapshots(startPos, snapshots);
@@ -2359,6 +2387,7 @@ private:
     bool m_prepared{false};
     recursive_mutex m_apiLock;
     bool m_quit{false};
+    bool m_started{false};
 
     AVFormatContext* m_avfmtCtx{nullptr};
     int m_vidStmIdx{-1};
@@ -2381,8 +2410,9 @@ private:
     int64_t m_vidDurMts{0};
     int64_t m_vidFrmCnt{0};
     uint32_t m_vidMaxIndex;
-    double m_snapWindowSize{0};
-    double m_wndFrmCnt{0};
+    double m_snapWindowSize{0}, m_setSnapWindowSize{0};
+    double m_wndFrmCnt{0}, m_setWndFrmCnt{0};
+    bool m_refreshSnapshots{false};
     double m_vidfrmIntvMts{0};
     int64_t m_vidfrmIntvPts{0};
     int64_t m_vidfrmIntvPtsHalf{0};
