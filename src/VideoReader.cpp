@@ -901,8 +901,13 @@ private:
 
             // avframe -> ImMat
             double ts = (double)pos/1000;
-            if (!owner->m_pFrmCvt->ConvertImage(frmPtr.get(), vmat, ts))
-                owner->m_logger->Log(Error) << "AVFrameToImMatConverter::ConvertImage() FAILED at pos " << pos << "(" << pts << ")!" << endl;
+            {
+                bool isHwfrm = IsHwFrame(frmPtr.get());
+                if (isHwfrm) owner->m_hwDecCtxLock.lock();
+                if (!owner->m_pFrmCvt->ConvertImage(frmPtr.get(), vmat, ts))
+                    owner->m_logger->Log(Error) << "AVFrameToImMatConverter::ConvertImage() FAILED at pos " << pos << "(" << pts << ")!" << endl;
+                if (isHwfrm) owner->m_hwDecCtxLock.unlock();
+            }
             frmPtr = nullptr;
             isHwfrm = false;
             frmPtrInUse = false;
@@ -1304,6 +1309,7 @@ private:
                         if (IsHwFrame(pAvfrm))
                         {
                             frmPtr = SelfFreeAVFramePtr(pAvfrm, [this] (AVFrame* p) {
+                                lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
                                 av_frame_free(&p);
                                 m_pendingHwfrmCnt--;
                             });

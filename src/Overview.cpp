@@ -1072,6 +1072,7 @@ private:
                         }
                         if (bestMatchIter->img.empty())
                         {
+                            lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
                             if (!m_frmCvt.ConvertImage(frm, bestMatchIter->img, ts))
                                 m_logger->Log(Error) << "FAILED to convert AVFrame to ImGui::ImMat! Message is '" << m_frmCvt.GetError() << "'." << endl;
                         }

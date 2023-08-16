@@ -52,6 +52,8 @@ extern "C"
 using namespace std;
 using namespace Logger;
 
+#define DONOT_BUFFER_HWAVFRAME 1
+
 namespace MediaCore
 {
 namespace Snapshot
@@ -664,10 +666,14 @@ private:
                 if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res, false))
                 {
                     m_viddecCtx = res.decCtx;
+#if DONOT_BUFFER_HWAVFRAME
+                    m_hwDecCtxLock.TurnOff();
+#else
                     if (res.hwDevType == AV_HWDEVICE_TYPE_NONE)
                         m_hwDecCtxLock.TurnOff();
                     else
                         m_hwDecCtxLock.TurnOn();
+#endif
                     m_logger->Log(INFO) << "SnapshotGenerator for file '" << m_hParser->GetUrl() << "' opened video decoder '" << 
                         m_viddecCtx->codec->name << "'(" << (res.hwDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(res.hwDevType)) << ")." << endl;
                 }
@@ -979,6 +985,15 @@ private:
                     if (fferr == 0)
                     {
                         avfrm.pts = avfrm.best_effort_timestamp;
+#if DONOT_BUFFER_HWAVFRAME
+                        if (IsHwFrame(&avfrm))
+                        {
+                            AVFrame* pTmp = av_frame_clone(&avfrm);
+                            av_frame_unref(&avfrm);
+                            TransferHwFrameToSwFrame(&avfrm, pTmp);
+                            av_frame_free(&pTmp);
+                        }
+#endif
                         m_logger->Log(VERBOSE) << "<<< avcodec_receive_frame() pts=" << avfrm.pts << "(" << MillisecToString(CvtVidPtsToMts(avfrm.pts)) << ")." << endl;
                         avfrmLoaded = true;
                         idleLoop = false;
@@ -2093,12 +2108,9 @@ private:
         }
         av_frame_unref(avfrm);
         SelfFreeAVFramePtr frm(_avfrm, [this] (AVFrame* p) {
-            if (p)
-            {
-                lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
-                av_frame_free(&p);
-                m_pendingVidfrmCnt--;
-            }
+            lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
+            av_frame_free(&p);
+            m_pendingVidfrmCnt--;
         });
         m_pendingVidfrmCnt++;
 

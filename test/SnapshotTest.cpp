@@ -8,6 +8,7 @@
 #include "Snapshot.h"
 #include "FFUtils.h"
 #include "TextureManager.h"
+#include "HwaccelManager.h"
 #include "Logger.h"
 #include "DebugHelper.h"
 
@@ -64,6 +65,8 @@ static void MediaSnapshot_Initialize(void** handle)
     // g_ssgen->SetSnapshotResizeFactor(0.5f, 0.5f);
     g_ssgen->SetCacheFactor(3);
     g_ssvw1 = g_ssgen->CreateViewer(0);
+
+    HwaccelManager::GetDefaultInstance()->Init();
 }
 
 static void MediaSnapshot_Finalize(void** handle)

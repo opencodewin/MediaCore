@@ -15,6 +15,7 @@
 #include "AudioRender.h"
 #include "FFUtils.h"
 #include "TextureManager.h"
+#include "HwaccelManager.h"
 #include "Logger.h"
 #include "DebugHelper.h"
 
@@ -127,6 +128,8 @@ static void MediaReader_Initialize(void** handle)
     g_audrnd->OpenDevice(c_audioRenderSampleRate, c_audioRenderChannels, c_audioRenderFormat, g_pcmStream);
     if (g_dumpPcm)
         g_fpPcmFile = fopen("MediaReaderTest_PcmDump.pcm", "wb");
+
+    HwaccelManager::GetDefaultInstance()->Init();
 }
 
 static void MediaReader_Finalize(void** handle)
@@ -406,7 +409,8 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                     g_vidrdr->SetLogLevel(DEBUG);
                     g_vidrdr->EnableHwAccel(g_useHwAccel);
                     g_vidrdr->Open(g_mediaParser);
-                    g_vidrdr->ConfigVideoReader((uint32_t)g_imageDisplaySize.x, (uint32_t)g_imageDisplaySize.y, IM_CF_RGBA, IM_DT_INT8, IM_INTERPOLATE_AREA);
+                    g_vidrdr->ConfigVideoReader((uint32_t)g_imageDisplaySize.x, (uint32_t)g_imageDisplaySize.y,
+                            IM_CF_RGBA, IM_DT_INT8, IM_INTERPOLATE_AREA, HwaccelManager::GetDefaultInstance());
                     // g_vidrdr->ConfigVideoReader(1.0f, 1.0f);
                     if (playPos > 0)
                         g_vidrdr->SeekTo(playPos*1000);
