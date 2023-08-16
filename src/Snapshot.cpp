@@ -604,7 +604,7 @@ private:
         m_vidfrmIntvPts = av_rescale_q(1, av_inv_q(frameRate), m_vidTimebase);
         m_vidfrmIntvPtsHalf = m_vidfrmIntvPts/2;
         m_ssFrameRate = Ratio::IsValid(ssFrameRate) ? ssFrameRate : Ratio(frameRate.num, frameRate.den);
-        m_ssMinIntvMts = av_q2d(av_inv_q({ssFrameRate.num, ssFrameRate.den}))*1000.;
+        m_ssMinIntvMts = av_q2d(av_inv_q({m_ssFrameRate.num, m_ssFrameRate.den}))*1000.;
 
         if (m_useRszFactor)
         {
