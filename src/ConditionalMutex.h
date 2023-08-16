@@ -27,7 +27,7 @@ public:
     }
 
 private:
-    std::mutex m_mutex;
+    std::recursive_mutex m_mutex;
     bool m_isOn;
 };
 }

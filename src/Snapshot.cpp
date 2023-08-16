@@ -2091,9 +2091,11 @@ private:
             m_logger->Log(Error) << "FAILED to invoke 'av_frame_clone()' to allocate new AVFrame for SS!" << endl;
             return false;
         }
+        av_frame_unref(avfrm);
         SelfFreeAVFramePtr frm(_avfrm, [this] (AVFrame* p) {
             if (p)
             {
+                lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
                 av_frame_free(&p);
                 m_pendingVidfrmCnt--;
             }
@@ -2102,8 +2104,6 @@ private:
 
         DisplayData::Holder hDispData;
         auto ssIdxNxt = (int32_t)round((double)(frm->pts+m_vidfrmIntvPts)/m_ssIntvPts);
-        
-
         do {
             _Picture::Holder ss;
             if (hDispData)
