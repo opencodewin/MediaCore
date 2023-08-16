@@ -525,6 +525,7 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, ImGui::ImMat& vmat, double time
         return false;
     }
     bool isRgb = (desc->flags&AV_PIX_FMT_FLAG_RGB) > 0;
+    const bool isPlanar = (desc->flags&AV_PIX_FMT_FLAG_PLANAR) != 0;
 
     int bitDepth = desc->comp[0].depth;
     ImColorSpace color_space =  avfrm->colorspace == AVCOL_SPC_BT470BG ||
@@ -532,9 +533,12 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, ImGui::ImMat& vmat, double time
                                 avfrm->colorspace == AVCOL_SPC_BT470BG ? IM_CS_BT601 :
                                 avfrm->colorspace == AVCOL_SPC_BT709 ? IM_CS_BT709 :
                                 avfrm->colorspace == AVCOL_SPC_BT2020_NCL ||
-                                avfrm->colorspace == AVCOL_SPC_BT2020_CL ? IM_CS_BT2020 : IM_CS_BT709;
+                                avfrm->colorspace == AVCOL_SPC_BT2020_CL ? IM_CS_BT2020 :
+                                avfrm->colorspace == AVCOL_SPC_RGB ? IM_CS_SRGB :
+                                (avfrm->colorspace == AVCOL_SPC_UNSPECIFIED && isRgb) ? IM_CS_SRGB : IM_CS_BT709;
     ImColorRange color_range =  avfrm->color_range == AVCOL_RANGE_MPEG ? IM_CR_NARROW_RANGE :
-                                avfrm->color_range == AVCOL_RANGE_JPEG ? IM_CR_FULL_RANGE : IM_CR_NARROW_RANGE;
+                                avfrm->color_range == AVCOL_RANGE_JPEG ? IM_CR_FULL_RANGE :
+                                isRgb ? IM_CR_FULL_RANGE : IM_CR_NARROW_RANGE;
     ImColorFormat clrfmt = ConvertPixelFormatToColorFormat((AVPixelFormat)avfrm->format);
     if ((int)clrfmt < 0)
         return false;
@@ -561,14 +565,14 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, ImGui::ImMat& vmat, double time
     {
         int chWidth = width;
         int chHeight = height;
-        if ((desc->flags&AV_PIX_FMT_FLAG_RGB) == 0 && i > 0)
+        if (!isRgb && i > 0)
         {
             chWidth >>= desc->log2_chroma_w;
             chHeight >>= desc->log2_chroma_h;
         }
         if (desc->nb_components > i && desc->comp[i].plane == i)
         {
-            uint8_t* src_data = avfrm->data[i]+desc->comp[i].offset;
+            uint8_t* src_data = isRgb&&!isPlanar ? avfrm->data[i] : avfrm->data[i]+desc->comp[i].offset;
             uint8_t* dst_data;
             if (i < channel)
                 dst_data = (uint8_t*)mat_V.channel(i).data;
@@ -600,7 +604,7 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, ImGui::ImMat& vmat, double time
     return true;
 }
 
-bool ConvertAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat, double timestamp)
+bool MapAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat, double timestamp)
 {
     const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get((AVPixelFormat)avfrm->format);
     if (desc->nb_components <= 0 || desc->nb_components > 4)
@@ -618,15 +622,19 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat
                                 avfrm->colorspace == AVCOL_SPC_BT470BG ? IM_CS_BT601 :
                                 avfrm->colorspace == AVCOL_SPC_BT709 ? IM_CS_BT709 :
                                 avfrm->colorspace == AVCOL_SPC_BT2020_NCL ||
-                                avfrm->colorspace == AVCOL_SPC_BT2020_CL ? IM_CS_BT2020 : IM_CS_BT709;
+                                avfrm->colorspace == AVCOL_SPC_BT2020_CL ? IM_CS_BT2020 :
+                                avfrm->colorspace == AVCOL_SPC_RGB ? IM_CS_SRGB :
+                                (avfrm->colorspace == AVCOL_SPC_UNSPECIFIED && isRgb) ? IM_CS_SRGB : IM_CS_BT709;
     ImColorRange color_range =  avfrm->color_range == AVCOL_RANGE_MPEG ? IM_CR_NARROW_RANGE :
-                                avfrm->color_range == AVCOL_RANGE_JPEG ? IM_CR_FULL_RANGE : IM_CR_NARROW_RANGE;
+                                avfrm->color_range == AVCOL_RANGE_JPEG ? IM_CR_FULL_RANGE :
+                                isRgb ? IM_CR_FULL_RANGE : IM_CR_NARROW_RANGE;
     ImColorFormat clrfmt = ConvertPixelFormatToColorFormat((AVPixelFormat)avfrm->format);
     if ((int)clrfmt < 0)
         return false;
     
     ImColorFormat color_format = clrfmt;
-    const int linesize = avfrm->linesize[0] / (desc->comp[0].step > 0 ? desc->comp[0].step : 1);
+    const bool flipped = avfrm->linesize[0] < 0;
+    const int lineSizeInPixel = (flipped ? -avfrm->linesize[0] : avfrm->linesize[0]) / (desc->comp[0].step > 0 ? desc->comp[0].step : 1);
     const int width = avfrm->width;
     const int height = avfrm->height;
     int channel = ISNV12(avfrm->format) ? 2 : desc->nb_components;
@@ -635,7 +643,7 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat
     for (int i = 0; i < desc->nb_components; i++)
     {
         ImGui::ImMat mat_component;
-        int chLinesize = linesize;
+        int chLinesize = lineSizeInPixel;
         int chWidth = width;
         int chHeight = height;
         if (!isRgb && i > 0)
@@ -650,9 +658,11 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat
             chWidth <<= 1;
         }
         
-        if (desc->nb_components > i && desc->comp[i].plane == i)
+        if (desc->comp[i].plane == i)
         {
-            uint8_t* src_data = avfrm->data[i]+desc->comp[i].offset;
+            uint8_t* src_data = isRgb&&!isPlanar ? avfrm->data[i] : avfrm->data[i]+desc->comp[i].offset;
+            if (flipped)
+                src_data += avfrm->linesize[i]*(chHeight-1);
             if (!isRgb)
             {
                 if (i < channel)
@@ -667,7 +677,10 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat
                 if (isPlanar)
                     mat_component.create_type(chWidth, chHeight, 1, src_data, dataType);
                 else
+                {
                     mat_component.create_type(chWidth, chHeight, desc->nb_components, src_data, dataType);
+                    mat_component.elempack = desc->nb_components;
+                }
                 vmat.push_back(mat_component);
             }
         }
@@ -887,7 +900,7 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
     {
 #if IMGUI_VULKAN_SHADER
 #if YUV_CONVERT_PLANAR
-        std::vector<ImGui::ImMat> inMat;
+        std::vector<ImGui::ImMat> inMats;
         SelfFreeAVFramePtr swfrm;
         if (IsHwFrame(avfrm))
         {
@@ -901,20 +914,34 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
                 return false;
             avfrm = swfrm.get();
         }
-        if (!ConvertAVFrameToImMat(avfrm, inMat, timestamp))
+
+        const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get((AVPixelFormat)avfrm->format);
+        const bool isRgb = (desc->flags&AV_PIX_FMT_FLAG_RGB) != 0;
+        const bool flipped = avfrm->linesize[0] < 0;
+        if (isRgb && flipped)
         {
-            m_errMsg = "Failed to invoke 'ConvertAVFrameToImMat()'!";
+            ImGui::ImMat rgbMat;
+            if (!ConvertAVFrameToImMat(avfrm, rgbMat, timestamp))
+            {
+                m_errMsg = "Failed to invoke 'MapAVFrameToImMat()'!";
+                return false;
+            }
+            inMats.push_back(rgbMat);
+        }
+        else if (!MapAVFrameToImMat(avfrm, inMats, timestamp))
+        {
+            m_errMsg = "Failed to invoke 'MapAVFrameToImMat()'!";
             return false;
         }
         // if AVFrame contains a packed rgb picture, return directly
-        if (inMat[0].color_format == IM_CF_ABGR || inMat[0].color_format == IM_CF_ARGB ||
-            inMat[0].color_format == IM_CF_RGBA || inMat[0].color_format == IM_CF_BGRA)
+        if (inMats[0].color_format == IM_CF_ABGR || inMats[0].color_format == IM_CF_ARGB ||
+            inMats[0].color_format == IM_CF_RGBA || inMats[0].color_format == IM_CF_BGRA)
         {
-            outMat = inMat[0];
+            outMat = inMats[0];
             outMat.time_stamp = timestamp;
             return false;
         }
-        if (IM_ISYUV(inMat[0].color_format))
+        if (IM_ISYUV(inMats[0].color_format))
         {
             // YUV -> RGB
             ImGui::VkMat rgbMat;
@@ -922,7 +949,7 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
             rgbMat.color_format = IM_CF_ABGR;
             rgbMat.w = m_outWidth;
             rgbMat.h = m_outHeight;
-            if (m_imgClrCvt->YUV2RGBA(inMat[0], inMat[1], inMat.size() > 2 ? inMat[2] : ImGui::ImMat(), rgbMat, m_resizeInterp) < 0.f)
+            if (m_imgClrCvt->YUV2RGBA(inMats[0], inMats[1], inMats.size() > 2 ? inMats[2] : ImGui::ImMat(), rgbMat, m_resizeInterp) < 0.f)
             {
                 m_errMsg = m_imgClrCvt->GetError();
                 return false;
@@ -935,19 +962,19 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
             else
                 outMat = rgbMat;
             outMat.time_stamp = timestamp;
-            outMat.rate = inMat[0].rate;
-            outMat.flags = inMat[0].flags;
-            outMat.duration = inMat[0].duration;
+            outMat.rate = inMats[0].rate;
+            outMat.flags = inMats[0].flags;
+            outMat.duration = inMats[0].duration;
         }
         else
         {
             outMat = m_outputCpuMat ? ImGui::ImMat() : ImGui::VkMat();
             outMat.color_format = IM_CF_ABGR;
             outMat.type = m_outDataType;
-            if (inMat[0].w != m_outWidth || inMat[0].h != m_outHeight)
-                m_imgRsz->Resize(inMat[0], outMat, (float)m_outWidth/inMat[0].w, (float)m_outHeight/inMat[0].h, m_resizeInterp);
+            if (inMats[0].w != m_outWidth || inMats[0].h != m_outHeight)
+                m_imgRsz->Resize(inMats[0], outMat, (float)m_outWidth/inMats[0].w, (float)m_outHeight/inMats[0].h, m_resizeInterp);
             else
-                m_imgClrCvt->Conv(inMat[0], outMat);
+                m_imgClrCvt->Conv(inMats[0], outMat);
             outMat.time_stamp = timestamp;
         }
 #else // YUV_CONVERT_NON_PLANAR

@@ -72,7 +72,7 @@ MEDIACORE_API AVPixelFormat GetAVPixelFormatByName(const std::string& name);
 MEDIACORE_API ImColorFormat ConvertPixelFormatToColorFormat(AVPixelFormat pixfmt);
 MEDIACORE_API ImDataType GetDataTypeFromSampleFormat(AVSampleFormat smpfmt);
 MEDIACORE_API bool ConvertAVFrameToImMat(const AVFrame* avfrm, ImGui::ImMat& vmat, double timestamp);
-MEDIACORE_API bool ConvertAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat, double timestamp);
+MEDIACORE_API bool MapAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat, double timestamp);
 MEDIACORE_API bool ConvertImMatToAVFrame(const ImGui::ImMat& vmat, AVFrame* avfrm, int64_t pts);
 
 class MEDIACORE_API AVFrameToImMatConverter
