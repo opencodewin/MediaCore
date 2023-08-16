@@ -734,10 +734,14 @@ private:
         if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res))
         {
             m_viddecCtx = res.decCtx;
+#if DONOT_CACHE_HWAVFRAME
+            m_hwDecCtxLock.TurnOff();
+#else
             if (res.hwDevType == AV_HWDEVICE_TYPE_NONE)
                 m_hwDecCtxLock.TurnOff();
             else
                 m_hwDecCtxLock.TurnOn();
+#endif
             m_logger->Log(INFO) << "Opened video decoder '" << 
                 m_viddecCtx->codec->name << "'(" << (res.hwDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(res.hwDevType)) << ")"
                 << " for media '" << m_hParser->GetUrl() << "'." << endl;
@@ -1304,6 +1308,15 @@ private:
                     }
                     else
                     {
+#if DONOT_CACHE_HWAVFRAME
+                        if (IsHwFrame(pAvfrm))
+                        {
+                            AVFrame* pTmp = av_frame_clone(pAvfrm);
+                            av_frame_unref(pAvfrm);
+                            TransferHwFrameToSwFrame(pAvfrm, pTmp);
+                            av_frame_free(&pTmp);
+                        }
+#endif
                         SelfFreeAVFramePtr frmPtr;
                         bool isHwfrm = false;
                         if (IsHwFrame(pAvfrm))

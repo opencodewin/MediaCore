@@ -47,6 +47,8 @@ typedef const AVCodec*      AVCodecPtr;
 typedef AVCodec*            AVCodecPtr;
 #endif
 
+#define DONOT_CACHE_HWAVFRAME 1
+
 extern const AVRational MILLISEC_TIMEBASE;
 extern const AVRational MICROSEC_TIMEBASE;
 extern const AVRational FF_AV_TIMEBASE;

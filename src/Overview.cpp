@@ -504,10 +504,14 @@ private:
                 if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res))
                 {
                     m_viddecCtx = res.decCtx;
+#if DONOT_CACHE_HWAVFRAME
+                    m_hwDecCtxLock.TurnOff();
+#else
                     if (res.hwDevType == AV_HWDEVICE_TYPE_NONE)
                         m_hwDecCtxLock.TurnOff();
                     else
                         m_hwDecCtxLock.TurnOn();
+#endif
                     openVideoFailed = false;
                 }
                 else
@@ -903,6 +907,15 @@ private:
                     if (fferr == 0)
                     {
                         m_logger->Log(DEBUG) << "<<< Get video frame pts=" << avfrm.pts << "(" << MillisecToString(av_rescale_q(avfrm.pts, m_vidAvStm->time_base, MILLISEC_TIMEBASE)) << ")." << endl;
+#if DONOT_CACHE_HWAVFRAME
+                        if (IsHwFrame(&avfrm))
+                        {
+                            AVFrame* pTmp = av_frame_clone(&avfrm);
+                            av_frame_unref(&avfrm);
+                            TransferHwFrameToSwFrame(&avfrm, pTmp);
+                            av_frame_free(&pTmp);
+                        }
+#endif
                         avfrmLoaded = true;
                         idleLoop = idleLoop2 = false;
                     }

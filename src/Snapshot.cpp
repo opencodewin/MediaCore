@@ -52,8 +52,6 @@ extern "C"
 using namespace std;
 using namespace Logger;
 
-#define DONOT_BUFFER_HWAVFRAME 1
-
 namespace MediaCore
 {
 namespace Snapshot
@@ -654,7 +652,7 @@ private:
                 if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res, false))
                 {
                     m_viddecCtx = res.decCtx;
-#if DONOT_BUFFER_HWAVFRAME
+#if DONOT_CACHE_HWAVFRAME
                     m_hwDecCtxLock.TurnOff();
 #else
                     if (res.hwDevType == AV_HWDEVICE_TYPE_NONE)
@@ -972,7 +970,7 @@ private:
                     if (fferr == 0)
                     {
                         avfrm.pts = avfrm.best_effort_timestamp;
-#if DONOT_BUFFER_HWAVFRAME
+#if DONOT_CACHE_HWAVFRAME
                         if (IsHwFrame(&avfrm))
                         {
                             AVFrame* pTmp = av_frame_clone(&avfrm);
