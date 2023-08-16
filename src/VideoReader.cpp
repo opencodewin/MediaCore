@@ -26,6 +26,7 @@
 #include "MediaReader.h"
 #include "FFUtils.h"
 #include "SysUtils.h"
+#include "ConditionalMutex.h"
 #include "DebugHelper.h"
 extern "C"
 {
@@ -733,9 +734,12 @@ private:
         if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res))
         {
             m_viddecCtx = res.decCtx;
-            AVHWDeviceType hwDevType = res.hwDevType;
+            if (res.hwDevType == AV_HWDEVICE_TYPE_NONE)
+                m_hwDecCtxLock.TurnOff();
+            else
+                m_hwDecCtxLock.TurnOn();
             m_logger->Log(INFO) << "Opened video decoder '" << 
-                m_viddecCtx->codec->name << "'(" << (hwDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(hwDevType)) << ")"
+                m_viddecCtx->codec->name << "'(" << (res.hwDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(res.hwDevType)) << ")"
                 << " for media '" << m_hParser->GetUrl() << "'." << endl;
         }
         else
@@ -1227,6 +1231,7 @@ private:
                         if (hVpkt->pktPtr)
                         {
                             m_logger->Log(VERBOSE) << "--> Seek[2]: Decoder reset. pts=" << hVpkt->pktPtr->pts << "." << endl;
+                            lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
                             avcodec_flush_buffers(m_viddecCtx);
                             decoderEof = false;
                             nullPktSent = false;
@@ -1248,6 +1253,7 @@ private:
                     else if (!nullPktSent)
                     {
                         m_logger->Log(VERBOSE) << "======= Send video packet: pts=(null) [2]" << endl;
+                        lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
                         avcodec_send_packet(m_viddecCtx, nullptr);
                         nullPktSent = true;
                     }
@@ -1255,6 +1261,7 @@ private:
                 else if (decoderEof)
                 {
                     m_logger->Log(VERBOSE) << ">>> Decoder reset. pts=" << hVpkt->pktPtr->pts << "." << endl;
+                    lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
                     avcodec_flush_buffers(m_viddecCtx);
                     decoderEof = false;
                     nullPktSent = false;
@@ -1276,7 +1283,10 @@ private:
             if (doDecode)
             {
                 AVFrame* pAvfrm = av_frame_alloc();
-                fferr = avcodec_receive_frame(m_viddecCtx, pAvfrm);
+                {
+                    lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
+                    fferr = avcodec_receive_frame(m_viddecCtx, pAvfrm);
+                }
                 if (fferr == 0)
                 {
                     m_logger->Log(VERBOSE) << "========== Got video frame: pts=" << pAvfrm->pts << ", bets=" << pAvfrm->best_effort_timestamp
@@ -1365,7 +1375,10 @@ private:
             {
                 AVPacket* pPkt = hVpkt->pktPtr ? hVpkt->pktPtr.get() : nullptr;
                 if (!pPkt) nullPktSent = true;
-                fferr = avcodec_send_packet(m_viddecCtx, pPkt);
+                {
+                    lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
+                    fferr = avcodec_send_packet(m_viddecCtx, pPkt);
+                }
                 if (fferr != AVERROR(EAGAIN))
                 {
                     m_logger->Log(VERBOSE) << "======= Send video packet: pts=";
@@ -1471,6 +1484,7 @@ private:
                 if (!m_quitThread && pVf->frmPtr)
                 {
                     SelfFreeAVFramePtr swfrm = AllocSelfFreeAVFramePtr();
+                    lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
                     if (!TransferHwFrameToSwFrame(swfrm.get(), pVf->frmPtr.get()))
                     {
                         m_logger->Log(Error) << "TransferHwFrameToSwFrame() FAILED at pos " << pVf->pos << "(" << pVf->pts << ")! Discard this frame." << endl;
@@ -1536,6 +1550,7 @@ private:
     mutex m_vfrmQLock;
     atomic_int32_t m_pendingHwfrmCnt{0};
     int32_t m_maxPendingHwfrmCnt{2};
+    ConditionalMutex m_hwDecCtxLock;
     // convert hw frame to sw frame thread
     thread m_cnvMatThread;
     bool m_cnvThdRunning{false};

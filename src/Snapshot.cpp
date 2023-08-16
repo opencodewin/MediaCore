@@ -32,6 +32,7 @@
 #include "HwaccelManager.h"
 #include "FFUtils.h"
 #include "SysUtils.h"
+#include "ConditionalMutex.h"
 #include "DebugHelper.h"
 extern "C"
 {
@@ -663,6 +664,10 @@ private:
                 if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res, false))
                 {
                     m_viddecCtx = res.decCtx;
+                    if (res.hwDevType == AV_HWDEVICE_TYPE_NONE)
+                        m_hwDecCtxLock.TurnOff();
+                    else
+                        m_hwDecCtxLock.TurnOn();
                     m_logger->Log(INFO) << "SnapshotGenerator for file '" << m_hParser->GetUrl() << "' opened video decoder '" << 
                         m_viddecCtx->codec->name << "'(" << (res.hwDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(res.hwDevType)) << ")." << endl;
                 }
@@ -946,6 +951,7 @@ private:
                     else
                     {
                         m_logger->Log(DEBUG) << ">>>--->>> Sending NULL ptr to video decoder <<<---<<<" << endl;
+                        lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
                         avcodec_send_packet(m_viddecCtx, nullptr);
                         sentNullPacket = true;
                     }
@@ -954,6 +960,7 @@ private:
 
             if (needResetDecoder)
             {
+                lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
                 avcodec_flush_buffers(m_viddecCtx);
                 needResetDecoder = false;
                 sentNullPacket = false;
@@ -964,7 +971,11 @@ private:
             do{
                 if (!avfrmLoaded)
                 {
-                    int fferr = avcodec_receive_frame(m_viddecCtx, &avfrm);
+                    int fferr;
+                    {
+                        lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
+                        fferr = avcodec_receive_frame(m_viddecCtx, &avfrm);
+                    }
                     if (fferr == 0)
                     {
                         avfrm.pts = avfrm.best_effort_timestamp;
@@ -1039,7 +1050,11 @@ private:
                 {
                     bool popAvpkt = false;
                     AVPacket* avpkt = currTask->avpktQ.front();
-                    int fferr = avcodec_send_packet(m_viddecCtx, avpkt);
+                    int fferr;
+                    {
+                        lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
+                        fferr = avcodec_send_packet(m_viddecCtx, avpkt);
+                    }
                     if (fferr == 0)
                     {
                         m_logger->Log(VERBOSE) << ">>> avcodec_send_packet() pts=" << avpkt->pts << "(" << MillisecToString(CvtVidPtsToMts(avpkt->pts)) << ")." << endl;
@@ -1108,6 +1123,7 @@ private:
                     }
                     if (ss->frm)
                     {
+                        lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
                         double ts = (double)CvtVidPtsToMts(ss->frm->pts)/1000.;
                         if (!m_frmCvt.ConvertImage(ss->frm.get(), ss->img->mImgMat, ts))
                         {
@@ -2338,6 +2354,7 @@ private:
     AVCodecContext* m_viddecCtx{nullptr};
     bool m_vidPreferUseHw{true};
     FFUtils::OpenVideoDecoderOptions m_viddecOpenOpts;
+    ConditionalMutex m_hwDecCtxLock;
 
     // demuxing thread
     thread m_demuxThread;

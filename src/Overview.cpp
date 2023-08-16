@@ -25,6 +25,7 @@
 #include "HwaccelManager.h"
 #include "FFUtils.h"
 #include "SysUtils.h"
+#include "ConditionalMutex.h"
 extern "C"
 {
     #include "libavutil/avutil.h"
@@ -503,6 +504,10 @@ private:
                 if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res))
                 {
                     m_viddecCtx = res.decCtx;
+                    if (res.hwDevType == AV_HWDEVICE_TYPE_NONE)
+                        m_hwDecCtxLock.TurnOff();
+                    else
+                        m_hwDecCtxLock.TurnOn();
                     openVideoFailed = false;
                 }
                 else
@@ -890,7 +895,11 @@ private:
                 bool idleLoop2 = true;
                 if (!avfrmLoaded)
                 {
-                    int fferr = avcodec_receive_frame(m_viddecCtx, &avfrm);
+                    int fferr;
+                    {
+                        lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
+                        fferr = avcodec_receive_frame(m_viddecCtx, &avfrm);
+                    }
                     if (fferr == 0)
                     {
                         m_logger->Log(DEBUG) << "<<< Get video frame pts=" << avfrm.pts << "(" << MillisecToString(av_rescale_q(avfrm.pts, m_vidAvStm->time_base, MILLISEC_TIMEBASE)) << ")." << endl;
@@ -937,7 +946,11 @@ private:
                 if (!m_vidpktQ.empty())
                 {
                     AVPacket* avpkt = m_vidpktQ.front();
-                    int fferr = avcodec_send_packet(m_viddecCtx, avpkt);
+                    int fferr;
+                    {
+                        lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
+                        fferr = avcodec_send_packet(m_viddecCtx, avpkt);
+                    }
                     if (fferr == 0)
                     {
                         // m_logger->Log(DEBUG) << ">>> Send video packet pts=" << avpkt->pts << "(" << MillisecToString(av_rescale_q(avpkt->pts, m_vidAvStm->time_base, MILLISEC_TIMEBASE))
@@ -963,6 +976,7 @@ private:
                 else if (m_demuxVidEof)
                 {
                     m_logger->Log(VERBOSE) << "---------------------------> send nullptr <--------------------------" << endl;
+                    lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
                     avcodec_send_packet(m_viddecCtx, nullptr);
                     inputEof = true;
                 }
@@ -1031,6 +1045,7 @@ private:
                 });
                 if (iter != m_snapshots.end())
                 {
+                    lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
                     if (!m_frmCvt.ConvertImage(frm, iter->img, ts))
                         m_logger->Log(Error) << "FAILED to convert AVFrame to ImGui::ImMat! Message is '" << m_frmCvt.GetError() << "'." << endl;
                     // else
@@ -1724,6 +1739,7 @@ private:
     int m_vidfrmQMaxSize{4};
     mutex m_vidfrmQLock;
     bool m_viddecEof{false};
+    ConditionalMutex m_hwDecCtxLock;
     // generate snapshots thread
     thread m_genSsThread;
     bool m_genSsEof{false};
