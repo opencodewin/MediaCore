@@ -1937,6 +1937,7 @@ static bool _OpenHwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codec
             useHardwareType = av_hwdevice_find_type_by_name((*tryHwDevIter)->deviceType.c_str());
     }
     do {
+        bool openSuccess = false;
         for (int i = 0; ; i++)
         {
             const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
@@ -1977,9 +1978,12 @@ static bool _OpenHwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codec
                     hwDecCtx = nullptr;
                     continue;
                 }
+                openSuccess = true;
                 break;
             }
         }
+        if (openSuccess)
+            break;
         if (!tryHwDevList.empty() && tryHwDevIter != tryHwDevList.end())
         {
             tryHwDevIter++;
@@ -1988,12 +1992,10 @@ static bool _OpenHwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codec
             if (tryHwDevIter != tryHwDevList.end())
                 useHardwareType = av_hwdevice_find_type_by_name((*tryHwDevIter)->deviceType.c_str());
             else
-                useHardwareType = AV_HWDEVICE_TYPE_NONE;
+                break;
         }
         else
-        {
-            useHardwareType = AV_HWDEVICE_TYPE_NONE;
-        }
+            break;
     } while (useHardwareType != AV_HWDEVICE_TYPE_NONE);
 
     if (!hwDecCtx)
