@@ -19,9 +19,10 @@ struct HwaccelManager
     {
         std::string deviceType;
         bool usable;
-        int priority;
     };
-    virtual std::vector<const DeviceInfo*> GetDevices() const = 0;
+    virtual std::vector<const DeviceInfo*> GetDevices() = 0;
+    virtual void IncreaseDecoderInstanceCount(const std::string& devType) = 0;
+    virtual void DecreaseDecoderInstanceCount(const std::string& devType) = 0;
 
     virtual void SetLogLevel(Logger::Level l) = 0;
     virtual std::string GetError() const = 0;

@@ -128,6 +128,11 @@ public:
             avcodec_free_context(&m_viddecCtx);
             m_viddecCtx = nullptr;
         }
+        if (m_viddecDevType != AV_HWDEVICE_TYPE_NONE)
+        {
+            m_viddecOpenOpts.hHwaMgr->DecreaseDecoderInstanceCount(av_hwdevice_get_type_name(m_viddecDevType));
+            m_viddecDevType = AV_HWDEVICE_TYPE_NONE;
+        }
         if (m_avfmtCtx)
         {
             avformat_close_input(&m_avfmtCtx);
@@ -652,6 +657,9 @@ private:
                 if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res, false))
                 {
                     m_viddecCtx = res.decCtx;
+                    m_viddecDevType = res.hwDevType;
+                    if (m_viddecDevType != AV_HWDEVICE_TYPE_NONE)
+                        m_viddecOpenOpts.hHwaMgr->IncreaseDecoderInstanceCount(av_hwdevice_get_type_name(m_viddecDevType));
 #if DONOT_CACHE_HWAVFRAME
                     m_hwDecCtxLock.TurnOff();
 #else
@@ -2392,6 +2400,7 @@ private:
     AVStream* m_vidStream{nullptr};
     AVCodecContext* m_viddecCtx{nullptr};
     bool m_vidPreferUseHw{true};
+    AVHWDeviceType m_viddecDevType{AV_HWDEVICE_TYPE_NONE};
     FFUtils::OpenVideoDecoderOptions m_viddecOpenOpts;
     ConditionalMutex m_hwDecCtxLock;
 

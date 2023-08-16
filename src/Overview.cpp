@@ -504,6 +504,9 @@ private:
                 if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res))
                 {
                     m_viddecCtx = res.decCtx;
+                    m_viddecDevType = res.hwDevType;
+                    if (m_viddecDevType != AV_HWDEVICE_TYPE_NONE)
+                        m_viddecOpenOpts.hHwaMgr->IncreaseDecoderInstanceCount(av_hwdevice_get_type_name(m_viddecDevType));
 #if DONOT_CACHE_HWAVFRAME
                     m_hwDecCtxLock.TurnOff();
 #else
@@ -1655,13 +1658,12 @@ private:
             avcodec_free_context(&m_viddecCtx);
             m_viddecCtx = nullptr;
         }
-        if (m_viddecHwDevCtx)
+        if (m_viddecDevType != AV_HWDEVICE_TYPE_NONE)
         {
-            av_buffer_unref(&m_viddecHwDevCtx);
-            m_viddecHwDevCtx = nullptr;
+            m_viddecOpenOpts.hHwaMgr->DecreaseDecoderInstanceCount(av_hwdevice_get_type_name(m_viddecDevType));
+            m_viddecDevType = AV_HWDEVICE_TYPE_NONE;
         }
         m_vidHwPixFmt = AV_PIX_FMT_NONE;
-        m_viddecDevType = AV_HWDEVICE_TYPE_NONE;
         if (m_avfmtCtx)
         {
             avformat_close_input(&m_avfmtCtx);
@@ -1730,7 +1732,6 @@ private:
     AVCodecContext* m_auddecCtx{nullptr};
     AVPixelFormat m_vidHwPixFmt{AV_PIX_FMT_NONE};
     AVHWDeviceType m_viddecDevType{AV_HWDEVICE_TYPE_NONE};
-    AVBufferRef* m_viddecHwDevCtx{nullptr};
     SwrContext* m_swrCtx{nullptr};
     AVSampleFormat m_swrOutSmpfmt{AV_SAMPLE_FMT_FLTP};
     int m_swrOutSampleRate;

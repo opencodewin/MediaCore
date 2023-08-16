@@ -4,6 +4,8 @@
 #include <thread>
 #include <chrono>
 #include <algorithm>
+#include <atomic>
+#include <functional>
 #include "HwaccelManager.h"
 
 extern "C"
@@ -27,6 +29,7 @@ public:
 
     bool Init() override
     {
+        lock_guard<mutex> lk(m_apiLock);
         list<CheckHwaccelThreadContext> checkTaskContexts;
         AVHWDeviceType hwDevType = AV_HWDEVICE_TYPE_NONE;
         do {
@@ -50,28 +53,80 @@ public:
                 if (iter == checkTaskContexts.end())
                     break;
             }
+            m_isVaapiUsable = false;
+            m_isCudaUsable = false;
             for (auto& ctx : checkTaskContexts)
             {
-                m_devices.push_back(ctx.devInfo);
+                if (ctx.devInfo.usable)
+                {
+                    if (ctx.hwDevType == AV_HWDEVICE_TYPE_VAAPI)
+                        m_isVaapiUsable = true;
+                    else if (ctx.hwDevType == AV_HWDEVICE_TYPE_CUDA)
+                        m_isCudaUsable = true;
+                }
+                m_devices.emplace_back(ctx.hwDevType, ctx.devInfo, ctx.basePriority);
                 if (ctx.checkThread.joinable())
                     ctx.checkThread.join();
             }
             checkTaskContexts.clear();
         }
 
-        m_devices.sort([] (auto& a, auto& b) {
-            return a.priority < b.priority;
-        });
+        m_devices.sort(DEVICE_INFO_COMPARATOR);
         return true;
     }
 
-    vector<const DeviceInfo*> GetDevices() const override
+    vector<const DeviceInfo*> GetDevices() override
     {
+        lock_guard<mutex> lk(m_apiLock);
         vector<const DeviceInfo*> result;
         result.reserve(m_devices.size());
         for (auto& devinfo : m_devices)
-            result.push_back(&devinfo);
+            result.push_back(&devinfo.commInfo);
         return std::move(result);
+    }
+
+    void IncreaseDecoderInstanceCount(const std::string& devType) override
+    {
+        lock_guard<mutex> lk(m_apiLock);
+        auto hwDevType = av_hwdevice_find_type_by_name(devType.c_str());
+        if (hwDevType == AV_HWDEVICE_TYPE_NONE)
+        {
+            m_logger->Log(WARN) << "UNKNOWN hardware device type '" << devType << "'!" << endl;
+            return;
+        }
+        auto iter = find_if(m_devices.begin(), m_devices.end(), [hwDevType] (auto& devInfo) {
+            return hwDevType == devInfo.hwDevType;
+        });
+        if (iter == m_devices.end())
+        {
+            m_logger->Log(WARN) << "CANNOT find hardware device type '" << devType << "' in the device list!" << endl;
+            return;
+        }
+        iter->decoderCount++;
+        iter->UpdateDynamicPriority();
+        m_devices.sort(DEVICE_INFO_COMPARATOR);
+    }
+
+    void DecreaseDecoderInstanceCount(const std::string& devType) override
+    {
+        lock_guard<mutex> lk(m_apiLock);
+        auto hwDevType = av_hwdevice_find_type_by_name(devType.c_str());
+        if (hwDevType == AV_HWDEVICE_TYPE_NONE)
+        {
+            m_logger->Log(WARN) << "UNKNOWN hardware device type '" << devType << "'!" << endl;
+            return;
+        }
+        auto iter = find_if(m_devices.begin(), m_devices.end(), [hwDevType] (auto& devInfo) {
+            return hwDevType == devInfo.hwDevType;
+        });
+        if (iter == m_devices.end())
+        {
+            m_logger->Log(WARN) << "CANNOT find hardware device type '" << devType << "' in the device list!" << endl;
+            return;
+        }
+        iter->decoderCount--;
+        iter->UpdateDynamicPriority();
+        m_devices.sort(DEVICE_INFO_COMPARATOR);
     }
 
     void SetLogLevel(Logger::Level l) override
@@ -89,38 +144,39 @@ public:
     {
         AVHWDeviceType hwDevType;
         DeviceInfo devInfo;
+        int basePriority;
         thread checkThread;
         bool done{false};
     };
 
     void CheckHwaccelUsableProc(CheckHwaccelThreadContext* ctx)
     {
-        int priority;
+        int basePriority;
         switch (ctx->hwDevType)
         {
         case AV_HWDEVICE_TYPE_CUDA:
+        case AV_HWDEVICE_TYPE_VAAPI:
         case AV_HWDEVICE_TYPE_VIDEOTOOLBOX:
-            priority = 0;
+            basePriority = 0;
             break;
         case AV_HWDEVICE_TYPE_QSV:
         case AV_HWDEVICE_TYPE_VULKAN:
-            priority = 1;
+            basePriority = 1;
             break;
-        case AV_HWDEVICE_TYPE_VAAPI:
         case AV_HWDEVICE_TYPE_D3D11VA:
         case AV_HWDEVICE_TYPE_MEDIACODEC:
-            priority = 2;
+            basePriority = 2;
             break;
         case AV_HWDEVICE_TYPE_VDPAU:
         case AV_HWDEVICE_TYPE_DXVA2:
-            priority = 3;
+            basePriority = 3;
             break;
         case AV_HWDEVICE_TYPE_DRM:
         case AV_HWDEVICE_TYPE_OPENCL:
-            priority = 9;
+            basePriority = 9;
             break;
         default:
-            priority = 16;
+            basePriority = 16;
             break;
         }
         string typeName = string(av_hwdevice_get_type_name(ctx->hwDevType));
@@ -138,12 +194,40 @@ public:
         }
         if (pDevCtx)
             av_buffer_unref(&pDevCtx);
-        ctx->devInfo = {typeName, usable, priority};
+        ctx->devInfo = {typeName, usable};
+        ctx->basePriority = basePriority;
         ctx->done = true;
     }
 
 private:
-    list<DeviceInfo> m_devices;
+    struct DeviceInfo_Internal
+    {
+        DeviceInfo_Internal(AVHWDeviceType _hwDevType, DeviceInfo _commInfo, int _basePriority)
+            : hwDevType(_hwDevType), commInfo(_commInfo), basePriority(_basePriority)
+        {
+            UpdateDynamicPriority();
+        }
+
+        void UpdateDynamicPriority()
+        {
+            dynamicPriority = basePriority*10000+decoderCount;
+        }
+
+        AVHWDeviceType hwDevType;
+        DeviceInfo commInfo;
+        atomic_int32_t decoderCount{0};
+        int basePriority;
+        int dynamicPriority;
+    };
+
+    static const function<bool(const DeviceInfo_Internal& a, const DeviceInfo_Internal& b)> DEVICE_INFO_COMPARATOR;
+
+private:
+    list<DeviceInfo_Internal> m_devices;
+    bool m_isVaapiUsable{false};
+    bool m_isCudaUsable{false};
+
+    mutex m_apiLock;
     ALogger* m_logger;
     string m_errMsg;
 };
@@ -151,6 +235,12 @@ private:
 static const auto HWACCEL_MANAGER_DELETER = [] (HwaccelManager* pHwaMgr) {
     HwaccelManager_Impl* pImpl = dynamic_cast<HwaccelManager_Impl*>(pHwaMgr);
     delete pImpl;
+};
+
+const function<bool(const HwaccelManager_Impl::DeviceInfo_Internal& a, const HwaccelManager_Impl::DeviceInfo_Internal& b)>
+HwaccelManager_Impl::DEVICE_INFO_COMPARATOR = [] (auto& a, auto& b)
+{
+    return a.dynamicPriority < b.dynamicPriority;
 };
 
 HwaccelManager::Holder HwaccelManager::CreateInstance()
