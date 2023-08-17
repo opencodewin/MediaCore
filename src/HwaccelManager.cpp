@@ -156,6 +156,7 @@ public:
         {
         case AV_HWDEVICE_TYPE_CUDA:
         case AV_HWDEVICE_TYPE_VAAPI:
+        case AV_HWDEVICE_TYPE_D3D11VA:
         case AV_HWDEVICE_TYPE_VIDEOTOOLBOX:
             basePriority = 0;
             break;
@@ -163,7 +164,6 @@ public:
         case AV_HWDEVICE_TYPE_VULKAN:
             basePriority = 1;
             break;
-        case AV_HWDEVICE_TYPE_D3D11VA:
         case AV_HWDEVICE_TYPE_MEDIACODEC:
             basePriority = 2;
             break;
