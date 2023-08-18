@@ -545,7 +545,7 @@ public:
         bool eof2{false};
         auto toReadSize2 = readSamples;
         ImGui::ImMat amat2 = m_rearClip->ReadAudioSamples(toReadSize2, eof2);
-        assert(("Front clip and rear clip returns different read sample count!", toReadSize1 == toReadSize2));
+        assert("Front clip and rear clip returns different read sample count!" && toReadSize1 == toReadSize2);
         AudioTransition::Holder transition = m_transition;
         ImGui::ImMat amat = transition->MixTwoAudioMats(amat1, amat2, (int64_t)(amat1.time_stamp*1000));
         eof = eof1 || eof2;

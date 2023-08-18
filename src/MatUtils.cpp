@@ -10,14 +10,14 @@ namespace MatUtils
 {
 void CopyAudioMatSamples(ImGui::ImMat& dstMat, const ImGui::ImMat& srcMat, uint32_t dstOffSmpCnt, uint32_t srcOffSmpCnt, uint32_t copySmpCnt)
 {
-    assert(("Argument 'srcMat' must NOT be EMPTY!", !srcMat.empty()));
+    assert("Argument 'srcMat' must NOT be EMPTY!" && !srcMat.empty());
     if (copySmpCnt == 0)
     {
-        assert(("Argument 'srcOffCmpCnt' is larger than or equal to 'srcMat.w'!", srcOffSmpCnt < (uint32_t)srcMat.w));
+        assert("Argument 'srcOffCmpCnt' is larger than or equal to 'srcMat.w'!" && srcOffSmpCnt < (uint32_t)srcMat.w);
         copySmpCnt = (uint32_t)srcMat.w-srcOffSmpCnt;
         if (!dstMat.empty())
         {
-            assert(("Argument 'dstOffSmpCnt' is larger than or equal to 'dstMat.w'!", dstOffSmpCnt < (uint32_t)dstMat.w));
+            assert("Argument 'dstOffSmpCnt' is larger than or equal to 'dstMat.w'!" && dstOffSmpCnt < (uint32_t)dstMat.w);
             uint32_t remainSpace = (uint32_t)dstMat.w-dstOffSmpCnt;
             if (copySmpCnt > remainSpace)
                 copySmpCnt = remainSpace;
@@ -25,16 +25,16 @@ void CopyAudioMatSamples(ImGui::ImMat& dstMat, const ImGui::ImMat& srcMat, uint3
     }
     else
     {
-        assert(("Argument 'srcOffCmpCnt' is larger than or equal to 'srcMat.w'!", srcOffSmpCnt < (uint32_t)srcMat.w));
+        assert("Argument 'srcOffCmpCnt' is larger than or equal to 'srcMat.w'!" && srcOffSmpCnt < (uint32_t)srcMat.w);
         uint32_t copySmpCntMax = (uint32_t)srcMat.w-srcOffSmpCnt;
         if (!dstMat.empty())
         {
-            assert(("Argument 'dstOffSmpCnt' is larger than or equal to 'dstMat.w'!", dstOffSmpCnt < (uint32_t)dstMat.w));
+            assert("Argument 'dstOffSmpCnt' is larger than or equal to 'dstMat.w'!" && dstOffSmpCnt < (uint32_t)dstMat.w);
             uint32_t remainSpace = (uint32_t)dstMat.w-dstOffSmpCnt;
             if (copySmpCntMax > remainSpace)
                 copySmpCntMax = remainSpace;
         }
-        assert(("Argument 'copySmpCnt' is larger than 'copySmpCntMax'!", copySmpCnt <= copySmpCntMax));
+        assert("Argument 'copySmpCnt' is larger than 'copySmpCntMax'!" && copySmpCnt <= copySmpCntMax);
     }
     if (dstMat.empty())
     {
@@ -42,7 +42,7 @@ void CopyAudioMatSamples(ImGui::ImMat& dstMat, const ImGui::ImMat& srcMat, uint3
         int dstH = srcMat.h;
         int dstC = srcMat.c;
         dstMat.create_type(dstW, dstH, dstC, srcMat.type);
-        assert(("Failed to create 'dstMat'!", !dstMat.empty()));
+        assert("Failed to create 'dstMat'!" && !dstMat.empty());
         memset(dstMat.data, 0, dstMat.total()*dstMat.elemsize);
         dstMat.flags |= IM_MAT_FLAGS_AUDIO_FRAME;
         dstMat.rate.num = srcMat.rate.num;
@@ -51,11 +51,11 @@ void CopyAudioMatSamples(ImGui::ImMat& dstMat, const ImGui::ImMat& srcMat, uint3
     }
     else
     {
-        assert(("Audio sample format conversion is NOT SUPPORTED!", dstMat.type == srcMat.type));
-        assert(("The height attribute of 'srcMat' and 'dstMat' does NOT MATCH!", dstMat.h == srcMat.h));
-        assert(("The channel attribute of 'srcMat' and 'dstMat' does NOT MATCH!", dstMat.c == srcMat.c));
-        assert(("The elempack attribute of 'srcMat' and 'dstMat' does NOT MATCH!", dstMat.elempack == srcMat.elempack));
-        assert(("The rate attribute of 'srcMat' and 'dstMat' does NOT MATCH!", dstMat.rate.num == srcMat.rate.num && dstMat.rate.den == srcMat.rate.den));
+        assert("Audio sample format conversion is NOT SUPPORTED!" && dstMat.type == srcMat.type);
+        assert("The height attribute of 'srcMat' and 'dstMat' does NOT MATCH!" && dstMat.h == srcMat.h);
+        assert("The channel attribute of 'srcMat' and 'dstMat' does NOT MATCH!" && dstMat.c == srcMat.c);
+        assert("The elempack attribute of 'srcMat' and 'dstMat' does NOT MATCH!" && dstMat.elempack == srcMat.elempack);
+        assert("The rate attribute of 'srcMat' and 'dstMat' does NOT MATCH!" && dstMat.rate.num == srcMat.rate.num && dstMat.rate.den == srcMat.rate.den);
     }
 
     const bool isPlanar = srcMat.elempack == 1 || srcMat.c == 1;
