@@ -31,13 +31,13 @@ namespace MediaCore
         SCALE_TYPE__STRETCH,
     };
 
-    struct VideoTransformFilter;
-    using VideoTransformFilterHolder = std::shared_ptr<VideoTransformFilter>;
-
     struct VideoTransformFilter
     {
+        using Holder = std::shared_ptr<VideoTransformFilter>;
+        static Holder CreateInstance();
+
         virtual bool Initialize(uint32_t outWidth, uint32_t outHeight) = 0;
-        virtual VideoTransformFilterHolder Clone(uint32_t outWidth, uint32_t outHeight) = 0;
+        virtual Holder Clone(uint32_t outWidth, uint32_t outHeight) = 0;
         virtual bool SetOutputFormat(const std::string& outputFormat) = 0;
         virtual bool SetScaleType(ScaleType type) = 0;
         virtual bool SetPositionOffset(int32_t offsetH, int32_t offsetV) = 0;
@@ -91,6 +91,4 @@ namespace MediaCore
 
         virtual std::string GetError() const = 0;
     };
-
-    VideoTransformFilterHolder CreateVideoTransformFilter();
 }

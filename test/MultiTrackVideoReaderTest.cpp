@@ -232,7 +232,7 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         ImGui::Spacing();
         ImGui::PushItemWidth(200);
         VideoClip::Holder selectedClip;
-        VideoTransformFilterHolder fftransFilter;
+        VideoTransformFilter::Holder fftransFilter;
         if (!noClip)
         {
             VideoTrack::Holder hTrack = g_mtVidReader->GetTrackByIndex(s_clipOpTrackSelIdx);

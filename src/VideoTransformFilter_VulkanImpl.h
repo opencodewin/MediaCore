@@ -27,7 +27,7 @@ namespace MediaCore
         virtual ~VideoTransformFilter_VulkanImpl();
         const std::string GetFilterName() const override;
         bool Initialize(uint32_t outWidth, uint32_t outHeight) override;
-        VideoTransformFilterHolder Clone(uint32_t outWidth, uint32_t outHeight) override { return nullptr; }
+        Holder Clone(uint32_t outWidth, uint32_t outHeight) override { return nullptr; }
         bool SetOutputFormat(const std::string& outputFormat) override;
         ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) override;
 

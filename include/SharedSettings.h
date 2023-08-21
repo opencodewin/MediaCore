@@ -14,6 +14,7 @@ struct SharedSettings
 {
     using Holder = std::shared_ptr<SharedSettings>;
     static MEDIACORE_API Holder CreateInstance();
+    virtual Holder Clone() = 0;
 
     virtual uint32_t VideoOutWidth() const = 0;
     virtual uint32_t VideoOutHeight() const = 0;

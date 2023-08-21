@@ -601,7 +601,7 @@ public:
         if (updateDuration)
             UpdateDuration();
 
-        SeekTo(ReadPos());
+        SeekToByIdx(m_readFrameIdx);
         return true;
     }
 
@@ -635,6 +635,17 @@ public:
                     mft->outputReady = false;
             }
         }
+        return true;
+    }
+
+    bool UpdateVideoOutputSize() override
+    {
+        lock(m_apiLock, m_trackLock);
+        lock_guard<recursive_mutex> lk0(m_apiLock, adopt_lock);
+        lock_guard<recursive_mutex> lk1(m_trackLock, adopt_lock);
+        for (auto& hTrack : m_tracks)
+            hTrack->UpdateVideoOutputSize();
+        Refresh(false);
         return true;
     }
 

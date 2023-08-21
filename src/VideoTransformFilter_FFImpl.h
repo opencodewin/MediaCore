@@ -27,7 +27,7 @@ namespace MediaCore
         virtual ~VideoTransformFilter_FFImpl();
         const std::string GetFilterName() const override;
         bool Initialize(uint32_t outWidth, uint32_t outHeight) override;
-        VideoTransformFilterHolder Clone(uint32_t outWidth, uint32_t outHeight) override { return nullptr; }
+        Holder Clone(uint32_t outWidth, uint32_t outHeight) override { return nullptr; }
         bool SetOutputFormat(const std::string& outputFormat) override;
         bool SetRotationAngle(double angle) override;
         bool SetPositionOffset(int32_t offsetH, int32_t offsetV) override;

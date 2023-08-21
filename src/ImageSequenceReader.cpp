@@ -440,6 +440,19 @@ public:
         m_vidPreferUseHw = enable;
     }
 
+    void ChangeVideoOutputSize(uint32_t outWidth, uint32_t outHeight, ImInterpolateMode rszInterp) override
+    {
+        lock_guard<recursive_mutex> lk(m_apiLock);
+        if (m_prepared && m_pFrmCvt)
+        {
+            m_pFrmCvt->SetOutSize(outWidth, outHeight);
+            m_pFrmCvt->SetResizeInterpolateMode(rszInterp);
+        }
+        m_outWidth = outWidth;
+        m_outHeight = outHeight;
+        m_interpMode = rszInterp;
+    }
+
     MediaInfo::Holder GetMediaInfo() const override
     {
         return m_hMediaInfo;

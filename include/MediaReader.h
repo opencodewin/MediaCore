@@ -87,6 +87,7 @@ struct MediaReader
     virtual std::pair<double, double> GetCacheDuration() const = 0;
     virtual bool IsHwAccelEnabled() const = 0;
     virtual void EnableHwAccel(bool enable) = 0;
+    virtual void ChangeVideoOutputSize(uint32_t outWidth, uint32_t outHeight, ImInterpolateMode rszInterp = IM_INTERPOLATE_BICUBIC) = 0;
 
     virtual MediaInfo::Holder GetMediaInfo() const = 0;
     virtual const VideoStream* GetVideoStream() const = 0;

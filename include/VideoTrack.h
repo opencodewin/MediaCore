@@ -77,6 +77,7 @@ struct VideoTrack
     virtual VideoClip::Holder GetClipById(int64_t id) = 0;
     virtual VideoOverlap::Holder GetOverlapById(int64_t id) = 0;
     virtual void UpdateClipState() = 0;
+    virtual void UpdateVideoOutputSize() = 0;
 
     virtual std::list<VideoClip::Holder> GetClipList() = 0;
     virtual std::list<VideoOverlap::Holder> GetOverlapList() = 0;

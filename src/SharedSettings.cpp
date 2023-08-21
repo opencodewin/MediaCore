@@ -1,3 +1,4 @@
+#include <functional>
 #include "SharedSettings.h"
 
 using namespace std;
@@ -6,6 +7,12 @@ namespace MediaCore
 {
 class SharedSettings_Impl : public SharedSettings
 {
+    Holder Clone() override
+    {
+        Holder newInstance(new SharedSettings_Impl(*this), SHARED_SETTINGS_DELETER);
+        return newInstance;
+    }
+
     // getters
     uint32_t VideoOutWidth() const override
     {
@@ -68,6 +75,9 @@ class SharedSettings_Impl : public SharedSettings
         m_hHwaMgr = hHwaMgr;
     }
 
+public:
+    static const function<void(SharedSettings*)> SHARED_SETTINGS_DELETER;
+
 private:
     uint32_t m_vidOutWidth{0};
     uint32_t m_vidOutHeight{0};
@@ -77,13 +87,13 @@ private:
     HwaccelManager::Holder m_hHwaMgr;
 };
 
-static const auto SHARED_SETTINGS_DELETER = [] (SharedSettings* p) {
+const function<void(SharedSettings*)> SharedSettings_Impl::SHARED_SETTINGS_DELETER = [] (SharedSettings* p) {
     SharedSettings_Impl* ptr = dynamic_cast<SharedSettings_Impl*>(p);
     delete ptr;
 };
 
 SharedSettings::Holder SharedSettings::CreateInstance()
 {
-    return SharedSettings::Holder(new SharedSettings_Impl(), SHARED_SETTINGS_DELETER);
+    return SharedSettings::Holder(new SharedSettings_Impl(), SharedSettings_Impl::SHARED_SETTINGS_DELETER);
 }
 }

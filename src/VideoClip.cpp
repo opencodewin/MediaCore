@@ -147,7 +147,7 @@ public:
         bool suspend = readpos < -m_wakeupRange || readpos > Duration()+m_wakeupRange;
         if (!m_hReader->Start(suspend))
             throw runtime_error(m_hReader->GetError());
-        m_hWarpFilter = CreateVideoTransformFilter();
+        m_hWarpFilter = VideoTransformFilter::CreateInstance();
         if (!m_hWarpFilter->Initialize(outWidth, outHeight))
             throw runtime_error(m_hWarpFilter->GetError());
     }
@@ -414,9 +414,34 @@ public:
         return m_hFilter;
     }
 
-    VideoTransformFilterHolder GetTransformFilter() override
+    VideoTransformFilter::Holder GetTransformFilter() override
     {
         return m_hWarpFilter;
+    }
+
+    void UpdateVideoOutputSize() override
+    {
+        auto outWidth = m_hSettings->VideoOutWidth();
+        auto outHeight = m_hSettings->VideoOutHeight();
+        auto vidStm = m_hReader->GetVideoStream();
+        uint32_t readerWidth, readerHeight;
+        if (outWidth*vidStm->height > outHeight*vidStm->width)
+        {
+            readerHeight = outHeight;
+            readerWidth = vidStm->width*outHeight/vidStm->height;
+        }
+        else
+        {
+            readerWidth = outWidth;
+            readerHeight = vidStm->height*outWidth/vidStm->width;
+        }
+        readerWidth += readerWidth&0x1;
+        readerHeight += readerHeight&0x1;
+        ImInterpolateMode interpMode = IM_INTERPOLATE_BICUBIC;
+        if (readerWidth*readerHeight < vidStm->width*vidStm->height)
+            interpMode = IM_INTERPOLATE_AREA;
+        m_hReader->ChangeVideoOutputSize(readerWidth, readerHeight, interpMode);
+        m_hWarpFilter = m_hWarpFilter->Clone(outWidth, outHeight);
     }
 
     void SetLogLevel(Level l) override
@@ -440,7 +465,7 @@ private:
     Ratio m_frameRate;
     uint32_t m_frameIndex{0};
     VideoFilter::Holder m_hFilter;
-    VideoTransformFilterHolder m_hWarpFilter;
+    VideoTransformFilter::Holder m_hWarpFilter;
     int64_t m_wakeupRange{1000};
     ImColorFormat m_outClrfmt{IM_CF_RGBA};
     ImDataType m_outDtype{IM_DT_FLOAT32};
@@ -512,7 +537,7 @@ public:
         m_start = start;
         if (!m_hReader->Start())
             throw runtime_error(m_hReader->GetError());
-        m_hWarpFilter = CreateVideoTransformFilter();
+        m_hWarpFilter = VideoTransformFilter::CreateInstance();
         if (!m_hWarpFilter->Initialize(outWidth, outHeight))
             throw runtime_error(m_hWarpFilter->GetError());
     }
@@ -693,9 +718,34 @@ public:
         return m_hFilter;
     }
 
-    VideoTransformFilterHolder GetTransformFilter() override
+    VideoTransformFilter::Holder GetTransformFilter() override
     {
         return m_hWarpFilter;
+    }
+
+    void UpdateVideoOutputSize() override
+    {
+        auto outWidth = m_hSettings->VideoOutWidth();
+        auto outHeight = m_hSettings->VideoOutHeight();
+        auto vidStm = m_hReader->GetVideoStream();
+        uint32_t readerWidth, readerHeight;
+        if (outWidth*vidStm->height > outHeight*vidStm->width)
+        {
+            readerHeight = outHeight;
+            readerWidth = vidStm->width*outHeight/vidStm->height;
+        }
+        else
+        {
+            readerWidth = outWidth;
+            readerHeight = vidStm->height*outWidth/vidStm->width;
+        }
+        readerWidth += readerWidth&0x1;
+        readerHeight += readerHeight&0x1;
+        ImInterpolateMode interpMode = IM_INTERPOLATE_BICUBIC;
+        if (readerWidth*readerHeight < vidStm->width*vidStm->height)
+            interpMode = IM_INTERPOLATE_AREA;
+        m_hReader->ChangeVideoOutputSize(readerWidth, readerHeight, interpMode);
+        m_hWarpFilter = m_hWarpFilter->Clone(outWidth, outHeight);
     }
 
     void SetLogLevel(Level l) override
@@ -712,7 +762,7 @@ private:
     int64_t m_srcDuration;
     int64_t m_start;
     VideoFilter::Holder m_hFilter;
-    VideoTransformFilterHolder m_hWarpFilter;
+    VideoTransformFilter::Holder m_hWarpFilter;
     ImColorFormat m_outClrfmt{IM_CF_RGBA};
     ImDataType m_outDtype{IM_DT_FLOAT32};
 };

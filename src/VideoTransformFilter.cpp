@@ -51,9 +51,9 @@ namespace MediaCore
             return m_filter->GetFilterName();
         }
 
-        VideoTransformFilterHolder Clone(uint32_t outWidth, uint32_t outHeight) override
+        Holder Clone(uint32_t outWidth, uint32_t outHeight) override
         {
-            VideoTransformFilterHolder newInstance = CreateVideoTransformFilter();
+            VideoTransformFilter::Holder newInstance = VideoTransformFilter::CreateInstance();
             if (!newInstance->Initialize(outWidth, outHeight))
                 return nullptr;
             newInstance->SetScaleType(GetScaleType());
@@ -320,8 +320,8 @@ namespace MediaCore
 #endif
     };
 
-    VideoTransformFilterHolder CreateVideoTransformFilter()
+    VideoTransformFilter::Holder VideoTransformFilter::CreateInstance()
     {
-        return VideoTransformFilterHolder(new VideoTransformFilter_Delegate());
+        return VideoTransformFilter::Holder(new VideoTransformFilter_Delegate());
     }
 }
