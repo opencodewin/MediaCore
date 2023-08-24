@@ -453,6 +453,11 @@ public:
         m_interpMode = rszInterp;
     }
 
+    bool ChangeAudioOutputFormat(uint32_t outChannels, uint32_t outSampleRate, const string& outPcmFormat) override
+    {
+        throw runtime_error("VideoReader does NOT SUPPORT method ChangeAudioOutputFormat()!");
+    }
+
     MediaInfo::Holder GetMediaInfo() const override
     {
         return m_hMediaInfo;

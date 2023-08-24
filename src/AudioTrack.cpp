@@ -34,36 +34,66 @@ namespace MediaCore
 class AudioTrack_Impl : public AudioTrack
 {
 public:
-    AudioTrack_Impl(int64_t id, uint32_t outChannels, uint32_t outSampleRate, const string& outSampleFormat)
-        : m_id(id), m_outChannels(outChannels), m_outSampleRate(outSampleRate), m_outSampleFormat(outSampleFormat)
+    AudioTrack_Impl(int64_t id, SharedSettings::Holder hSettings)
+        : m_id(id)
     {
-        AVSampleFormat m_outAvSmpfmt = av_get_sample_fmt(outSampleFormat.c_str());
-        if (m_outAvSmpfmt == AV_SAMPLE_FMT_NONE)
-        {
-            ostringstream oss;
-            oss << "'" << outSampleFormat << "' is NOT a VALID pcm SAMPLE FORMAT!";
-            throw runtime_error(oss.str());
-        }
         m_logger = AudioTrack::GetLogger();
-        m_readClipIter = m_clips.begin();
-        m_bytesPerSample = (uint8_t)av_get_bytes_per_sample(m_outAvSmpfmt);
-        m_frameSize = outChannels*m_bytesPerSample;
-        m_pcmSizePerSec = m_frameSize*m_outSampleRate;
+        AVSampleFormat smpfmt = GetAVSampleFormatByDataType(hSettings->AudioOutDataType(), hSettings->AudioOutIsPlanar());
+        if (smpfmt == AV_SAMPLE_FMT_NONE)
+            throw runtime_error("UNSUPPORTED audio output data type and planar mode!");
         ostringstream loggerNameOss;
         loggerNameOss << "AEFilter#" << id;
-        m_aeFilter = AudioEffectFilter::CreateInstance(loggerNameOss.str());
-        if (!m_aeFilter->Init(
+        auto aeFilter = AudioEffectFilter::CreateInstance(loggerNameOss.str());
+        if (!aeFilter->Init(
             AudioEffectFilter::VOLUME|AudioEffectFilter::COMPRESSOR|AudioEffectFilter::GATE|AudioEffectFilter::EQUALIZER|AudioEffectFilter::LIMITER|AudioEffectFilter::PAN,
-            outSampleFormat, outChannels, outSampleRate))
-            throw runtime_error(m_aeFilter->GetError());
+            hSettings->AudioOutSampleFormatName(), hSettings->AudioOutChannels(), hSettings->AudioOutSampleRate()))
+            throw runtime_error(aeFilter->GetError());
+        m_aeFilter = aeFilter;
+        m_outChannels = hSettings->AudioOutChannels();
+        m_outSampleRate = hSettings->AudioOutSampleRate();
+        m_outAvSmpfmt = smpfmt;
+        m_outSampleFormat = hSettings->AudioOutSampleFormatName();
+        m_bytesPerSample = (uint8_t)av_get_bytes_per_sample(m_outAvSmpfmt);
+        m_frameSize = m_outChannels*m_bytesPerSample;
+        m_pcmSizePerSec = m_frameSize*m_outSampleRate;
+        m_hSettings = hSettings;
+        m_readClipIter = m_clips.begin();
     }
 
-    Holder Clone(uint32_t outChannels, uint32_t outSampleRate, const string& outSampleFormat) override;
+    Holder Clone(SharedSettings::Holder hSettings) override;
+
+    bool UpdateSettings(SharedSettings::Holder hSettings) override
+    {
+        lock_guard<recursive_mutex> lk(m_apiLock);
+        ostringstream loggerNameOss;
+        AVSampleFormat smpfmt = GetAVSampleFormatByDataType(hSettings->AudioOutDataType(), hSettings->AudioOutIsPlanar());
+        if (smpfmt == AV_SAMPLE_FMT_NONE)
+            throw runtime_error("UNSUPPORTED audio output data type and planar mode!");
+        loggerNameOss << "AEFilter#" << m_id;
+        auto aeFilter = AudioEffectFilter::CreateInstance(loggerNameOss.str());
+        if (!aeFilter->Init(
+            AudioEffectFilter::VOLUME|AudioEffectFilter::COMPRESSOR|AudioEffectFilter::GATE|AudioEffectFilter::EQUALIZER|AudioEffectFilter::LIMITER|AudioEffectFilter::PAN,
+            hSettings->AudioOutSampleFormatName(), hSettings->AudioOutChannels(), hSettings->AudioOutSampleRate()))
+            throw runtime_error(aeFilter->GetError());
+        aeFilter->CopyParamsFrom(m_aeFilter.get());
+        m_aeFilter = aeFilter;
+        m_outChannels = hSettings->AudioOutChannels();
+        m_outSampleRate = hSettings->AudioOutSampleRate();
+        m_outAvSmpfmt = smpfmt;
+        m_outSampleFormat = hSettings->AudioOutSampleFormatName();
+        m_bytesPerSample = (uint8_t)av_get_bytes_per_sample(m_outAvSmpfmt);
+        m_frameSize = m_outChannels*m_bytesPerSample;
+        m_pcmSizePerSec = m_frameSize*m_outSampleRate;
+        m_hSettings = hSettings;
+        for (auto& hClip : m_clips)
+            hClip->UpdateSettings(hSettings);
+        return true;
+    }
 
     AudioClip::Holder AddNewClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t end, int64_t startOffset, int64_t endOffset) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
-        AudioClip::Holder hClip = AudioClip::CreateInstance(clipId, hParser, m_outChannels, m_outSampleRate, m_outSampleFormat, start, end, startOffset, endOffset);
+        AudioClip::Holder hClip = AudioClip::CreateInstance(clipId, hParser, m_hSettings, start, end, startOffset, endOffset);
         InsertClip(hClip);
         return hClip;
     }
@@ -952,6 +982,7 @@ private:
     ALogger* m_logger;
     int64_t m_id;
     recursive_mutex m_apiLock;
+    SharedSettings::Holder m_hSettings;
     uint32_t m_outChannels;
     uint32_t m_outSampleRate;
     string m_outSampleFormat;
@@ -978,25 +1009,26 @@ static const function<void(AudioTrack*)> AUDIO_TRACK_HOLDER_DELETER = [] (AudioT
     delete ptr;
 };
 
-AudioTrack::Holder AudioTrack::CreateInstance(int64_t id, uint32_t outChannels, uint32_t outSampleRate, const std::string& outSampleFormat)
+AudioTrack::Holder AudioTrack::CreateInstance(int64_t id, SharedSettings::Holder hSettings)
 {
-    return AudioTrack::Holder(new AudioTrack_Impl(id, outChannels, outSampleRate, outSampleFormat), AUDIO_TRACK_HOLDER_DELETER);
+    return AudioTrack::Holder(new AudioTrack_Impl(id, hSettings), AUDIO_TRACK_HOLDER_DELETER);
 }
 
-AudioTrack::Holder AudioTrack_Impl::Clone(uint32_t outChannels, uint32_t outSampleRate, const string& outSampleFormat)
+AudioTrack::Holder AudioTrack_Impl::Clone(SharedSettings::Holder hSettings)
 {
     lock_guard<recursive_mutex> lk(m_apiLock);
-    AudioTrack_Impl* newInstance = new AudioTrack_Impl(m_id, outChannels, outSampleRate, outSampleFormat);
+    AudioTrack_Impl* newInstance = new AudioTrack_Impl(m_id, hSettings);
     // duplicate the clips
     for (auto clip : m_clips)
     {
-        auto newClip = clip->Clone(outChannels, outSampleRate, outSampleFormat);
+        auto newClip = clip->Clone(m_hSettings);
         newInstance->m_clips.push_back(newClip);
         newClip->SetTrackId(m_id);
         AudioClip::Holder lastClip = newInstance->m_clips.back();
         newInstance->m_duration = lastClip->Start()+lastClip->Duration();
         newInstance->UpdateClipOverlap(newClip);
     }
+    newInstance->m_aeFilter->CopyParamsFrom(m_aeFilter.get());
     return AudioTrack::Holder(newInstance, AUDIO_TRACK_HOLDER_DELETER);
 }
 

@@ -21,6 +21,7 @@
 #include <string>
 #include <ostream>
 #include "MediaCore.h"
+#include "SharedSettings.h"
 #include "AudioClip.h"
 #include "AudioEffectFilter.h"
 #include "Logger.h"
@@ -30,9 +31,10 @@ namespace MediaCore
 struct AudioTrack
 {
     using Holder = std::shared_ptr<AudioTrack>;
-    static MEDIACORE_API Holder CreateInstance(int64_t id, uint32_t outChannels, uint32_t outSampleRate, const std::string& outSampleFormat);
+    static MEDIACORE_API Holder CreateInstance(int64_t id, SharedSettings::Holder hSettings);
     static MEDIACORE_API Logger::ALogger* GetLogger();
-    virtual Holder Clone(uint32_t outChannels, uint32_t outSampleRate, const std::string& outSampleFormat) = 0;
+    virtual Holder Clone(SharedSettings::Holder hSettings) = 0;
+    virtual bool UpdateSettings(SharedSettings::Holder hSettings) = 0;
 
     virtual int64_t Id() const = 0;
     virtual int64_t Duration() const = 0;

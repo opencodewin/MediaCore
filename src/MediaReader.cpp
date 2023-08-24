@@ -242,7 +242,7 @@ public:
             return false;
         }
         lock_guard<recursive_mutex> lk(m_apiLock);
-        m_audOutSmpfmt = outPcmFormat;
+        m_audOutSmpfmtName = outPcmFormat;
         m_swrOutSmpfmt = outSmpfmt;
         m_isOutFmtPlanar = av_sample_fmt_is_planar(outSmpfmt);
 
@@ -837,7 +837,7 @@ public:
 
     string GetAudioOutPcmFormat() const override
     {
-        return m_audOutSmpfmt;
+        return m_audOutSmpfmtName;
     }
 
     uint32_t GetAudioOutChannels() const override
@@ -895,6 +895,93 @@ public:
         m_outWidth = outWidth;
         m_outHeight = outHeight;
         m_interpMode = rszInterp;
+    }
+
+    bool ChangeAudioOutputFormat(uint32_t outChannels, uint32_t outSampleRate, const string& outPcmFormat) override
+    {
+        AVSampleFormat outSmpfmt = av_get_sample_fmt(outPcmFormat.c_str());
+        if (outSmpfmt == AV_SAMPLE_FMT_NONE)
+        {
+            ostringstream oss;
+            oss << "Invalid argument 'outPcmFormat'! '" << outPcmFormat << "' is NOT a SAMPLE FORMAT.";
+            m_errMsg = oss.str();
+            return false;
+        }
+
+        lock_guard<recursive_mutex> lk(m_apiLock);
+        m_audOutSmpfmtName = outPcmFormat;
+        m_swrOutSmpfmt = outSmpfmt;
+        m_isOutFmtPlanar = av_sample_fmt_is_planar(outSmpfmt);
+        m_swrOutSampleRate = outSampleRate;
+#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
+        m_swrOutChannels = outChannels;
+#else
+        av_channel_layout_default(&m_swrOutChlyt, outChannels);
+#endif
+        if (!m_prepared)
+            return true;
+
+
+        WaitAllThreadsQuit();
+        FlushAllQueues();
+        if (m_swrCtx)
+        {
+            swr_free(&m_swrCtx);
+            m_swrCtx = nullptr;
+        }
+
+        // setup sw resampler
+        AVSampleFormat inSmpfmt = (AVSampleFormat)m_audAvStm->codecpar->format;
+        int inSampleRate = m_audAvStm->codecpar->sample_rate;
+#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
+        int inChannels = m_audAvStm->codecpar->channels;
+        uint64_t inChnLyt = m_audAvStm->codecpar->channel_layout;
+        m_swrOutChnLyt = av_get_default_channel_layout(m_swrOutChannels);
+        if (inChnLyt <= 0)
+            inChnLyt = av_get_default_channel_layout(inChannels);
+        if (m_swrOutChnLyt != inChnLyt || m_swrOutSmpfmt != inSmpfmt || m_swrOutSampleRate != inSampleRate)
+        {
+            m_swrCtx = swr_alloc_set_opts(NULL, m_swrOutChnLyt, m_swrOutSmpfmt, m_swrOutSampleRate, inChnLyt, inSmpfmt, inSampleRate, 0, nullptr);
+            if (!m_swrCtx)
+#else
+        auto& inChlyt = m_audAvStm->codecpar->ch_layout;
+        int fferr;
+        if (av_channel_layout_compare(&m_swrOutChlyt, &inChlyt) || m_swrOutSmpfmt != inSmpfmt || m_swrOutSampleRate != inSampleRate)
+        {
+            fferr = swr_alloc_set_opts2(&m_swrCtx, &m_swrOutChlyt, m_swrOutSmpfmt, m_swrOutSampleRate, &inChlyt, inSmpfmt, inSampleRate, 0, nullptr);
+            if (fferr < 0)
+#endif
+            {
+                m_errMsg = "FAILED to invoke 'swr_alloc_set_opts()' to create 'SwrContext'!";
+                return false;
+            }
+            int fferr;
+            fferr = swr_init(m_swrCtx);
+            if (fferr < 0)
+            {
+                m_errMsg = FFapiFailureMessage("swr_init", fferr);
+                return false;
+            }
+            m_swrOutTimebase = { 1, m_swrOutSampleRate };
+            m_swrOutStartTime = av_rescale_q(m_audAvStm->start_time, m_audAvStm->time_base, m_swrOutTimebase);
+#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
+            m_swrFrmSize = av_get_bytes_per_sample(m_swrOutSmpfmt)*m_swrOutChannels;
+#else
+            m_swrFrmSize = av_get_bytes_per_sample(m_swrOutSmpfmt)*m_swrOutChlyt.nb_channels;
+#endif
+            m_swrPassThrough = false;
+        }
+        else
+        {
+            m_swrOutTimebase = m_audAvStm->time_base;
+            m_swrOutStartTime = m_audAvStm->start_time;
+            m_swrPassThrough = true;
+        }
+        m_outFrmSize = m_swrPassThrough ? m_audFrmSize : m_swrFrmSize;
+
+        ResetAudioSampleBuildTask();
+        StartAllThreads();
+        return true;
     }
 
     void SetLogLevel(Logger::Level l) override
@@ -3343,7 +3430,7 @@ private:
     AVCodecContext* m_auddecCtx{nullptr};
     bool m_swrPassThrough{false};
     SwrContext* m_swrCtx{nullptr};
-    string m_audOutSmpfmt;
+    string m_audOutSmpfmtName;
     AVSampleFormat m_swrOutSmpfmt{AV_SAMPLE_FMT_FLT};
     int m_swrOutSampleRate{0};
 #if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)

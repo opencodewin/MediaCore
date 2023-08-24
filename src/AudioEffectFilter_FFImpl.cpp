@@ -134,6 +134,16 @@ public:
             m_errMsg = oss.str();
             return false;
         }
+        if (in.c == 1 && avfrm->format != (int)m_smpfmt)
+        {
+            AVSampleFormat altfmt;
+            if (m_isPlanar)
+                altfmt = av_get_planar_sample_fmt((AVSampleFormat)avfrm->format);
+            else
+                altfmt = av_get_packed_sample_fmt((AVSampleFormat)avfrm->format);
+            if (altfmt == m_smpfmt)
+                avfrm->format = (int)m_smpfmt;
+        }
         // m_logger->Log(DEBUG) << "Get incoming mat: ts=" << in.time_stamp << "; avfrm: pts=" << pts << endl;
 
         UpdateFilterParameters();
@@ -252,6 +262,28 @@ public:
     bool HasFilter(uint32_t composeFlags) const override
     {
         return CheckFilters(m_composeFlags, composeFlags);
+    }
+
+    void CopyParamsFrom(AudioEffectFilter* pAeFilter) override
+    {
+        auto volumeParams = pAeFilter->GetVolumeParams();
+        SetVolumeParams(&volumeParams);
+        auto panParams = pAeFilter->GetPanParams();
+        SetPanParams(&panParams);
+        auto limiterParams = pAeFilter->GetLimiterParams();
+        SetLimiterParams(&limiterParams);
+        auto gateParams = pAeFilter->GetGateParams();
+        SetGateParams(&gateParams);
+        auto compressorParams = pAeFilter->GetCompressorParams();
+        SetCompressorParams(&compressorParams);
+        auto eqBandInfo = pAeFilter->GetEqualizerBandInfo();
+        for (int i = 0; i < eqBandInfo.bandCount; i++)
+        {
+            auto eqParams = pAeFilter->GetEqualizerParamsByIndex(i);
+            SetEqualizerParamsByIndex(&eqParams, i);
+        }
+        auto isMuted = pAeFilter->IsMuted();
+        SetMuted(isMuted);
     }
 
     bool SetVolumeParams(VolumeParams* params) override

@@ -59,7 +59,7 @@ public:
     MultiTrackAudioReader_Impl(MultiTrackAudioReader_Impl&&) = delete;
     MultiTrackAudioReader_Impl& operator=(const MultiTrackAudioReader_Impl&) = delete;
 
-    bool Configure(uint32_t outChannels, uint32_t outSampleRate, uint32_t outSamplesPerFrame) override
+    bool Configure(SharedSettings::Holder hSettings, uint32_t outSamplesPerFrame) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (m_started)
@@ -67,39 +67,155 @@ public:
             m_errMsg = "This MultiTrackAudioReader instance is already started!";
             return false;
         }
-
-        Close();
-
-        m_outSampleRate = outSampleRate;
-#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
-        m_outChannels = outChannels;
-        m_outChannelLayout = av_get_default_channel_layout(outChannels);
-#else
-        av_channel_layout_default(&m_outChlyt, outChannels);
-#endif
-        m_outSamplesPerFrame = outSamplesPerFrame;
-        m_samplePos = 0;
-        m_readSamples = 0;
-        m_frameSize = outChannels*4;  // for now, output sample format only supports float32 data type, thus 4 bytes per sample.
-        m_isTrackOutputPlanar = av_sample_fmt_is_planar(m_trackOutSmpfmt);
-        m_matAvfrmCvter = new AudioImMatAVFrameConverter();
-        m_mixOutDataType = GetDataTypeFromSampleFormat(m_mixOutSmpfmt);
-        m_outMtsPerFrame = av_rescale_q(m_outSamplesPerFrame, {1, (int)m_outSampleRate}, MILLISEC_TIMEBASE);
-
-        m_aeFilter = AudioEffectFilter::CreateInstance("AEFilter#mix");
-        if (!m_aeFilter->Init(
+        auto smpfmt = GetAVSampleFormatByDataType(hSettings->AudioOutDataType(), hSettings->AudioOutIsPlanar());
+        if (smpfmt == AV_SAMPLE_FMT_NONE)
+        {
+            m_errMsg = "UNSUPPORTED audio output data type and planar mode!";
+            return false;
+        }
+        auto aeFilter = AudioEffectFilter::CreateInstance("AEFilter#mix");
+        if (!aeFilter->Init(
             AudioEffectFilter::VOLUME|AudioEffectFilter::COMPRESSOR|AudioEffectFilter::GATE|AudioEffectFilter::EQUALIZER|AudioEffectFilter::LIMITER|AudioEffectFilter::PAN,
-            av_get_sample_fmt_name(m_mixOutSmpfmt), outChannels, outSampleRate))
+            av_get_sample_fmt_name(smpfmt), hSettings->AudioOutChannels(), hSettings->AudioOutSampleRate()))
         {
             m_errMsg = "FAILED to initialize AudioEffectFilter!";
             return false;
         }
 
+        Close();
+
+        m_hSettings = hSettings;
+        m_hTrackSettings = hSettings->Clone();
+        m_hTrackSettings->SetAudioOutDataType(GetDataTypeFromSampleFormat(m_trackOutSmpfmt));
+        m_hTrackSettings->SetAudioOutIsPlanar(av_sample_fmt_is_planar(m_trackOutSmpfmt));
+        m_mixOutSmpfmt = smpfmt;
+        m_aeFilter = aeFilter;
+        m_outSampleRate = hSettings->AudioOutSampleRate();
+        m_outChannels = hSettings->AudioOutChannels();
+#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
+        m_outChannelLayout = av_get_default_channel_layout(m_outChannels);
+#else
+        av_channel_layout_default(&m_outChlyt, m_outChannels);
+#endif
+        m_mixOutDataType = hSettings->AudioOutDataType();
+        auto bytesPerSample = av_get_bytes_per_sample(m_mixOutSmpfmt);
+        m_frameSize = m_outChannels*bytesPerSample;
+        m_outMtsPerFrame = av_rescale_q(m_outSamplesPerFrame, {1, (int)m_outSampleRate}, MILLISEC_TIMEBASE);
+
+        m_outSamplesPerFrame = outSamplesPerFrame;
+        m_samplePos = 0;
+        m_readSamples = 0;
+        m_matAvfrmCvter = new AudioImMatAVFrameConverter();
         m_configured = true;
         return true;
     }
 
-    Holder CloneAndConfigure(uint32_t outChannels, uint32_t outSampleRate, uint32_t outSamplesPerFrame) override;
+    bool Configure(uint32_t outChannels, uint32_t outSampleRate, uint32_t outSamplesPerFrame) override
+    {
+        auto hSettings = SharedSettings::CreateInstance();
+        hSettings->SetAudioOutChannels(outChannels);
+        hSettings->SetAudioOutSampleRate(outSampleRate);
+        hSettings->SetAudioOutDataType(GetDataTypeFromSampleFormat(AV_SAMPLE_FMT_FLT));
+        return Configure(hSettings, outSamplesPerFrame);
+    }
+
+    Holder CloneAndConfigure(SharedSettings::Holder hSettings, uint32_t outSamplesPerFrame) override;
+
+    Holder CloneAndConfigure(uint32_t outChannels, uint32_t outSampleRate, uint32_t outSamplesPerFrame) override
+    {
+        auto hSettings = SharedSettings::CreateInstance();
+        hSettings->SetAudioOutChannels(outChannels);
+        hSettings->SetAudioOutSampleRate(outSampleRate);
+        hSettings->SetAudioOutDataType(GetDataTypeFromSampleFormat(AV_SAMPLE_FMT_FLT));
+        return CloneAndConfigure(hSettings, outSamplesPerFrame);
+    }
+
+    SharedSettings::Holder GetSharedSettings() override
+    {
+        return m_hSettings;
+    }
+
+    SharedSettings::Holder GetTrackSharedSettings() override
+    {
+        return m_hTrackSettings;
+    }
+
+    bool UpdateSettings(SharedSettings::Holder hSettings) override
+    {
+        lock_guard<recursive_mutex> lk(m_apiLock);
+        if (!m_configured)
+        {
+            m_errMsg = "This MultiTrackAudioReader instance is NOT CONFIGURED yet!";
+            return false;
+        }
+        bool isChannelOrSampleRateChanged = false;
+        if (hSettings->AudioOutChannels() == m_hSettings->AudioOutChannels() && hSettings->AudioOutSampleRate() == m_hSettings->AudioOutSampleRate())
+        {
+            if (hSettings->AudioOutDataType() == m_hSettings->AudioOutDataType() && hSettings->AudioOutIsPlanar() == m_hSettings->AudioOutIsPlanar())
+                return true;
+        }
+        else
+        {
+            isChannelOrSampleRateChanged = true;
+        }
+
+        auto smpfmt = GetAVSampleFormatByDataType(hSettings->AudioOutDataType(), hSettings->AudioOutIsPlanar());
+        if (smpfmt == AV_SAMPLE_FMT_NONE)
+        {
+            m_errMsg = "UNSUPPORTED audio output data type and planar mode!";
+            return false;
+        }
+        auto aeFilter = AudioEffectFilter::CreateInstance("AEFilter#mix");
+        if (!aeFilter->Init(
+            AudioEffectFilter::VOLUME|AudioEffectFilter::COMPRESSOR|AudioEffectFilter::GATE|AudioEffectFilter::EQUALIZER|AudioEffectFilter::LIMITER|AudioEffectFilter::PAN,
+            av_get_sample_fmt_name(smpfmt), hSettings->AudioOutChannels(), hSettings->AudioOutSampleRate()))
+        {
+            m_errMsg = "FAILED to initialize AudioEffectFilter!";
+            return false;
+        }
+        if (m_started)
+            TerminateMixingThread();
+        if (isChannelOrSampleRateChanged)
+        {
+            SharedSettings::Holder hTrackSettings = hSettings->Clone();
+            hTrackSettings->SetAudioOutDataType(m_hTrackSettings->AudioOutDataType());
+            hTrackSettings->SetAudioOutIsPlanar(m_hTrackSettings->AudioOutIsPlanar());
+            lock_guard<recursive_mutex> lk(m_trackLock);
+            for (auto& hTrack : m_tracks)
+                hTrack->UpdateSettings(hTrackSettings);
+            m_hTrackSettings = hTrackSettings;
+            auto oldSr = m_hSettings->AudioOutSampleRate();
+            auto newSr = hSettings->AudioOutSampleRate();
+            if (oldSr != newSr)
+                m_readSamples = round((double)m_readSamples*newSr/oldSr);
+        }
+        m_mixOutSmpfmt = smpfmt;
+        aeFilter->CopyParamsFrom(m_aeFilter.get());
+        m_aeFilter = aeFilter;
+        m_outSampleRate = hSettings->AudioOutSampleRate();
+        m_outChannels = hSettings->AudioOutChannels();
+#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
+        m_outChannelLayout = av_get_default_channel_layout(m_outChannels);
+#else
+        av_channel_layout_default(&m_outChlyt, m_outChannels);
+#endif
+        m_mixOutDataType = hSettings->AudioOutDataType();
+        auto bytesPerSample = av_get_bytes_per_sample(m_mixOutSmpfmt);
+        m_frameSize = m_outChannels*bytesPerSample;
+        m_outMtsPerFrame = av_rescale_q(m_outSamplesPerFrame, {1, (int)m_outSampleRate}, MILLISEC_TIMEBASE);
+        m_hSettings->SyncAudioSettingsFrom(hSettings.get());
+
+        ReleaseMixer();
+        if (!CreateMixer())
+        {
+            m_errMsg = "FAILED to create the audio mixer after the settings changed!";
+            return false;
+        }
+        SeekTo(ReadPos());
+        if (m_started)
+            StartMixingThread();
+        return true;
+    }
 
     bool Start() override
     {
@@ -130,9 +246,8 @@ public:
         m_outputMats.clear();
         m_configured = false;
         m_started = false;
-#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
         m_outChannels = 0;
-#else
+#if defined(FF_API_OLD_CHANNEL_LAYOUT) || (LIBAVUTIL_VERSION_MAJOR > 57)
         m_outChlyt = {AV_CHANNEL_ORDER_UNSPEC, 0};
 #endif
         m_outSampleRate = 0;
@@ -156,12 +271,8 @@ public:
         TerminateMixingThread();
 
         uint32_t outChannels;
-#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
         outChannels = m_outChannels;
-#else
-        outChannels = m_outChlyt.nb_channels;
-#endif
-        AudioTrack::Holder hTrack = AudioTrack::CreateInstance(trackId, outChannels, m_outSampleRate, av_get_sample_fmt_name(m_trackOutSmpfmt));
+        AudioTrack::Holder hTrack = AudioTrack::CreateInstance(trackId, m_hTrackSettings);
         hTrack->SetDirection(m_readForward);
         {
             lock_guard<recursive_mutex> lk2(m_trackLock);
@@ -216,11 +327,8 @@ public:
                 m_outputMats.clear();
 
                 ReleaseMixer();
-                if (!m_tracks.empty())
-                {
-                    if (!CreateMixer())
-                        return nullptr;
-                }
+                if (!CreateMixer())
+                    return nullptr;
             }
         }
 
@@ -255,11 +363,8 @@ public:
                 m_outputMats.clear();
 
                 ReleaseMixer();
-                if (!m_tracks.empty())
-                {
-                    if (!CreateMixer())
-                        return nullptr;
-                }
+                if (!CreateMixer())
+                    return nullptr;
             }
         }
 
@@ -286,11 +391,8 @@ public:
 
         m_outputMats.clear();
         ReleaseMixer();
-        if (!m_tracks.empty())
-        {
-            if (!CreateMixer())
-                return false;
-        }
+        if (!CreateMixer())
+            return false;
 
         StartMixingThread();
         return true;
@@ -583,6 +685,9 @@ private:
 
     bool CreateMixer()
     {
+        if (m_tracks.empty())
+            return true;
+
         const AVFilter *abuffersrc  = avfilter_get_by_name("abuffer");
         const AVFilter *abuffersink = avfilter_get_by_name("abuffersink");
 
@@ -685,8 +790,9 @@ private:
 #else
         oss << ":sum=1";
 #endif
+        // oss << ",aformat=" << av_get_sample_fmt_name(m_mixOutSmpfmt);
         string filtArgs = oss.str(); oss.str("");
-        m_logger->Log(DEBUG) << "'MultiTrackAudioReader' mixer filter args: '" << filtArgs << "'." << endl;
+        m_logger->Log(WARN) << "'MultiTrackAudioReader' mixer filter args: '" << filtArgs << "'." << endl;
         fferr = avfilter_graph_parse_ptr(m_filterGraph, filtArgs.c_str(), &m_filterInputs, &m_filterOutputs, nullptr);
         if (fferr < 0)
         {
@@ -836,17 +942,29 @@ private:
                     if (fferr >= 0)
                     {
                         ImGui::ImMat amat;
-#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
-                        int outChannels = m_outChannels;
-#else
-                        int outChannels = m_outChlyt.nb_channels;
-#endif
-                        amat.create((int)m_outSamplesPerFrame, 1, outChannels, (size_t)4);
-                        if (amat.total()*4 == outfrm->linesize[0])
+                        const int outChannels = m_outChannels;
+                        amat.create_type((int)m_outSamplesPerFrame, 1, outChannels, m_mixOutDataType);
+                        if (amat.w == outfrm->nb_samples)
                         {
-                            memcpy(amat.data, outfrm->data[0], outfrm->linesize[0]);
+                            uint8_t** ppDstBufPtrs = new uint8_t*[outChannels];
+                            const bool isDstPlanar = m_hSettings->AudioOutIsPlanar();
+                            if (isDstPlanar)
+                            {
+                                auto bytesPerPlane = amat.w*amat.elemsize;
+                                uint8_t* pLine = (uint8_t*)amat.data;
+                                for (int i = 0; i < outChannels; i++)
+                                {
+                                    ppDstBufPtrs[i] = pLine;
+                                    pLine += bytesPerPlane;
+                                }
+                            }
+                            else
+                            {
+                                ppDstBufPtrs[0] = (uint8_t*)amat.data;
+                            }
+                            FFUtils::CopyPcmDataEx(outChannels, amat.elemsize, amat.w, isDstPlanar, ppDstBufPtrs, 0, isDstPlanar, (const uint8_t**)outfrm->data, 0);
+                            delete [] ppDstBufPtrs;
                             amat.time_stamp = ConvertPtsToTs(outfrm->pts);
-                            amat.type = m_mixOutDataType;
                             amat.flags = IM_MAT_FLAGS_AUDIO_FRAME;
                             amat.rate = { (int)m_outSampleRate, 1 };
                             amat.elempack = outChannels;
@@ -874,7 +992,8 @@ private:
                             idleLoop = false;
                         }
                         else
-                            m_logger->Log(Error) << "Audio frame linesize(" << outfrm->linesize[0] << ") is ABNORMAL!" << endl;
+                            m_logger->Log(Error) << "Audio frame nb_samples(" << outfrm->nb_samples << ") is ABNORMAL! NOT equal to m_outSamplesPerFrame("
+                                    << m_outSamplesPerFrame << ")."<< endl;
                     }
                     else if (fferr != AVERROR(EAGAIN))
                     {
@@ -884,11 +1003,7 @@ private:
                 else
                 {
                     ImGui::ImMat amat;
-#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
                     int outChannels = m_outChannels;
-#else
-                    int outChannels = m_outChlyt.nb_channels;
-#endif
                     amat.create((int)m_outSamplesPerFrame, 1, outChannels, (size_t)4);
                     memset(amat.data, 0, amat.total()*amat.elemsize);
                     amat.time_stamp = ConvertPtsToTs(m_samplePos);
@@ -926,20 +1041,21 @@ private:
     thread m_mixingThread;
     AVSampleFormat m_mixOutSmpfmt{AV_SAMPLE_FMT_FLT};
     ImDataType m_mixOutDataType;
+    SharedSettings::Holder m_hSettings;
+    AVSampleFormat m_trackOutSmpfmt{AV_SAMPLE_FMT_FLTP};
+    SharedSettings::Holder m_hTrackSettings;
 
     list<AudioTrack::Holder> m_tracks;
     recursive_mutex m_trackLock;
     int64_t m_duration{0};
     int64_t m_samplePos{0};
     uint32_t m_outSampleRate{0};
-#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
     uint32_t m_outChannels{0};
+#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
     int64_t m_outChannelLayout{0};
 #else
     AVChannelLayout m_outChlyt{AV_CHANNEL_ORDER_UNSPEC, 0};
 #endif
-    AVSampleFormat m_trackOutSmpfmt{AV_SAMPLE_FMT_FLTP};
-    bool m_isTrackOutputPlanar{false};
     uint32_t m_frameSize{0};
     uint32_t m_outSamplesPerFrame{1024};
     int64_t m_outMtsPerFrame{0};
@@ -985,22 +1101,23 @@ MultiTrackAudioReader::Holder MultiTrackAudioReader::CreateInstance()
     return MultiTrackAudioReader::Holder(new MultiTrackAudioReader_Impl(), MULTI_TRACK_AUDIO_READER_DELETER);
 }
 
-MultiTrackAudioReader::Holder MultiTrackAudioReader_Impl::CloneAndConfigure(uint32_t outChannels, uint32_t outSampleRate, uint32_t outSamplesPerFrame)
+MultiTrackAudioReader::Holder MultiTrackAudioReader_Impl::CloneAndConfigure(SharedSettings::Holder hSettings, uint32_t outSamplesPerFrame)
 {
     lock_guard<recursive_mutex> lk(m_apiLock);
     MultiTrackAudioReader_Impl* newInstance = new MultiTrackAudioReader_Impl();
-    if (!newInstance->Configure(outChannels, outSampleRate, outSamplesPerFrame))
+    if (!newInstance->Configure(hSettings, outSamplesPerFrame))
     {
         m_errMsg = newInstance->GetError();
         newInstance->Close(); delete newInstance;
         return nullptr;
     }
+    newInstance->m_aeFilter->CopyParamsFrom(m_aeFilter.get());
 
     lock_guard<recursive_mutex> lk2(m_trackLock);
     // clone all the tracks
     for (auto track : m_tracks)
     {
-        newInstance->m_tracks.push_back(track->Clone(outChannels, outSampleRate, av_get_sample_fmt_name(m_trackOutSmpfmt)));
+        newInstance->m_tracks.push_back(track->Clone(m_hTrackSettings));
     }
     newInstance->UpdateDuration();
     // create mixer in the new instance

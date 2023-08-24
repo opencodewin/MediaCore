@@ -19,8 +19,10 @@
 #include <sstream>
 #include <SDL.h>
 #include "AudioRender.h"
+#include "Logger.h"
 
 using namespace std;
+using namespace Logger;
 
 #define SDL_AUDIO_MIN_BUFFER_SIZE 512
 #define SDL_AUDIO_MAX_CALLBACKS_PER_SEC 30
@@ -97,6 +99,8 @@ public:
         desiredAudSpec.samples = MAX(SDL_AUDIO_MIN_BUFFER_SIZE, 2 << log2_c(desiredAudSpec.freq / SDL_AUDIO_MAX_CALLBACKS_PER_SEC));
         desiredAudSpec.callback = sdl_audio_callback;
         desiredAudSpec.userdata = this;
+        Log(DEBUG) << "[AudioRender_SDL2] Open device as: channels=" << channels << ", sample-rate=" << sampleRate << ", pcm-format=" << (int)format
+                << ", buffered-samples=" << desiredAudSpec.samples << "." << endl;
         m_audDevId = SDL_OpenAudioDevice(NULL, 0, &desiredAudSpec, &obtainedAudSpec, 0);
         if (m_audDevId == 0)
         {

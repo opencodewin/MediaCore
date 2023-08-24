@@ -88,4 +88,38 @@ void CopyAudioMatSamples(ImGui::ImMat& dstMat, const ImGui::ImMat& srcMat, uint3
         memcpy(dstPtr, srcPtr, copySize);
     }
 }
+
+ImDataType PcmFormat2ImDataType(MediaCore::AudioRender::PcmFormat pcmFormat)
+{
+    ImDataType dataType;
+    switch (pcmFormat)
+    {
+    case MediaCore::AudioRender::PcmFormat::FLOAT32:
+        dataType = IM_DT_FLOAT32;
+        break;
+    case MediaCore::AudioRender::PcmFormat::SINT16:
+        dataType = IM_DT_INT16;
+        break;
+    default:
+        dataType = IM_DT_UNDEFINED;
+    }
+    return dataType;
+}
+
+MediaCore::AudioRender::PcmFormat ImDataType2PcmFormat(ImDataType dataType)
+{
+    MediaCore::AudioRender::PcmFormat pcmFormat;
+    switch (dataType)
+    {
+    case IM_DT_FLOAT32:
+        pcmFormat = MediaCore::AudioRender::PcmFormat::FLOAT32;
+        break;
+    case IM_DT_INT16:
+        pcmFormat =  MediaCore::AudioRender::PcmFormat::SINT16;
+        break;
+    default:
+        pcmFormat = MediaCore::AudioRender::PcmFormat::UNKNOWN;
+    }
+    return pcmFormat;
+}
 }

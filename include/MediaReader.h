@@ -88,6 +88,7 @@ struct MediaReader
     virtual bool IsHwAccelEnabled() const = 0;
     virtual void EnableHwAccel(bool enable) = 0;
     virtual void ChangeVideoOutputSize(uint32_t outWidth, uint32_t outHeight, ImInterpolateMode rszInterp = IM_INTERPOLATE_BICUBIC) = 0;
+    virtual bool ChangeAudioOutputFormat(uint32_t outChannels, uint32_t outSampleRate, const std::string& outPcmFormat = "fltp") = 0;
 
     virtual MediaInfo::Holder GetMediaInfo() const = 0;
     virtual const VideoStream* GetVideoStream() const = 0;

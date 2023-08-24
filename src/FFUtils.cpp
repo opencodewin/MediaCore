@@ -1432,7 +1432,7 @@ static void ImMatWrapper_AVFrame_buffer_free(void *opaque, uint8_t *data)
     return;
 }
 
-static AVSampleFormat GetAVSampleFormatByDataType(ImDataType dataType, bool isPlanar)
+AVSampleFormat GetAVSampleFormatByDataType(ImDataType dataType, bool isPlanar)
 {
     AVSampleFormat smpfmt;
     switch (dataType)

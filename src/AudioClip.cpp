@@ -37,11 +37,14 @@ class AudioClip_AudioImpl : public AudioClip
 {
 public:
     AudioClip_AudioImpl(
-        int64_t id, MediaParser::Holder hParser,
-        uint32_t outChannels, uint32_t outSampleRate, const string& outSampleFormat,
+        int64_t id, MediaParser::Holder hParser, SharedSettings::Holder hSettings,
         int64_t start, int64_t end, int64_t startOffset, int64_t endOffset, bool exclusiveLogger = false)
         : m_id(id), m_start(start)
     {
+        m_hInfo = hParser->GetMediaInfo();
+        if (hParser->GetBestAudioStreamIndex() < 0)
+            throw invalid_argument("Argument 'hParser' has NO AUDIO stream!");
+
         string fileName = SysUtils::ExtractFileName(hParser->GetUrl());
         ostringstream loggerNameOss;
         loggerNameOss << id;
@@ -50,10 +53,6 @@ public:
             idstr = idstr.substr(idstr.size()-4);
         loggerNameOss.str(""); loggerNameOss << "AClp-" << fileName.substr(0, 4) << "-" << idstr;
         m_logger = GetLogger(loggerNameOss.str());
-
-        m_hInfo = hParser->GetMediaInfo();
-        if (hParser->GetBestAudioStreamIndex() < 0)
-            throw invalid_argument("Argument 'hParser' has NO AUDIO stream!");
         string loggerName = "";
         if (exclusiveLogger)
         {
@@ -62,10 +61,11 @@ public:
             oss << "AUD@" << fileName << "";
             loggerName = oss.str();
         }
+        m_hSettings = hSettings;
         m_hReader = MediaReader::CreateInstance(loggerName);
         if (!m_hReader->Open(hParser))
             throw runtime_error(m_hReader->GetError());
-        if (!m_hReader->ConfigAudioReader(outChannels, outSampleRate, outSampleFormat))
+        if (!m_hReader->ConfigAudioReader(hSettings->AudioOutChannels(), hSettings->AudioOutSampleRate(), hSettings->AudioOutSampleFormatName()))
             throw runtime_error(m_hReader->GetError());
         m_srcDuration = (int64_t)(m_hReader->GetAudioStream()->duration*1000);
         if (startOffset < 0)
@@ -77,7 +77,7 @@ public:
         m_startOffset = startOffset;
         m_endOffset = endOffset;
         m_padding = (end-start)+startOffset+endOffset-m_srcDuration;
-        m_totalSamples = Duration()*outSampleRate/1000;
+        m_totalSamples = Duration()*hSettings->AudioOutSampleRate()/1000;
         if (!m_hReader->Start())
             throw runtime_error(m_hReader->GetError());
     }
@@ -86,7 +86,16 @@ public:
     {
     }
 
-    Holder Clone(uint32_t outChannels, uint32_t outSampleRate, const string& outSampleFormat) const override;
+    Holder Clone(SharedSettings::Holder hSettings) const override;
+
+    bool UpdateSettings(SharedSettings::Holder hSettings) override
+    {
+        m_totalSamples = Duration()*hSettings->AudioOutSampleRate()/1000;
+        if (!m_hReader->ChangeAudioOutputFormat(hSettings->AudioOutChannels(), hSettings->AudioOutSampleRate(), hSettings->AudioOutSampleFormatName()))
+            throw runtime_error(m_hReader->GetError());
+        m_hSettings = hSettings;
+        return true;
+    }
 
     MediaParser::Holder GetMediaParser() const override
     {
@@ -358,6 +367,7 @@ private:
     ALogger* m_logger;
     int64_t m_id;
     int64_t m_trackId{-1};
+    SharedSettings::Holder m_hSettings;
     MediaInfo::Holder m_hInfo;
     MediaReader::Holder m_hReader;
     AudioFilter::Holder m_hFilter;
@@ -379,16 +389,15 @@ static const function<void(AudioClip*)> AUDIO_CLIP_HOLDER_DELETER = [] (AudioCli
 };
 
 AudioClip::Holder AudioClip::CreateInstance(
-    int64_t id, MediaParser::Holder hParser,
-    uint32_t outChannels, uint32_t outSampleRate, const string& outSampleFormat,
+    int64_t id, MediaParser::Holder hParser, SharedSettings::Holder hSettings,
     int64_t start, int64_t end, int64_t startOffset, int64_t endOffset)
 {
-    return AudioClip::Holder(new AudioClip_AudioImpl(id, hParser, outChannels, outSampleRate, outSampleFormat, start, end, startOffset, endOffset), AUDIO_CLIP_HOLDER_DELETER);
+    return AudioClip::Holder(new AudioClip_AudioImpl(id, hParser, hSettings, start, end, startOffset, endOffset), AUDIO_CLIP_HOLDER_DELETER);
 }
 
-AudioClip::Holder AudioClip_AudioImpl::Clone(uint32_t outChannels, uint32_t outSampleRate, const string& outSampleFormat) const
+AudioClip::Holder AudioClip_AudioImpl::Clone(SharedSettings::Holder hSettings) const
 {
-    AudioClip_AudioImpl* newInstance = new AudioClip_AudioImpl(m_id, m_hReader->GetMediaParser(), outChannels, outSampleRate, outSampleFormat, m_start, End(), m_startOffset, m_endOffset);
+    AudioClip_AudioImpl* newInstance = new AudioClip_AudioImpl(m_id, m_hReader->GetMediaParser(), hSettings, m_start, End(), m_startOffset, m_endOffset);
     if (m_hFilter) newInstance->SetFilter(m_hFilter->Clone());
     return AudioClip::Holder(newInstance, AUDIO_CLIP_HOLDER_DELETER);
 }

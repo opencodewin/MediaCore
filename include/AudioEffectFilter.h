@@ -41,6 +41,7 @@ namespace MediaCore
         virtual bool Init(uint32_t composeFlags, const std::string& sampleFormat, uint32_t channels, uint32_t sampleRate) = 0;
         virtual bool ProcessData(const ImGui::ImMat& in, std::list<ImGui::ImMat>& out) = 0;
         virtual bool HasFilter(uint32_t composeFlags) const = 0;
+        virtual void CopyParamsFrom(AudioEffectFilter* pAeFilter) = 0;
 
         struct VolumeParams
         {

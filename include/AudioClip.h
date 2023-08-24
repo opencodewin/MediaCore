@@ -21,6 +21,7 @@
 #include <string>
 #include <ostream>
 #include "MediaCore.h"
+#include "SharedSettings.h"
 #include "MediaReader.h"
 
 namespace MediaCore
@@ -42,11 +43,11 @@ struct AudioClip
 {
     using Holder = std::shared_ptr<AudioClip>;
     static MEDIACORE_API Holder CreateInstance(
-        int64_t id, MediaParser::Holder hParser,
-        uint32_t outChannels, uint32_t outSampleRate, const std::string& outSampleFormat,
+        int64_t id, MediaParser::Holder hParser, SharedSettings::Holder hSettings,
         int64_t start, int64_t end, int64_t startOffset, int64_t endOffset);
+    virtual Holder Clone(SharedSettings::Holder hSettings) const = 0;
+    virtual bool UpdateSettings(SharedSettings::Holder hSettings) = 0;
 
-    virtual Holder Clone(uint32_t outChannels, uint32_t outSampleRate, const std::string& outSampleFormat) const = 0;
     virtual MediaParser::Holder GetMediaParser() const = 0;
     virtual int64_t Id() const = 0;
     virtual int64_t TrackId() const = 0;
