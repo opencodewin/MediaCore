@@ -638,13 +638,33 @@ public:
         return true;
     }
 
-    bool UpdateVideoOutputSize() override
+    bool UpdateSettings(SharedSettings::Holder hSettings) override
     {
         lock(m_apiLock, m_trackLock);
         lock_guard<recursive_mutex> lk0(m_apiLock, adopt_lock);
         lock_guard<recursive_mutex> lk1(m_trackLock, adopt_lock);
+        if (hSettings->VideoOutWidth() == m_hSettings->VideoOutWidth() && hSettings->VideoOutHeight() == m_hSettings->VideoOutHeight()
+            && hSettings->VideoOutFrameRate() == m_hSettings->VideoOutFrameRate() && hSettings->VideoOutColorFormat() == m_hSettings->VideoOutColorFormat()
+            && hSettings->VideoOutDataType() == m_hSettings->VideoOutDataType())
+            return true;
+        if (hSettings->VideoOutFrameRate() != m_hSettings->VideoOutFrameRate())
+        {
+            m_errMsg = "Frame rate CANNOT be changed in UpdateSettings()!";
+            return false;
+        }
+        if (hSettings->VideoOutColorFormat() != m_hSettings->VideoOutColorFormat())
+        {
+            m_errMsg = "Color format CANNOT be changed in UpdateSettings()!";
+            return false;
+        }
+        if (hSettings->VideoOutDataType() != m_hSettings->VideoOutDataType())
+        {
+            m_errMsg = "Video data type CANNOT be changed in UpdateSettings()!";
+            return false;
+        }
         for (auto& hTrack : m_tracks)
-            hTrack->UpdateVideoOutputSize();
+            hTrack->UpdateSettings(hSettings);
+        m_hSettings->SyncVideoSettingsFrom(hSettings.get());
         Refresh(false);
         return true;
     }

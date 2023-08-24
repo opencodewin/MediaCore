@@ -635,11 +635,11 @@ public:
         m_needUpdateReadIter = true;
     }
 
-    void UpdateVideoOutputSize() override
+    void UpdateSettings(SharedSettings::Holder hSettings) override
     {
         lock_guard<recursive_mutex> lk(m_clipChangeLock);
         for (auto& hClip : m_clips2)
-            hClip->UpdateVideoOutputSize();
+            hClip->UpdateSettings(hSettings);
     }
 
     void SetLogLevel(Logger::Level l) override

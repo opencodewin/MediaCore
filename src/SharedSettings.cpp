@@ -127,7 +127,16 @@ class SharedSettings_Impl : public SharedSettings
         m_audOutSmpfmtName = pcSmpfmtName ? string(pcSmpfmtName) : "None";
     }
 
-    void SyncAudioSettingsFrom(SharedSettings* pSettings) override
+    void SyncVideoSettingsFrom(const SharedSettings* pSettings) override
+    {
+        SetVideoOutWidth(pSettings->VideoOutWidth());
+        SetVideoOutHeight(pSettings->VideoOutHeight());
+        SetVideoOutFrameRate(pSettings->VideoOutFrameRate());
+        SetVideoOutColorFormat(pSettings->VideoOutColorFormat());
+        SetVideoOutDataType(pSettings->VideoOutDataType());
+    }
+
+    void SyncAudioSettingsFrom(const SharedSettings* pSettings) override
     {
         SetAudioOutChannels(pSettings->AudioOutChannels());
         SetAudioOutSampleRate(pSettings->AudioOutSampleRate());

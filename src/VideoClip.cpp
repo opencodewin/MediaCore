@@ -419,10 +419,10 @@ public:
         return m_hWarpFilter;
     }
 
-    void UpdateVideoOutputSize() override
+    void UpdateSettings(SharedSettings::Holder hSettings) override
     {
-        auto outWidth = m_hSettings->VideoOutWidth();
-        auto outHeight = m_hSettings->VideoOutHeight();
+        auto outWidth = hSettings->VideoOutWidth();
+        auto outHeight = hSettings->VideoOutHeight();
         auto vidStm = m_hReader->GetVideoStream();
         uint32_t readerWidth, readerHeight;
         if (outWidth*vidStm->height > outHeight*vidStm->width)
@@ -723,10 +723,10 @@ public:
         return m_hWarpFilter;
     }
 
-    void UpdateVideoOutputSize() override
+    void UpdateSettings(SharedSettings::Holder hSettings) override
     {
-        auto outWidth = m_hSettings->VideoOutWidth();
-        auto outHeight = m_hSettings->VideoOutHeight();
+        auto outWidth = hSettings->VideoOutWidth();
+        auto outHeight = hSettings->VideoOutHeight();
         auto vidStm = m_hReader->GetVideoStream();
         uint32_t readerWidth, readerHeight;
         if (outWidth*vidStm->height > outHeight*vidStm->width)

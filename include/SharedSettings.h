@@ -40,7 +40,8 @@ struct SharedSettings
     virtual void SetAudioOutDataType(ImDataType dataType) = 0;
     virtual void SetAudioOutIsPlanar(bool isPlanar) = 0;
 
-    virtual void SyncAudioSettingsFrom(SharedSettings* pSettings) = 0;
+    virtual void SyncVideoSettingsFrom(const SharedSettings* pSettings) = 0;
+    virtual void SyncAudioSettingsFrom(const SharedSettings* pSettings) = 0;
 };
 
 }

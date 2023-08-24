@@ -81,7 +81,7 @@ struct VideoClip
     virtual void SetFilter(VideoFilter::Holder filter) = 0;
     virtual VideoFilter::Holder GetFilter() const = 0;
     virtual VideoTransformFilter::Holder GetTransformFilter() = 0;
-    virtual void UpdateVideoOutputSize() = 0;
+    virtual void UpdateSettings(SharedSettings::Holder hSettings) = 0;
 
     virtual void SetLogLevel(Logger::Level l) = 0;
 
