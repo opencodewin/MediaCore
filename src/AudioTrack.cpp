@@ -293,8 +293,6 @@ public:
                 }
                 if (readSamples >= toReadSamples)
                     break;
-                if (readPosBegin <= ovlp->Start())
-                    ovlp->RearClip()->SeekTo(0);
 
                 bool eof = false;
                 toReadSamples2 = toReadSamples-readSamples;
@@ -355,8 +353,6 @@ public:
                 }
                 if (readSamples >= toReadSamples)
                     break;
-                if (readPosBegin >= ovlp->Start())
-                    ovlp->FrontClip()->SeekTo(ovlp->FrontClip()->Duration());
 
                 bool eof = false;
                 toReadSamples2 = toReadSamples-readSamples;

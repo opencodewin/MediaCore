@@ -332,6 +332,7 @@ public:
             return;
         }
         m_readForward = forward;
+        m_logger->Log(DEBUG) << "---> Direction changed: forward=" << forward << endl;
     }
 
     void Suspend() override
@@ -1488,6 +1489,12 @@ private:
                 lock_guard<mutex> _lk(m_vfrmQLock);
                 auto iter = m_vfrmQ.begin();
                 bool firstGreaterPts = true;
+                bool backIsEof = false;
+                if (!m_vfrmQ.empty())
+                {
+                    VideoFrame_Impl* pVf = dynamic_cast<VideoFrame_Impl*>(m_vfrmQ.back().get());
+                    backIsEof = pVf->isEofFrame;
+                }
                 while (iter != m_vfrmQ.end())
                 {
                     VideoFrame_Impl* pVf = dynamic_cast<VideoFrame_Impl*>(iter->get());
@@ -1520,6 +1527,19 @@ private:
                     if (!hVfrm && pVf->isHwfrm)
                         hVfrm = *iter;
                     iter++;
+                }
+                if (!m_vfrmQ.empty())
+                {
+                    if (m_readForward)
+                    {
+                        VideoFrame_Impl* pVf = dynamic_cast<VideoFrame_Impl*>(m_vfrmQ.front().get());
+                        pVf->isStartFrame = true;
+                    }
+                    else if (backIsEof)
+                    {
+                        VideoFrame_Impl* pVf = dynamic_cast<VideoFrame_Impl*>(m_vfrmQ.back().get());
+                        pVf->isEofFrame = true;
+                    }
                 }
             }
 

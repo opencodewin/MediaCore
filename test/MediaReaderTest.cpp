@@ -103,7 +103,7 @@ static void MediaReader_Initialize(void** handle)
     MediaReader::GetDefaultLogger()
         ->SetShowLevels(INFO);
     g_txmgr = TextureManager::CreateInstance();
-    g_txmgr->SetLogLevel(VERBOSE);
+    g_txmgr->SetLogLevel(INFO);
 
 #ifdef USE_BOOKMARK
 	// load bookmarks
@@ -226,7 +226,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         }
         if (g_audrdr->IsOpened())
         {
-            if (!g_vidrdr->IsOpened())
+            if (!g_vidrdr || !g_vidrdr->IsOpened())
             {
                 isForward = g_audrdr->IsDirectionForward();
                 const AudioStream* astminfo = g_audrdr->GetAudioStream();
@@ -317,9 +317,9 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         if (ImGui::SliderFloat("Position", &playPos, 0, mediaDur, "%.3f"))
         {
             int64_t seekPos = playPos*1000;
-            if (g_vidrdr->IsOpened())
+            if (g_vidrdr && g_vidrdr->IsOpened())
                 g_vidrdr->SeekTo(seekPos);
-            if (g_audrdr->IsOpened())
+            if (g_audrdr && g_audrdr->IsOpened())
                 g_audrdr->SeekTo(seekPos);
             g_playStartPos = playPos;
             g_playStartTp = Clock::now();

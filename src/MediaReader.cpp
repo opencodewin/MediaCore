@@ -1521,7 +1521,7 @@ private:
                             if (m_readForward)
                                 m_audReadOffset = (int)((double)(currwnd.readPos-CvtSwrPtsToMts(readfrm->pts))/1000*m_swrOutSampleRate)*blockAlign;
                             else
-                                m_audReadOffset = (int)((double)(CvtAudPtsToMts(readfrm->pts)-currwnd.readPos)/1000*m_swrOutSampleRate)*blockAlign;
+                                m_audReadOffset = (int)((double)(CvtSwrPtsToMts(readfrm->pts)-currwnd.readPos)/1000*m_swrOutSampleRate)*blockAlign;
                             if (m_audReadOffset < 0)
                             {
                                 m_logger->Log(DEBUG) << "m_audReadOffset=" << m_audReadOffset << " < 0, WRONG!" << endl;
