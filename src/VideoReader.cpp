@@ -1239,7 +1239,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         m_dmxThdRunning = false;
         m_logger->Log(DEBUG) << "Leave DemuxThreadProc()." << endl;
@@ -1466,7 +1466,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         m_decThdRunning = false;
         m_logger->Log(DEBUG) << "Leave DecodeThreadProc()." << endl;
@@ -1559,7 +1559,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         m_cnvThdRunning = false;
         m_logger->Log(DEBUG) << "Leave ConvertMatThreadProc()." << endl;

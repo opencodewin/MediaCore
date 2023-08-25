@@ -370,7 +370,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
     }
 

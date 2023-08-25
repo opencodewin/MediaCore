@@ -26,6 +26,8 @@
 #define MEDIACORE_API
 #endif
 
+#define THREAD_IDLE_TIME    20
+
 #include <cstdint>
 #include "immat.h"
 
