@@ -551,9 +551,35 @@ public:
         bool eof1{false};
         auto toReadSize1 = readSamples;
         ImGui::ImMat amat1 = m_frontClip->ReadAudioSamples(toReadSize1, eof1);
+        if (eof1 && toReadSize1 < readSamples)
+        {
+            ImGui::ImMat temp;
+            temp.create_type(readSamples, 1, amat1.c, amat1.type);
+            memset(temp.data, 0, temp.total()*temp.elemsize);
+            if (!amat1.empty() && amat1.w > 0)
+                MatUtils::CopyAudioMatSamples(temp, amat1, 0, 0);
+            temp.time_stamp = amat1.time_stamp;
+            temp.flags = amat1.flags;
+            temp.rate = amat1.rate;
+            amat1 = temp;
+            toReadSize1 = readSamples;
+        }
         bool eof2{false};
         auto toReadSize2 = readSamples;
         ImGui::ImMat amat2 = m_rearClip->ReadAudioSamples(toReadSize2, eof2);
+        if (eof2 && toReadSize2 < readSamples)
+        {
+            ImGui::ImMat temp;
+            temp.create_type(readSamples, 1, amat2.c, amat2.type);
+            memset(temp.data, 0, temp.total()*temp.elemsize);
+            if (!amat2.empty() && amat2.w > 0)
+                MatUtils::CopyAudioMatSamples(temp, amat2, 0, 0);
+            temp.time_stamp = amat2.time_stamp;
+            temp.flags = amat2.flags;
+            temp.rate = amat2.rate;
+            amat2 = temp;
+            toReadSize2 = readSamples;
+        }
         assert("Front clip and rear clip returns different read sample count!" && toReadSize1 == toReadSize2);
         AudioTransition::Holder transition = m_transition;
         ImGui::ImMat amat = transition->MixTwoAudioMats(amat1, amat2, (int64_t)(amat1.time_stamp*1000));
