@@ -860,7 +860,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         if (currTask && !currTask->demuxerEof)
             currTask->demuxerEof = true;
@@ -1096,7 +1096,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         if (currTask && !currTask->decoderEof)
             currTask->decoderEof = true;
@@ -1170,7 +1170,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         m_logger->Log(VERBOSE) << "Leave UpdateSnapshotThreadProc()." << endl;
     }
@@ -1267,7 +1267,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         m_logger->Log(VERBOSE) << "Leave BuildSnapshotFromImageSequence()." << endl;
     }

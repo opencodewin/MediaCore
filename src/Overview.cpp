@@ -862,7 +862,7 @@ private:
                         }
                     }
                     if (idleLoop2)
-                        this_thread::sleep_for(chrono::milliseconds(5));
+                        this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
                 }
             }
             else
@@ -871,7 +871,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         if (avpktLoaded)
             av_packet_unref(&avpkt);
@@ -954,7 +954,7 @@ private:
                 }
 
                 if (idleLoop2)
-                    this_thread::sleep_for(chrono::milliseconds(5));
+                    this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
             } while (hasOutput && !m_quit);
             if (quitLoop)
                 break;
@@ -1002,7 +1002,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         m_viddecEof = true;
         m_logger->Log(DEBUG) << "Leave VideoDecodeThreadProc()." << endl;
@@ -1111,7 +1111,7 @@ private:
                 break;
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         FillBlankSsByDuplication();
 
@@ -1220,7 +1220,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
 
         // wait for all decode context finish
@@ -1258,7 +1258,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
 
         if (!m_quit)
@@ -1348,7 +1348,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(1));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         if (avpktLoaded)
             av_packet_unref(&avpkt);
@@ -1465,7 +1465,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(1));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         m_auddecEof = true;
         if (avfrmLoaded)
@@ -1626,7 +1626,7 @@ private:
                 break;
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(1));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         m_hWaveform->parseDone = true;
         m_genWfEof = true;

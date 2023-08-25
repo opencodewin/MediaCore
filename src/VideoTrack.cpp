@@ -763,7 +763,7 @@ private:
             if (idleLoop)
             {
                 // m_logger->Log(DEBUG) << "Track#" << m_id << " slept" << endl;
-                this_thread::sleep_for(chrono::milliseconds(2));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
             }
         }
     }

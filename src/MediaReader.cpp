@@ -1632,7 +1632,7 @@ private:
 
             needLoop = ((readTask && !readTask->cancel) || (!readTask && wait) || !idleLoop) && toReadSize > readSize && !m_audReadEof && !m_close;
             if (needLoop && idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
 
             // if (!needLoop && readSize < toReadSize)
             //     m_logger->Log(WARN) << "Quit 'ReadAudioSamples()' before 'readSize'(" << readSize << ") reaches 'toReadSize'(" << toReadSize << ")! readTask is " << (readTask ? "non-NULL" : "NULL")
@@ -1890,7 +1890,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
 
         if (currTask && !currTask->demuxStopped)
@@ -2168,7 +2168,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         if (currTask && !currTask->decInputEof)
             currTask->decInputEof = true;
@@ -2232,7 +2232,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         m_logger->Log(DEBUG) << "Leave GenerateVideoFrameThreadProc()." << endl;
     }
@@ -2422,7 +2422,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         if (avfrmLoaded)
             av_frame_unref(&avfrm);
@@ -2549,7 +2549,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         m_logger->Log(DEBUG) << "Leave GenerateAudioSamplesThreadProc()." << endl;
     }

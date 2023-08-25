@@ -770,7 +770,7 @@ private:
                 }
 
                 if (idleLoop)
-                    this_thread::sleep_for(chrono::milliseconds(5));
+                    this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
             }
         }
     };
@@ -1076,7 +1076,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         m_rdimgThdRunning = false;
         m_logger->Log(DEBUG) << "Leave ReadImageThreadProc()." << endl;
@@ -1182,7 +1182,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(5));
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
         m_cnvThdRunning = false;
         m_logger->Log(DEBUG) << "Leave ConvertMatThreadProc()." << endl;
