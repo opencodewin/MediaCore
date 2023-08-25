@@ -547,6 +547,7 @@ public:
 
         int step = m_readForward ? 1 : -1;
         int64_t targetIndex = m_readFrameIdx+step;
+        if (targetIndex < 0) targetIndex = 0;
         bool ret = ReadVideoFrameWithoutSubtitle(targetIndex, frames, false, true);
         if (ret && !m_subtrks.empty())
         {
