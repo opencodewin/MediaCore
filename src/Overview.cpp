@@ -210,6 +210,7 @@ public:
             m_errMsg = m_frmCvt.GetError();
             return false;
         }
+        m_logger->Log(INFO) << "Overview size for file '" << (m_hMediaInfo ? m_hMediaInfo->url : "(NOT OPENED YET)") << "' is set as " << width << "x" << height << "." << endl;
         RebuildSnapshots();
         return true;
     }
@@ -515,12 +516,14 @@ private:
                     else
                         m_hwDecCtxLock.TurnOn();
 #endif
+                    m_logger->Log(INFO) << "Overview for file '" << m_hMediaInfo->url << "' opened a video decoder '" << 
+                        m_viddecCtx->codec->name << "'(" << (res.hwDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(res.hwDevType)) << ")." << endl;
                     openVideoFailed = false;
                 }
                 else
                 {
                     ostringstream oss;
-                    oss << "Open video decoder FAILED! Error is '" << res.errMsg << "'.";
+                    oss << "Overview FAILED to open the video decoder for file '" << m_hMediaInfo->url << "'! Error is '" << res.errMsg << "'.";
                     m_errMsg = oss.str();
                     m_vidStmIdx = -1;
                 }
@@ -1098,7 +1101,7 @@ private:
                     else
                         discarded = true;
                     if (discarded)
-                        m_logger->Log(WARN) << "Discard AVFrame with pts=" << frm->pts << "(ts=" << ts << ")!" << endl;
+                        m_logger->Log(DEBUG) << "Discard AVFrame with pts=" << frm->pts << "(ts=" << ts << ")!" << endl;
                 }
 
                 av_frame_free(&frm);

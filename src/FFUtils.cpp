@@ -1941,7 +1941,7 @@ static AVPixelFormat _VideoDecoderCallback_GetFormat(AVCodecContext *ctx, const 
             }
         }
     }
-    if (options->preferHwOutputPixfmt && hwCandidate != AV_PIX_FMT_NONE)
+    if (!options->onlyUseSoftwareDecoder && options->preferHwOutputPixfmt && hwCandidate != AV_PIX_FMT_NONE)
         return hwCandidate;
     return swCandidate!=AV_PIX_FMT_NONE ? swCandidate : hwCandidate;
 }

@@ -822,6 +822,28 @@ public:
         return pCont->GetFreeTexture();
     }
 
+    bool ReleaseTexturePool(const std::string& name) override
+    {
+        if (name.empty())
+        {
+            m_errMsg = "INVALID argument 'name', it can not be empty string!";
+            return false;
+        }
+        lock_guard<mutex> lk(m_containersLock);
+        auto iter = m_containers.find(name);
+        if (iter == m_containers.end())
+        {
+            ostringstream oss; oss << "There is no container with name '" << name << "'!";
+            m_errMsg = oss.str();
+            return false;
+        }
+
+        auto& hCont = iter->second;
+        hCont->Release();
+        m_containers.erase(iter);
+        return true;
+    }
+
     bool GetTexturePoolAttributes(const string& poolName, Vec2<int32_t>& textureSize, ImDataType& dataType) override
     {
         lock_guard<mutex> lk(m_containersLock);

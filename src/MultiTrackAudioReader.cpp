@@ -792,7 +792,7 @@ private:
 #endif
         // oss << ",aformat=" << av_get_sample_fmt_name(m_mixOutSmpfmt);
         string filtArgs = oss.str(); oss.str("");
-        m_logger->Log(WARN) << "'MultiTrackAudioReader' mixer filter args: '" << filtArgs << "'." << endl;
+        m_logger->Log(DEBUG) << "'MultiTrackAudioReader' mixer filter args: '" << filtArgs << "'." << endl;
         fferr = avfilter_graph_parse_ptr(m_filterGraph, filtArgs.c_str(), &m_filterInputs, &m_filterOutputs, nullptr);
         if (fferr < 0)
         {

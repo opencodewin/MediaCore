@@ -79,6 +79,7 @@ struct TextureManager
     virtual ManagedTexture::Holder GetTextureFromPool(const std::string& poolName) = 0;
     virtual bool CreateGridTexturePool(const std::string& name, const Vec2<int32_t>& textureSize, ImDataType dataType, const Vec2<int32_t>& gridSize, uint32_t minPoolSize, uint32_t maxPoolSize = 0) = 0;
     virtual ManagedTexture::Holder GetGridTextureFromPool(const std::string& poolName) = 0;
+    virtual bool ReleaseTexturePool(const std::string& name) = 0;
 
     virtual bool GetTexturePoolAttributes(const std::string& poolName, Vec2<int32_t>& textureSize, ImDataType& dataType) = 0;
     virtual void SetUiThread(const std::thread::id& threadId) = 0;

@@ -86,8 +86,7 @@ public:
         m_hParser = hParser;
 
         m_opened = true;
-        m_logger->Log(INFO) << "Create SnapshotGenerator for file '" << hParser->GetUrl() << "'. Output image resolution=" <<
-            m_frmCvt.GetOutWidth() << "x" << m_frmCvt.GetOutHeight() << "." << endl;
+        m_logger->Log(DEBUG) << "Snapshot::Generator for file '" << hParser->GetUrl() << "' is created." << endl;
         return true;
     }
 
@@ -112,8 +111,7 @@ public:
         m_hParser = hParser;
 
         m_opened = true;
-        m_logger->Log(INFO) << "Create SnapshotGenerator for file '" << hParser->GetUrl() << "'. Output image resolution=" <<
-            m_frmCvt.GetOutWidth() << "x" << m_frmCvt.GetOutHeight() << "." << endl;
+        m_logger->Log(DEBUG) << "Snapshot::Generator for file '" << hParser->GetUrl() << "' is created." << endl;
         return true;
     }
 
@@ -375,6 +373,7 @@ public:
             m_errMsg = m_frmCvt.GetError();
             return false;
         }
+        m_logger->Log(INFO) << "Snapshot size for file '" << (m_hMediaInfo ? m_hMediaInfo->url : "(NOT OPENED YET)") << "' is set as " << width << "x" << height << "." << endl;
         if (m_prepared)
             ResetGopDecodeTaskList();
         return true;
@@ -668,13 +667,13 @@ private:
                     else
                         m_hwDecCtxLock.TurnOn();
 #endif
-                    m_logger->Log(INFO) << "SnapshotGenerator for file '" << m_hParser->GetUrl() << "' opened video decoder '" << 
+                    m_logger->Log(INFO) << "Snapshot::Generator for file '" << m_hMediaInfo->url << "' opened a video decoder '" << 
                         m_viddecCtx->codec->name << "'(" << (res.hwDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(res.hwDevType)) << ")." << endl;
                 }
                 else
                 {
                     ostringstream oss;
-                    oss << "SnapshotGenerator for file '" << m_hParser->GetUrl() << "' FAILED to open video decoder! Error is '" << res.errMsg << "'.";
+                    oss << "Snapshot::Generator for file '" << m_hMediaInfo->url << "' FAILED to open video decoder! Error is '" << res.errMsg << "'.";
                     m_errMsg = oss.str();
                     return false;
                 }
