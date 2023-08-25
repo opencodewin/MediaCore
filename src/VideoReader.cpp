@@ -1013,7 +1013,7 @@ private:
             {
                 m_logger->Log(VERBOSE) << "            >>>> DIRECTION CHANGE DETECTED <<<<" << endl;
                 UpdateReadPos(m_readPos);
-                needSeek = true;
+                needSeek = needFlushVfrmQ = true;
                 if (readForward)
                 {
                     seekPts = m_readPos;
