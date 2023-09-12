@@ -20,6 +20,7 @@
 #include <sstream>
 #include <atomic>
 #include <functional>
+#include <list>
 #include "MediaReader.h"
 #include "FFUtils.h"
 #include "SysUtils.h"
