@@ -12,7 +12,9 @@
 #include <typeinfo>
 #include <cassert>
 #include "TextureManager.h"
+#if IMGUI_VULKAN_SHADER
 #include "Resize_vulkan.h"
+#endif
 #include "imgui_helper.h"
 
 using namespace std;
@@ -109,6 +111,7 @@ private:
             }
 
             ImGui::ImMat renderMat = vmat;
+#if IMGUI_VULKAN_SHADER
             const auto& roiSize = m_roiSize;
             if (roiSize.x != vmat.w || roiSize.y != vmat.h || vmat.type != m_dataType)
             {
@@ -127,7 +130,7 @@ private:
                 }
                 renderMat = rszMat;
             }
-
+#endif
             if (this_thread::get_id() != m_owner->m_uiThreadId)
             {
                 if (m_valid)
@@ -944,7 +947,9 @@ private:
     atomic_int32_t m_logicTxCount{0};
     atomic_int32_t m_validTxCount{0};
     thread::id m_uiThreadId;
+#if IMGUI_VULKAN_SHADER
     ImGui::Resize_vulkan m_scaler;
+#endif
     string m_errMsg;
     ALogger* m_logger;
 
