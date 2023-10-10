@@ -102,24 +102,10 @@ public:
             m_errMsg = "CANNOT create new 'VideoBlender' instance for mixing!";
             return false;
         }
-        if (!m_hMixBlender->Init("rgba", outWidth, outHeight, outWidth, outHeight, 0, 0))
-        {
-            ostringstream oss;
-            oss << "Mixer blender initialization FAILED! Error message: '" << m_hMixBlender->GetError() << "'.";
-            m_errMsg = oss.str();
-            return false;
-        }
         m_hSubBlender = VideoBlender::CreateInstance();
         if (!m_hSubBlender)
         {
             m_errMsg = "CANNOT create new 'VideoBlender' instance for subtitle!";
-            return false;
-        }
-        if (!m_hSubBlender->Init())
-        {
-            ostringstream oss;
-            oss << "Subtitle blender initialization FAILED! Error message: '" << m_hSubBlender->GetError() << "'.";
-            m_errMsg = oss.str();
             return false;
         }
         if (!hSettings->GetHwaccelManager())

@@ -41,14 +41,6 @@ public:
 #endif
     }
 
-    bool Init() override
-    {
-        bool success = m_ffBlender.Init();
-        if (!success)
-            m_errMsg = m_ffBlender.GetError();
-        return success;
-    }
-
     ImGui::ImMat Blend(ImGui::ImMat& baseImage, ImGui::ImMat& overlayImage, int32_t x, int32_t y) override
     {
         ImGui::ImMat res;
@@ -74,19 +66,9 @@ public:
         }
         else
         {
-            res = m_ffBlender.Blend(baseImage, overlayImage, x, y, overlayImage.w, overlayImage.h);
+            res = m_ffBlender.Blend(baseImage, overlayImage, x, y);
         }
         return res;
-    }
-
-    bool Init(const std::string& inputFormat, uint32_t w1, uint32_t h1, uint32_t w2, uint32_t h2, int32_t x, int32_t y) override
-    {
-        m_ovlyX = x;
-        m_ovlyY = y;
-        bool success = m_ffBlender.Init(inputFormat, w1, h1, w2, h2, x, y, false);
-        if (!success)
-            m_errMsg = m_ffBlender.GetError();
-        return success;
     }
 
     ImGui::ImMat Blend(ImGui::ImMat& baseImage, ImGui::ImMat& overlayImage) override
@@ -115,6 +97,36 @@ public:
         else
         {
             res = m_ffBlender.Blend(baseImage, overlayImage);
+        }
+        return res;
+    }
+
+    ImGui::ImMat Blend(const ImGui::ImMat& baseImage, const ImGui::ImMat& overlayImage, const ImGui::ImMat& alphaMat) override
+    {
+        ImGui::ImMat res;
+        if (m_useVulkan)
+        {
+#if IMGUI_VULKAN_SHADER
+            ImGui::VkMat vkmat;
+            vkmat.type = baseImage.type;
+            m_vulkanBlender.blend(overlayImage, baseImage, alphaMat, vkmat, m_ovlyX, m_ovlyY);
+            if (!vkmat.empty())
+            {
+                res = vkmat;
+                res.time_stamp = baseImage.time_stamp;
+                res.duration = baseImage.time_stamp;
+                res.color_space = baseImage.color_space;
+                res.color_range = baseImage.color_range;
+            }
+            else
+            {
+                res = baseImage;
+            }
+#endif
+        }
+        else
+        {
+            throw runtime_error("NOT SUPPORTED!");
         }
         return res;
     }

@@ -196,12 +196,14 @@ public:
     FFOverlayBlender& operator=(const FFOverlayBlender&) = delete;
     ~FFOverlayBlender();
 
-    bool Init(const std::string& inputFormat, uint32_t w1, uint32_t h1, uint32_t w2, uint32_t h2, int32_t x, int32_t y, bool evalPerFrame);
     ImGui::ImMat Blend(ImGui::ImMat& baseImage, ImGui::ImMat& overlayImage);
-    bool Init();
-    ImGui::ImMat Blend(ImGui::ImMat& baseImage, ImGui::ImMat& overlayImage, int32_t x, int32_t y, uint32_t w, uint32_t h);
+    ImGui::ImMat Blend(ImGui::ImMat& baseImage, ImGui::ImMat& overlayImage, int32_t x, int32_t y);
 
     std::string GetError() const { return m_errMsg; }
+
+private:
+    bool SetupFilterGraph(AVPixelFormat pixfmt, uint32_t w1, uint32_t h1, uint32_t w2, uint32_t h2, int32_t x, int32_t y, bool evalPerFrame);
+    void ReleaseFilterGraph();
 
 private:
     AVFilterGraph* m_avfg{nullptr};
@@ -209,6 +211,7 @@ private:
     AVFilterInOut* m_filterInputs{nullptr};
     std::vector<AVFilterContext*> m_bufSrcCtxs;
     std::vector<AVFilterContext*> m_bufSinkCtxs;
+    uint32_t m_baseImgW{0}, m_baseImgH{0}, m_ovlyImgW{0}, m_ovlyImgH{0};
     int32_t m_x{0}, m_y{0};
     int64_t m_inputCount{0};
     ImMatToAVFrameConverter m_cvtMat2Avfrm;

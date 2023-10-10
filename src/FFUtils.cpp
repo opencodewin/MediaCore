@@ -1540,20 +1540,10 @@ FFOverlayBlender::FFOverlayBlender()
 
 FFOverlayBlender::~FFOverlayBlender()
 {
-    if (m_avfg)
-    {
-        avfilter_graph_free(&m_avfg);
-        m_avfg = nullptr;
-    }
-    m_bufSrcCtxs.clear();
-    m_bufSinkCtxs.clear();
-    if (m_filterOutputs)
-        avfilter_inout_free(&m_filterOutputs);
-    if (m_filterInputs)
-        avfilter_inout_free(&m_filterInputs);
+    ReleaseFilterGraph();
 }
 
-bool FFOverlayBlender::Init(const std::string& inputFormat, uint32_t w1, uint32_t h1, uint32_t w2, uint32_t h2, int32_t x, int32_t y, bool evalPerFrame)
+bool FFOverlayBlender::SetupFilterGraph(AVPixelFormat pixfmt, uint32_t w1, uint32_t h1, uint32_t w2, uint32_t h2, int32_t x, int32_t y, bool evalPerFrame)
 {
     if (w1 == 0 || h1 == 0)
     {
@@ -1565,10 +1555,9 @@ bool FFOverlayBlender::Init(const std::string& inputFormat, uint32_t w1, uint32_
         m_errMsg = "INVALID argument value for 'w2' or 'h2'!";
         return false;
     }
-    AVPixelFormat inPixfmt = GetAVPixelFormatByName(inputFormat);
-    if (inPixfmt == AV_PIX_FMT_NONE)
+    if (pixfmt == AV_PIX_FMT_NONE)
     {
-        m_errMsg = "INVALID argument value for 'inputFormat'!";
+        m_errMsg = "INVALID argument value for 'pixfmt'!";
         return false;
     }
 
@@ -1584,7 +1573,7 @@ bool FFOverlayBlender::Init(const std::string& inputFormat, uint32_t w1, uint32_
 
     int fferr;
     ostringstream oss;
-    oss << w1 << ":" << h1 << ":pix_fmt=" << (int)inPixfmt << ":time_base=1/" << AV_TIME_BASE << ":sar=1:frame_rate=25/1";
+    oss << w1 << ":" << h1 << ":pix_fmt=" << (int)pixfmt << ":time_base=1/" << AV_TIME_BASE << ":sar=1:frame_rate=25/1";
     string bufsrcArg = oss.str(); oss.str("");
     AVFilterContext* filterCtx = nullptr;
     string filterName = "base";
@@ -1609,7 +1598,7 @@ bool FFOverlayBlender::Init(const std::string& inputFormat, uint32_t w1, uint32_
     m_bufSrcCtxs.push_back(filterCtx);
 
     filterName = "overlay"; filterCtx = nullptr;
-    oss << w2 << ":" << h2 << ":pix_fmt=" << (int)inPixfmt << ":time_base=1/" << AV_TIME_BASE << ":sar=1:frame_rate=25/1";
+    oss << w2 << ":" << h2 << ":pix_fmt=" << (int)pixfmt << ":time_base=1/" << AV_TIME_BASE << ":sar=1:frame_rate=25/1";
     bufsrcArg = oss.str(); oss.str("");
     fferr = avfilter_graph_create_filter(&filterCtx, buffersrc, filterName.c_str(), bufsrcArg.c_str(), nullptr, m_avfg);
     if (fferr < 0)
@@ -1684,18 +1673,40 @@ bool FFOverlayBlender::Init(const std::string& inputFormat, uint32_t w1, uint32_
         avfilter_inout_free(&m_filterInputs);
     m_x = x;
     m_y = y;
+    m_baseImgW = w1; m_baseImgH = h1;
+    m_ovlyImgW = w2; m_ovlyImgH = h2;
     return true;
 }
 
-bool FFOverlayBlender::Init()
+void FFOverlayBlender::ReleaseFilterGraph()
 {
-    return Init("rgba", 1920, 1080, 1920, 1080, 0, 0, true);
+    if (m_avfg)
+    {
+        avfilter_graph_free(&m_avfg);
+        m_avfg = nullptr;
+    }
+    m_bufSrcCtxs.clear();
+    m_bufSinkCtxs.clear();
+    if (m_filterOutputs)
+        avfilter_inout_free(&m_filterOutputs);
+    if (m_filterInputs)
+        avfilter_inout_free(&m_filterInputs);
 }
 
-ImGui::ImMat FFOverlayBlender::Blend(ImGui::ImMat& baseImage, ImGui::ImMat& overlayImage, int32_t x, int32_t y, uint32_t w, uint32_t h)
+ImGui::ImMat FFOverlayBlender::Blend(ImGui::ImMat& baseImage, ImGui::ImMat& overlayImage, int32_t x, int32_t y)
 {
     if (baseImage.empty() || overlayImage.empty())
         return baseImage;
+
+    if ((uint32_t)baseImage.w != m_baseImgW || (uint32_t)baseImage.h != m_baseImgH || (uint32_t)overlayImage.w != m_ovlyImgW || (uint32_t)overlayImage.h != m_ovlyImgH)
+    {
+        ReleaseFilterGraph();
+        if (!SetupFilterGraph(AV_PIX_FMT_RGBA, baseImage.w, baseImage.h, overlayImage.w, overlayImage.h, x, y, true))
+        {
+            Log(WARN) << "[FFOverlayBlender] Setup filter graph FAILED! Error is '" << m_errMsg << "'." << endl;
+            return baseImage;
+        }
+    }
 
     int fferr;
     char cmdArgs[32] = {0}, cmdRes[128] = {0};
@@ -1796,7 +1807,7 @@ ImGui::ImMat FFOverlayBlender::Blend(ImGui::ImMat& baseImage, ImGui::ImMat& over
 
 ImGui::ImMat FFOverlayBlender::Blend(ImGui::ImMat& baseImage, ImGui::ImMat& overlayImage)
 {
-    return Blend(baseImage, overlayImage, m_x, m_y, overlayImage.w, overlayImage.h);
+    return Blend(baseImage, overlayImage, m_x, m_y);
 }
 
 static AVSampleFormat GetAVSampleFormatByImDataType(ImDataType dtype, bool isPlanar)
