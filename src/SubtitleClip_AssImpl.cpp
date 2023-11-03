@@ -45,7 +45,7 @@ SubtitleImage SubtitleClip_AssImpl::Image(int64_t timeOffset)
         for (int i = 0; i < m_keyPoints.GetCurveCount(); i++)
         {
             auto name = m_keyPoints.GetCurveName(i);
-            auto value = m_keyPoints.GetValue(i, pos);
+            auto value = m_keyPoints.GetValueByDim(i, pos, ImGui::ImCurveEdit::DIM_X);
             if (name == "Scale")
             {
                 _SetScaleX(value, false);

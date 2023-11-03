@@ -1835,7 +1835,7 @@ void SubtitleTrack_AssImpl::UpdateTrackStyleByKeyPoints(int64_t pos)
     for (int i = 0; i < keyPoints->GetCurveCount(); i++)
     {
         auto name = keyPoints->GetCurveName(i);
-        auto value = keyPoints->GetValue(i, pos);
+        auto value = keyPoints->GetValueByDim(i, pos, ImGui::ImCurveEdit::DIM_X);
         if (name == "Scale")
         {
             _SetScaleX(value, false);
