@@ -438,7 +438,7 @@ static bool SubtitleReader_Frame(void * handle, bool app_will_quit)
                                 ImGui::TableNextRow();
                                 ImGui::TableSetColumnIndex(0);
                                 char timeColText[128];
-                                snprintf(timeColText, sizeof(timeColText), "%s (+%ld)", MillisecToString(hSubClip->StartTime()).c_str(), hSubClip->Duration());
+                                snprintf(timeColText, sizeof(timeColText), "%s (+%f)", MillisecToString(hSubClip->StartTime()).c_str(), hSubClip->Duration() / 1000.f);
                                 bool isSelected = s_selectedSubtitleIndex == row;
                                 if (isSelected) hSelectedClip = hSubClip;
                                 if (ImGui::Selectable(timeColText, &isSelected, selectableFlags))
