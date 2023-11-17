@@ -181,7 +181,7 @@ public:
         WaitAllThreadsQuit();
         FlushAllQueues();
 
-        m_readPos = 0;
+        m_readPts = 0;
         m_prevReadResult = {0., nullptr};
         m_readForward = true;
         m_vidDurMts = 0;
@@ -202,7 +202,7 @@ public:
 
         m_hParser = nullptr;
         m_hMediaInfo = nullptr;
-        m_readPos = 0;
+        m_readPts = 0;
         m_prevReadResult = {0., nullptr};
         m_readForward = true;
         m_vidDurMts = 0;
@@ -234,7 +234,7 @@ public:
 
         m_logger->Log(DEBUG) << "--> Seek[0]: Set seek pos " << pos << endl;
         int64_t seekPts = CvtMtsToPts(pos);
-        UpdateReadPos(seekPts);
+        UpdateReadPts(seekPts);
         return true;
     }
 
@@ -300,7 +300,7 @@ public:
             eof = true;
             return nullptr;
         }
-        UpdateReadPos(pts);
+        UpdateReadPts(pts);
         m_logger->Log(VERBOSE) << ">> TO READ frame: pts=" << pts << ", ts=" << pos << "." << endl;
 
         auto wait1 = GetTimePoint();
@@ -405,7 +405,7 @@ public:
             i64CurrFramePts = pVf->pts;
         }
         else
-            i64CurrFramePts = CvtMtsToPts(m_readPos);
+            i64CurrFramePts = m_readPts;
         bool bFoundNextFrame = false;
         while (!m_quitThread)
         {
@@ -492,7 +492,7 @@ public:
 
     int64_t GetReadPos() const override
     {
-        return m_readPos;
+        return m_readPts;
     }
 
     bool SetCacheDuration(double forwardDur, double backwardDur) override
@@ -945,10 +945,10 @@ private:
 
     static const function<void (VideoFrame*)> IMGSQ_READER_VIDEO_FRAME_HOLDER_DELETER;
 
-    void UpdateReadPos(int64_t readPts)
+    void UpdateReadPts(int64_t readPts)
     {
         lock_guard<mutex> _lk(m_cacheRangeLock);
-        m_readPos = readPts;
+        m_readPts = readPts;
         auto& cacheFrameCount = m_cacheFrameCount;
         if (m_readForward)
         {
@@ -1300,7 +1300,7 @@ private:
     list<VideoFrame::Holder> m_vfrmQ;
     mutex m_vfrmQLock;
     pair<int64_t, VideoFrame::Holder> m_prevReadResult;
-    int64_t m_readPos{0};
+    int64_t m_readPts{0};
     pair<int64_t, int64_t> m_cacheRange;
     pair<int32_t, int32_t> m_cacheFrameCount{0, 3};
     mutex m_cacheRangeLock;

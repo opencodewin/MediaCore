@@ -236,7 +236,7 @@ public:
             m_viddecDevType = AV_HWDEVICE_TYPE_NONE;
         }
         m_vidAvStm = nullptr;
-        m_readPos = 0;
+        m_readPts = 0;
         m_prevReadResult = {0., nullptr};
         m_readForward = true;
         m_seekPosUpdated = false;
@@ -276,7 +276,7 @@ public:
         m_vidAvStm = nullptr;
         m_hParser = nullptr;
         m_hMediaInfo = nullptr;
-        m_readPos = 0;
+        m_readPts = 0;
         m_prevReadResult = {0., nullptr};
         m_readForward = true;
         m_seekPosUpdated = false;
@@ -316,7 +316,7 @@ public:
         if (m_prepared)
         {
             int64_t seekPts = CvtMtsToPts(pos);
-            UpdateReadPos(seekPts);
+            UpdateReadPts(seekPts);
         }
         return true;
     }
@@ -360,7 +360,7 @@ public:
         if (!m_quitThread || m_isImage)
             return;
 
-        int64_t readPos = m_seekPosUpdated ? m_seekPos : CvtPtsToMts(m_readPos);
+        int64_t readPos = m_seekPosUpdated ? m_seekPos : CvtPtsToMts(m_readPts);
         if (!OpenMedia(m_hParser))
         {
             m_logger->Log(Error) << "FAILED to re-open media when waking up this MediaReader!" << endl;
@@ -438,8 +438,8 @@ public:
             eof = true;
             return nullptr;
         }
-        if (m_readForward && pts > m_readPos || !m_readForward && pts < m_readPos)
-            UpdateReadPos(pts);
+        if (m_readForward && pts > m_readPts || !m_readForward && pts < m_readPts)
+            UpdateReadPts(pts);
         m_logger->Log(DEBUG) << ">> TO READ frame: pts=" << pts << ", ts=" << pos << "." << endl;
 
         auto wait1 = GetTimePoint();
@@ -538,7 +538,7 @@ public:
             i64CurrFramePts = pVf->pts;
         }
         else
-            i64CurrFramePts = CvtMtsToPts(m_readPos);
+            i64CurrFramePts = m_readPts;
         bool bFoundNextFrame = false;
         while (!m_quitThread)
         {
@@ -605,7 +605,7 @@ public:
 
     int64_t GetReadPos() const override
     {
-        return m_readPos;
+        return m_readPts;
     }
 
     bool SetCacheDuration(double forwardDur, double backwardDur) override
@@ -914,8 +914,8 @@ private:
         m_prepared = true;
         {
             lock_guard<mutex> lk(m_seekPosLock);
-            int64_t readPos = !m_seekPosUpdated ? m_vidStartTime : CvtMtsToPts(m_seekPos);
-            UpdateReadPos(readPos);
+            int64_t readPts = !m_seekPosUpdated ? m_vidStartTime : CvtMtsToPts(m_seekPos);
+            UpdateReadPts(readPts);
         }
         return true;
     }
@@ -974,15 +974,15 @@ private:
         bool isStartPacket{false};
     };
 
-    void UpdateReadPos(int64_t readPts)
+    void UpdateReadPts(int64_t readPts)
     {
         lock_guard<mutex> _lk(m_cacheRangeLock);
-        m_readPos = readPts;
+        m_readPts = readPts;
         auto& cacheFrameCount = m_readForward ? m_forwardCacheFrameCount : m_backwardCacheFrameCount;
         m_cacheRange.first = readPts-cacheFrameCount.first*m_vidfrmIntvPts;
         m_cacheRange.second = readPts+cacheFrameCount.second*m_vidfrmIntvPts;
-        // m_logger->Log(VERBOSE) << "~~~~~ UpdateReadPos: first(" << m_cacheRange.first << ") = readPts(" << readPts << ") - cachFrmCnt1(" << cacheFrameCount.first << ") * intvPts(" << m_vidfrmIntvPts << ")" << endl;
-        // m_logger->Log(VERBOSE) << "~~~~~ UpdateReadPos: second(" << m_cacheRange.second << ") = readPts(" << readPts << ") + cachFrmCnt2(" << cacheFrameCount.second << ") * intvPts(" << m_vidfrmIntvPts << ")" << endl;
+        // m_logger->Log(VERBOSE) << "~~~~~ UpdateReadPts: first(" << m_cacheRange.first << ") = readPts(" << readPts << ") - cachFrmCnt1(" << cacheFrameCount.first << ") * intvPts(" << m_vidfrmIntvPts << ")" << endl;
+        // m_logger->Log(VERBOSE) << "~~~~~ UpdateReadPts: second(" << m_cacheRange.second << ") = readPts(" << readPts << ") + cachFrmCnt2(" << cacheFrameCount.second << ") * intvPts(" << m_vidfrmIntvPts << ")" << endl;
         if (m_vidfrmIntvPts > 1)
         {
             m_cacheRange.first--;
@@ -1094,11 +1094,11 @@ private:
             if (directionChanged)
             {
                 m_logger->Log(VERBOSE) << "            >>>> DIRECTION CHANGE DETECTED <<<<" << endl;
-                UpdateReadPos(m_readPos);
+                UpdateReadPts(m_readPts);
                 needSeek = needFlushVfrmQ = true;
                 if (readForward)
                 {
-                    seekPts = m_readPos;
+                    seekPts = m_readPts;
                 }
                 else
                 {
@@ -1124,11 +1124,11 @@ private:
                             iter++;
                     }
                     if (m_vfrmQ.empty())
-                        backwardReadLimitPts = m_readPos;
+                        backwardReadLimitPts = m_readPts;
                     else
                     {
                         VideoFrame_Impl* pVf = dynamic_cast<VideoFrame_Impl*>(m_vfrmQ.front().get());
-                        backwardReadLimitPts = pVf->pts > m_readPos ? m_readPos : pVf->pts-1;
+                        backwardReadLimitPts = pVf->pts > m_readPts ? m_readPts : pVf->pts-1;
                     }
                     seekPts = backwardReadLimitPts;
                     m_logger->Log(VERBOSE) << "          ---[1] backwardReadLimitPts=" << backwardReadLimitPts << endl;
@@ -1195,14 +1195,14 @@ private:
             // do pts safe check: ensure we've already got at least 'm_minGreaterPtsCountThanReadPos' packets with pts that are greater than m_readPos
             if (needPtsSafeCheck)
             {
-                const int64_t readPos = m_readPos;
+                const int64_t readPts = m_readPts;
                 int cnt = 0;
                 auto iter = ptsList.begin();
                 while (iter != ptsList.end())
                 {
-                    if (*iter < readPos)
+                    if (*iter < readPts)
                         iter = ptsList.erase(iter);
-                    else if (*iter == readPos)
+                    else if (*iter == readPts)
                     {
                         cnt = m_minGreaterPtsCountThanReadPos;
                         break;
@@ -1222,7 +1222,7 @@ private:
             if (!doReadPacket)
             {
                 if (minPtsAfterSeek != INT64_MAX && seekPts != INT64_MIN
-                    && minPtsAfterSeek > seekPts && minPtsAfterSeek > m_readPos)
+                    && minPtsAfterSeek > seekPts && minPtsAfterSeek > m_readPts)
                 {
                     if (seekPts <= m_vidStartTime)
                     {
@@ -1232,7 +1232,7 @@ private:
                     else
                     {
                         m_logger->Log(WARN) << "!!! >>>> minPtsAfterSeek(" << minPtsAfterSeek << ") > seekPts(" << seekPts << "), ";
-                        seekPts = m_readPos < seekPts ? m_readPos : seekPts-m_vidfrmIntvPts*4;
+                        seekPts = m_readPts < seekPts ? m_readPts : seekPts-m_vidfrmIntvPts*4;
                         if (seekPts < m_vidStartTime) seekPts = m_vidStartTime;
                         m_logger->Log(WARN) << "try to seek to earlier position " << seekPts << "!" << endl;
                         lock_guard<mutex> _lk(m_seekPosLock);
@@ -1254,9 +1254,9 @@ private:
                         else
                         {
                             backwardReadLimitPts = minPtsAfterSeek-1;
-                            if (backwardReadLimitPts > m_readPos)
+                            if (backwardReadLimitPts > m_readPts)
                             {
-                                backwardReadLimitPts = m_readPos;
+                                backwardReadLimitPts = m_readPts;
                                 needPtsSafeCheck = true;
                             }
                             seekPts = backwardReadLimitPts != seekPts ? backwardReadLimitPts : backwardReadLimitPts-m_vidfrmIntvPts*4;
@@ -1712,7 +1712,7 @@ private:
     thread m_cnvMatThread;
     bool m_cnvThdRunning{false};
 
-    int64_t m_readPos{0};
+    int64_t m_readPts{0};
     pair<int64_t, int64_t> m_cacheRange;
     pair<int32_t, int32_t> m_forwardCacheFrameCount{1, 3};
     pair<int32_t, int32_t> m_backwardCacheFrameCount{8, 1};
