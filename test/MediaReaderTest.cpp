@@ -40,6 +40,7 @@ static MediaReader::Holder g_vidrdr;
 static double g_playStartPos = 0.f;
 static Clock::time_point g_playStartTp;
 static bool g_isPlay = false;
+static bool g_bInStepMode = false;
 static bool g_isLongCacheDur = false;
 static const pair<double, double> G_DurTable[] = {
     {  5, 1 },
@@ -184,7 +185,9 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         ImGui::SameLine();
         ImGui::Checkbox("Open image sequence", &g_isImageSequence);
 
-        bool isFileOpened = (g_vidrdr && g_vidrdr->IsOpened()) || g_audrdr->IsOpened();
+        const bool bHasVideo = g_vidrdr && g_vidrdr->IsOpened();
+        const bool bHasAudio = g_audrdr && g_audrdr->IsOpened();
+        bool isFileOpened = bHasVideo || bHasAudio;
         ImGui::SameLine();
         ImGui::BeginDisabled(!isFileOpened || g_audioStreamCount < 2);
         ImGui::PushItemWidth(100);
@@ -217,16 +220,16 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         bool isForward;
         float playPos;
         float mediaDur;
-        if (g_vidrdr && g_vidrdr->IsOpened())
+        if (g_vidrdr && bHasVideo)
         {
             isForward = g_vidrdr->IsDirectionForward();
             const VideoStream* vstminfo = g_vidrdr->GetVideoStream();
             float vidDur = vstminfo ? (float)vstminfo->duration : 0;
             mediaDur = vidDur;
         }
-        if (g_audrdr->IsOpened())
+        if (bHasAudio)
         {
-            if (!g_vidrdr || !g_vidrdr->IsOpened())
+            if (!g_vidrdr || !bHasVideo)
             {
                 isForward = g_audrdr->IsDirectionForward();
                 const AudioStream* astminfo = g_audrdr->GetAudioStream();
@@ -254,13 +257,18 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                 if (g_vidrdr && g_vidrdr->IsSuspended())
                     g_vidrdr->Wakeup();
                 g_playStartTp = Clock::now();
-                if (g_audrdr->IsOpened())
+                if (bHasAudio)
+                {
+                    if (g_bInStepMode)
+                        g_audrdr->SeekTo(playPos*1000);
                     g_audrnd->Resume();
+                }
+                g_bInStepMode = false;
             }
             else
             {
                 g_playStartPos = playPos;
-                if (g_audrdr->IsOpened())
+                if (bHasAudio)
                     g_audrnd->Pause();
             }
         }
@@ -270,14 +278,14 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         if (ImGui::Button(dirBtnLabel.c_str()))
         {
             bool notForward = !isForward;
-            if (g_vidrdr && g_vidrdr->IsOpened())
+            if (g_vidrdr && bHasVideo)
             {
                 g_vidrdr->SetDirection(notForward);
                 g_playStartPos = playPos;
                 g_playStartTp = Clock::now();
                 g_vidrdr->SeekTo(playPos*1000);
             }
-            if (g_audrdr->IsOpened())
+            if (bHasAudio)
             {
                 g_audrdr->SetDirection(notForward);
             }
@@ -314,26 +322,73 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
 
         ImGui::BeginDisabled(!isFileOpened);
         ImGui::Spacing();
-        if (ImGui::SliderFloat("Position", &playPos, 0, mediaDur, "%.3f"))
+        ImGui::TextUnformatted("Position:"); ImGui::SameLine();
+        if (ImGui::SliderFloat("##PositionSlider", &playPos, 0, mediaDur, "%.3f"))
         {
             int64_t seekPos = playPos*1000;
-            if (g_vidrdr && g_vidrdr->IsOpened())
+            if (bHasVideo)
                 g_vidrdr->SeekTo(seekPos);
-            if (g_audrdr && g_audrdr->IsOpened())
+            if (bHasAudio)
                 g_audrdr->SeekTo(seekPos);
             g_playStartPos = playPos;
             g_playStartTp = Clock::now();
+        } ImGui::SameLine(0, 20);
+        ImGui::EndDisabled();
+        ImGui::BeginDisabled(!bHasVideo);
+        ImGui::TextUnformatted("Step:"); ImGui::SameLine();
+        bool bDoStepNext = false;
+        if (ImGui::Button(" < "))
+        {
+            if (g_isPlay)
+            {
+                g_isPlay = false;
+                if (bHasAudio)
+                    g_audrnd->Pause();
+            }
+            if (g_vidrdr->IsDirectionForward())
+                g_vidrdr->SetDirection(false);
+            g_bInStepMode = true;
+            bDoStepNext = true;
+        } ImGui::SameLine(0, 10);
+        if (ImGui::Button(" > "))
+        {
+            if (g_isPlay)
+            {
+                g_isPlay = false;
+                if (bHasAudio)
+                    g_audrnd->Pause();
+            }
+            if (!g_vidrdr->IsDirectionForward())
+                g_vidrdr->SetDirection(true);
+            g_bInStepMode = true;
+            bDoStepNext = true;
         }
         ImGui::EndDisabled();
 
         ImGui::Spacing();
         string imgTag;
-        if (g_vidrdr && g_vidrdr->IsOpened() && !g_vidrdr->IsSuspended())
+        if (g_vidrdr && bHasVideo && !g_vidrdr->IsSuspended())
         {
             bool eof;
             ImGui::ImMat vmat;
-            int64_t readPos = (int64_t)(playPos*1000);
-            auto hVf = g_vidrdr->ReadVideoFrame(readPos, eof);
+            MediaReader::VideoFrame::Holder hVf;
+            if (g_bInStepMode)
+            {
+                if (bDoStepNext)
+                {
+                    hVf = g_vidrdr->ReadNextVideoFrame(eof);
+                    if (hVf)
+                    {
+                        g_playStartPos = (double)hVf->Pos()/1000;
+                    }
+                }
+                imgTag = TimestampToString(g_playStartPos);
+            }
+            else
+            {
+                int64_t readPos = (int64_t)(playPos*1000);
+                hVf = g_vidrdr->ReadVideoFrame(readPos, eof);
+            }
             if (hVf)
             {
                 Log(VERBOSE) << "Succeeded to read video frame @pos=" << playPos << "." << endl;
@@ -370,7 +425,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                     }
                 }
             }
-            else
+            else if (!g_bInStepMode)
             {
                 Log(Error) << "FAILED to read video frame @pos=" << playPos << ": " << g_vidrdr->GetError() << endl;
             }
@@ -431,7 +486,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                         g_audrdr->SeekTo(playPos*1000);
                     g_audrdr->Start();
                 }
-                if ((!g_vidrdr || !g_vidrdr->IsOpened()) && !g_audrdr->IsOpened())
+                if (!bHasVideo && !bHasAudio)
                     Log(Error) << "Neither VIDEO nor AUDIO stream is ready for playback!" << endl;
                 g_playStartTp = Clock::now();
                 g_isOpening = false;
