@@ -528,15 +528,7 @@ public:
         int64_t i64CurrFramePts, i64NextFramePts;
         const auto& prevReadResult = m_prevReadResult;
         if (prevReadResult.second)
-        {
-            const auto pVf = dynamic_cast<VideoFrame_Impl*>(prevReadResult.second.get());
-            if (m_readForward && pVf->isEofFrame || !m_readForward && pVf->isStartFrame)
-            {
-                eof = true;
-                return nullptr;
-            }
-            i64CurrFramePts = pVf->pts;
-        }
+            i64CurrFramePts = prevReadResult.second->Pts();
         else
             i64CurrFramePts = m_readPts;
         bool bFoundNextFrame = false;
@@ -555,6 +547,15 @@ public:
                         bFoundNextFrame = true;
                         break;
                     }
+                    else
+                    {
+                        const auto pVf = dynamic_cast<VideoFrame_Impl*>(m_vfrmQ.back().get());
+                        if (pVf->isEofFrame)
+                        {
+                            eof = true;
+                            return nullptr;
+                        }
+                    }
                 }
                 else
                 {
@@ -566,6 +567,15 @@ public:
                         i64NextFramePts = (*iter)->Pts();
                         bFoundNextFrame = true;
                         break;
+                    }
+                    else
+                    {
+                        const auto pVf = dynamic_cast<VideoFrame_Impl*>(m_vfrmQ.front().get());
+                        if (pVf->isStartFrame)
+                        {
+                            eof = true;
+                            return nullptr;
+                        }
                     }
                 }
             }
@@ -1571,10 +1581,13 @@ private:
                 auto iter = m_vfrmQ.begin();
                 bool firstGreaterPts = true;
                 bool backIsEof = false;
+                bool startIsEof = false;
                 if (!m_vfrmQ.empty())
                 {
                     VideoFrame_Impl* pVf = dynamic_cast<VideoFrame_Impl*>(m_vfrmQ.back().get());
                     backIsEof = pVf->isEofFrame;
+                    pVf = dynamic_cast<VideoFrame_Impl*>(m_vfrmQ.front().get());
+                    startIsEof = pVf->isStartFrame;
                 }
                 while (iter != m_vfrmQ.end())
                 {
@@ -1613,8 +1626,11 @@ private:
                 {
                     if (m_readForward)
                     {
-                        VideoFrame_Impl* pVf = dynamic_cast<VideoFrame_Impl*>(m_vfrmQ.front().get());
-                        pVf->isStartFrame = true;
+                        if (startIsEof)
+                        {
+                            VideoFrame_Impl* pVf = dynamic_cast<VideoFrame_Impl*>(m_vfrmQ.front().get());
+                            pVf->isStartFrame = true;
+                        }
                     }
                     else if (backIsEof)
                     {
