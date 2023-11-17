@@ -536,45 +536,48 @@ public:
         {
             {
                 lock_guard<mutex> _lk(m_vfrmQLock);
-                if (m_readForward)
+                if (!m_vfrmQ.empty())
                 {
-                    auto iter = find_if(m_vfrmQ.begin(), m_vfrmQ.end(), [i64CurrFramePts] (auto& vf) {
-                        return vf->Pts() > i64CurrFramePts;
-                    });
-                    if (iter != m_vfrmQ.end())
+                    if (m_readForward)
                     {
-                        i64NextFramePts = (*iter)->Pts();
-                        bFoundNextFrame = true;
-                        break;
-                    }
-                    else
-                    {
-                        const auto pVf = dynamic_cast<VideoFrame_Impl*>(m_vfrmQ.back().get());
-                        if (pVf->isEofFrame)
+                        auto iter = find_if(m_vfrmQ.begin(), m_vfrmQ.end(), [i64CurrFramePts] (auto& vf) {
+                            return vf->Pts() > i64CurrFramePts;
+                        });
+                        if (iter != m_vfrmQ.end())
                         {
-                            eof = true;
-                            return nullptr;
+                            i64NextFramePts = (*iter)->Pts();
+                            bFoundNextFrame = true;
+                            break;
+                        }
+                        else
+                        {
+                            const auto pVf = dynamic_cast<VideoFrame_Impl*>(m_vfrmQ.back().get());
+                            if (pVf->isEofFrame)
+                            {
+                                eof = true;
+                                return nullptr;
+                            }
                         }
                     }
-                }
-                else
-                {
-                    auto iter = find_if(m_vfrmQ.rbegin(), m_vfrmQ.rend(), [i64CurrFramePts] (auto& vf) {
-                        return vf->Pts() < i64CurrFramePts;
-                    });
-                    if (iter != m_vfrmQ.rend())
-                    {
-                        i64NextFramePts = (*iter)->Pts();
-                        bFoundNextFrame = true;
-                        break;
-                    }
                     else
                     {
-                        const auto pVf = dynamic_cast<VideoFrame_Impl*>(m_vfrmQ.front().get());
-                        if (pVf->isStartFrame)
+                        auto iter = find_if(m_vfrmQ.rbegin(), m_vfrmQ.rend(), [i64CurrFramePts] (auto& vf) {
+                            return vf->Pts() < i64CurrFramePts;
+                        });
+                        if (iter != m_vfrmQ.rend())
                         {
-                            eof = true;
-                            return nullptr;
+                            i64NextFramePts = (*iter)->Pts();
+                            bFoundNextFrame = true;
+                            break;
+                        }
+                        else
+                        {
+                            const auto pVf = dynamic_cast<VideoFrame_Impl*>(m_vfrmQ.front().get());
+                            if (pVf->isStartFrame)
+                            {
+                                eof = true;
+                                return nullptr;
+                            }
                         }
                     }
                 }
