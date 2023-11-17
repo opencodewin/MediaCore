@@ -399,12 +399,6 @@ public:
             m_errMsg = "This 'VideoReader' instance is NOT STARTED yet!";
             return nullptr;
         }
-        if (pos < 0 || (!m_isImage && pos >= m_vidDurMts))
-        {
-            m_errMsg = "Invalid argument! 'pos' can NOT be negative or larger than video's duration.";
-            eof = true;
-            return nullptr;
-        }
         if (!wait && !m_prepared)
         {
             eof = false;
@@ -417,9 +411,9 @@ public:
             m_errMsg = "This 'VideoReader' instance is NOT READY to read!";
             return nullptr;
         }
+        eof = false;
 
         lock_guard<recursive_mutex> lk(m_apiLock);
-        eof = false;
         auto prevReadResult = m_prevReadResult;
         if (prevReadResult.second && pos == prevReadResult.first)
         {
@@ -432,6 +426,18 @@ public:
         }
 
         int64_t pts = CvtMtsToPts(pos);
+        return ReadVideoFrameByPts(pts, eof, wait);
+    }
+
+    VideoFrame::Holder ReadVideoFrameByPts(int64_t pts, bool& eof, bool wait)
+    {
+        int64_t pos = CvtPtsToMts(pts);
+        if (pos < 0 || (!m_isImage && pos >= m_vidDurMts))
+        {
+            m_errMsg = "Invalid argument! 'pos' can NOT be negative or larger than video's duration.";
+            eof = true;
+            return nullptr;
+        }
         if (m_readForward && pts > m_readPos || !m_readForward && pts < m_readPos)
             UpdateReadPos(pts);
         m_logger->Log(DEBUG) << ">> TO READ frame: pts=" << pts << ", ts=" << pos << "." << endl;
@@ -495,6 +501,81 @@ public:
         m_prevReadResult = {pos, hVfrm};
         m_logger->Log(DEBUG) << "<< RETURN frame: pts=" << hVfrm->Pts() << ", ts=" << hVfrm->Pos() << "." << endl;
         return hVfrm;
+    }
+
+    VideoFrame::Holder ReadNextVideoFrame(bool& eof, bool wait) override
+    {
+        if (!m_started)
+        {
+            m_errMsg = "This 'VideoReader' instance is NOT STARTED yet!";
+            return nullptr;
+        }
+        if (!wait && !m_prepared)
+        {
+            eof = false;
+            return nullptr;
+        }
+        while (!m_quitThread && !m_prepared && wait)
+            this_thread::sleep_for(chrono::milliseconds(5));
+        if (m_close || !m_prepared)
+        {
+            m_errMsg = "This 'VideoReader' instance is NOT READY to read!";
+            return nullptr;
+        }
+        eof = false;
+
+        lock_guard<recursive_mutex> lk(m_apiLock);
+        int64_t i64CurrFramePts, i64NextFramePts;
+        const auto& prevReadResult = m_prevReadResult;
+        if (prevReadResult.second)
+        {
+            const auto pVf = dynamic_cast<VideoFrame_Impl*>(prevReadResult.second.get());
+            if (m_readForward && pVf->isEofFrame || !m_readForward && pVf->isStartFrame)
+            {
+                eof = true;
+                return nullptr;
+            }
+            i64CurrFramePts = pVf->pts;
+        }
+        else
+            i64CurrFramePts = CvtMtsToPts(m_readPos);
+        bool bFoundNextFrame = false;
+        while (!m_quitThread)
+        {
+            {
+                lock_guard<mutex> _lk(m_vfrmQLock);
+                if (m_readForward)
+                {
+                    auto iter = find_if(m_vfrmQ.begin(), m_vfrmQ.end(), [i64CurrFramePts] (auto& vf) {
+                        return vf->Pts() > i64CurrFramePts;
+                    });
+                    if (iter != m_vfrmQ.end())
+                    {
+                        i64NextFramePts = (*iter)->Pts();
+                        bFoundNextFrame = true;
+                        break;
+                    }
+                }
+                else
+                {
+                    auto iter = find_if(m_vfrmQ.rbegin(), m_vfrmQ.rend(), [i64CurrFramePts] (auto& vf) {
+                        return vf->Pts() < i64CurrFramePts;
+                    });
+                    if (iter != m_vfrmQ.rend())
+                    {
+                        i64NextFramePts = (*iter)->Pts();
+                        bFoundNextFrame = true;
+                        break;
+                    }
+                }
+            }
+            if (!wait)
+                break;
+            this_thread::sleep_for(chrono::milliseconds(5));
+        }
+        if (!bFoundNextFrame)
+            return nullptr;
+        return ReadVideoFrameByPts(i64NextFramePts, eof, wait);
     }
 
     bool ReadAudioSamples(uint8_t* buf, uint32_t& size, int64_t& pos, bool& eof, bool wait) override

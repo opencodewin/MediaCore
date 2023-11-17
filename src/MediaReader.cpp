@@ -659,6 +659,11 @@ public:
         throw std::runtime_error("This interface is NOT SUPPORTED!");
     }
 
+    VideoFrame::Holder ReadNextVideoFrame(bool& eof, bool wait) override
+    {
+        throw std::runtime_error("This interface is NOT SUPPORTED!");
+    }
+
     bool ReadAudioSamples(uint8_t* buf, uint32_t& size, int64_t& pos, bool& eof, bool wait) override
     {
         if (!m_started)
