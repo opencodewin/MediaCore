@@ -257,13 +257,18 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                 if (g_vidrdr && g_vidrdr->IsSuspended())
                     g_vidrdr->Wakeup();
                 g_playStartTp = Clock::now();
-                if (bHasAudio)
+                if (g_bInStepMode)
                 {
-                    if (g_bInStepMode)
+                    if (bHasAudio)
+                    {
+                        if (isForward != g_audrdr->IsDirectionForward())
+                            g_audrdr->SetDirection(isForward);
                         g_audrdr->SeekTo(playPos*1000);
-                    g_audrnd->Resume();
+                    }
+                    g_bInStepMode = false;
                 }
-                g_bInStepMode = false;
+                if (bHasAudio)
+                    g_audrnd->Resume();
             }
             else
             {
@@ -387,7 +392,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
             else
             {
                 int64_t readPos = (int64_t)(playPos*1000);
-                hVf = g_vidrdr->ReadVideoFrame(readPos, eof);
+                hVf = g_vidrdr->ReadVideoFrame(readPos, eof, false);
             }
             if (hVf)
             {
