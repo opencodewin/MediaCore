@@ -1210,7 +1210,7 @@ private:
                     if (i64SeekPointPts <= i64PktPtsTail && seekPts >= i64VfrmPtsHead)
                     {
                         // in this case, the seek operation can be discarded
-                        m_logger->Log(WARN) << "DISCARD SEEK-OP, seekPts=" << seekPts << "(mts=" << CvtPtsToMts(seekPts)
+                        m_logger->Log(DEBUG) << "DISCARD SEEK-OP, seekPts=" << seekPts << "(mts=" << CvtPtsToMts(seekPts)
                                 << "), readPts=" << m_readPts << "(mts=" << CvtPtsToMts(m_readPts) << ")" << endl;
                         seekOpTriggered = false;
                         m_inSeeking = false;
