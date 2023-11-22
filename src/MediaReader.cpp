@@ -469,7 +469,7 @@ public:
         }
     }
 
-    bool SeekTo(int64_t pos) override
+    bool SeekTo(int64_t pos, bool bSeekingMode) override
     {
         if (!m_configured)
         {
@@ -660,6 +660,11 @@ public:
     }
 
     VideoFrame::Holder ReadNextVideoFrame(bool& eof, bool wait) override
+    {
+        throw std::runtime_error("This interface is NOT SUPPORTED!");
+    }
+
+    VideoFrame::Holder GetSeekingFlash() const override
     {
         throw std::runtime_error("This interface is NOT SUPPORTED!");
     }

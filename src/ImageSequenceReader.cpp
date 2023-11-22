@@ -219,7 +219,7 @@ public:
         m_errMsg = "";
     }
 
-    bool SeekTo(int64_t pos) override
+    bool SeekTo(int64_t pos, bool bSeekingMode) override
     {
         if (!m_configured)
         {
@@ -443,6 +443,11 @@ public:
         if (!bFoundNextFrame)
             return nullptr;
         return ReadVideoFrameByPts(i64NextFramePts, eof, wait);
+    }
+
+    VideoFrame::Holder GetSeekingFlash() const override
+    {
+        throw std::runtime_error("This interface is NOT SUPPORTED!");
     }
 
     bool ReadAudioSamples(uint8_t* buf, uint32_t& size, int64_t& pos, bool& eof, bool wait) override

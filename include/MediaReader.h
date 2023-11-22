@@ -63,7 +63,7 @@ struct MediaReader
     virtual bool Start(bool suspend = false) = 0;
     virtual bool Stop() = 0;
     virtual void Close() = 0;
-    virtual bool SeekTo(int64_t pos) = 0;
+    virtual bool SeekTo(int64_t pos, bool bSeekingMode = false) = 0;
     virtual void SetDirection(bool forward) = 0;
     virtual void Suspend() = 0;
     virtual void Wakeup() = 0;
@@ -71,6 +71,7 @@ struct MediaReader
     virtual bool ReadVideoFrame(int64_t pos, ImGui::ImMat& m, bool& eof, bool wait = true) = 0;
     virtual VideoFrame::Holder ReadVideoFrame(int64_t pos, bool& eof, bool wait = true) = 0;
     virtual VideoFrame::Holder ReadNextVideoFrame(bool& eof, bool wait = true) = 0;
+    virtual VideoFrame::Holder GetSeekingFlash() const = 0;
     virtual bool ReadAudioSamples(uint8_t* buf, uint32_t& size, int64_t& pos, bool& eof, bool wait = true) = 0;
     virtual bool ReadAudioSamples(ImGui::ImMat& m, uint32_t readSamples, bool& eof, bool wait = true) = 0;
 

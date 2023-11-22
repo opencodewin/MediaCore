@@ -75,16 +75,7 @@ public:
             m_errMsg = hParser->GetError();
             return false;
         }
-
-        if (!OpenMedia(hParser))
-        {
-            Close();
-            return false;
-        }
-        m_hParser = hParser;
-        m_close = false;
-        m_opened = true;
-        return true;
+        return Open(hParser);
     }
 
     bool Open(MediaParser::Holder hParser) override
@@ -94,6 +85,10 @@ public:
         {
             m_errMsg = "Argument 'hParser' is nullptr or not opened yet!";
             return false;
+        }
+        if (!hParser->EnableParseInfo(MediaParser::VIDEO_SEEK_POINTS))
+        {
+            m_logger->Log(WARN) << "FAILED to enable parsing VIDEO_SEEK_POINTS task for file '" << hParser->GetUrl() << "'! Error is '" << hParser->GetError() << "'." << endl;
         }
 
         if (IsOpened())
@@ -240,7 +235,7 @@ public:
         m_prevReadResult = {0., nullptr};
         m_readForward = true;
         m_seekPosUpdated = false;
-        m_seekPos = 0;
+        m_seekPts = 0;
         m_vidDurMts = 0;
 
         m_prepared = false;
@@ -280,7 +275,7 @@ public:
         m_prevReadResult = {0., nullptr};
         m_readForward = true;
         m_seekPosUpdated = false;
-        m_seekPos = 0;
+        m_seekPts = 0;
         m_vidDurMts = 0;
         if (m_pFrmCvt)
         {
@@ -295,7 +290,7 @@ public:
         m_errMsg = "";
     }
 
-    bool SeekTo(int64_t pos) override
+    bool SeekTo(int64_t pos, bool bSeekingMode) override
     {
         if (!m_configured)
         {
@@ -310,14 +305,13 @@ public:
 
         m_logger->Log(DEBUG) << "--> Seek[0]: Set seek pos " << pos << endl;
         lock_guard<mutex> lk(m_seekPosLock);
-        m_seekPos = pos;
+        m_bSeekingMode = bSeekingMode;
+        if (!bSeekingMode) m_hSeekingFlash = nullptr;
+        m_seekPts = CvtMtsToPts(pos);
         m_inSeeking = true;
         m_seekPosUpdated = true;
         if (m_prepared)
-        {
-            int64_t seekPts = CvtMtsToPts(pos);
-            UpdateReadPts(seekPts);
-        }
+            UpdateReadPts(m_seekPts);
         return true;
     }
 
@@ -360,13 +354,13 @@ public:
         if (!m_quitThread || m_isImage)
             return;
 
-        int64_t readPos = m_seekPosUpdated ? m_seekPos : CvtPtsToMts(m_readPts);
+        int64_t readPts = m_seekPosUpdated ? m_seekPts : m_readPts;
         if (!OpenMedia(m_hParser))
         {
             m_logger->Log(Error) << "FAILED to re-open media when waking up this MediaReader!" << endl;
             return;
         }
-        m_seekPos = readPos;
+        m_seekPts = readPts;
         m_seekPosUpdated = true;
         m_inSeeking = true;
         StartAllThreads();
@@ -589,6 +583,11 @@ public:
         if (!bFoundNextFrame)
             return nullptr;
         return ReadVideoFrameByPts(i64NextFramePts, eof, wait);
+    }
+
+    VideoFrame::Holder GetSeekingFlash() const override
+    {
+        return m_hSeekingFlash;
     }
 
     bool ReadAudioSamples(uint8_t* buf, uint32_t& size, int64_t& pos, bool& eof, bool wait) override
@@ -924,10 +923,11 @@ private:
             }
         }
 
+        m_hParser->GetVideoSeekPoints();
         m_prepared = true;
         {
             lock_guard<mutex> lk(m_seekPosLock);
-            int64_t readPts = !m_seekPosUpdated ? m_vidStartTime : CvtMtsToPts(m_seekPos);
+            int64_t readPts = !m_seekPosUpdated ? m_vidStartTime : m_seekPts;
             UpdateReadPts(readPts);
         }
         return true;
@@ -1101,6 +1101,36 @@ private:
         {
             bool idleLoop = true;
 
+            // query seek points if not ready
+            if (!m_bSeekPointsReady)
+            {
+                auto hParsedSeekPoints = m_hParser->GetVideoSeekPoints(false);
+                if (hParsedSeekPoints)
+                {
+                    list<int64_t> aSeekPoints;
+                    for (auto pts : *hParsedSeekPoints)
+                        aSeekPoints.push_back(pts);
+                    if (!m_aSeekPoints.empty())
+                    {
+                        for (auto pts : m_aSeekPoints)
+                        {
+                            auto iter = find_if(aSeekPoints.begin(), aSeekPoints.end(), [pts] (const auto& elem) {
+                                return elem >= pts;
+                            });
+                            if (iter != aSeekPoints.end())
+                            {
+                                if (*iter > pts)
+                                    aSeekPoints.insert(iter, pts);
+                            }
+                            else
+                                aSeekPoints.push_back(pts);
+                        }
+                    }
+                    m_aSeekPoints = std::move(aSeekPoints);
+                    m_bSeekPointsReady = true;
+                }
+            }
+
             // handle read direction change
             bool directionChanged = readForward != m_readForward;
             readForward = m_readForward;
@@ -1154,14 +1184,43 @@ private:
                 lock_guard<mutex> _lk(m_seekPosLock);
                 if (m_seekPosUpdated)
                 {
-                    seekOpTriggered = true;
-                    needSeek = needFlushVfrmQ = true;
-                    seekPts = CvtMtsToPts(m_seekPos);
+                    seekPts = m_seekPts;
                     m_seekPosUpdated = false;
+                    seekOpTriggered = true;
                 }
             }
+            // discard unnecessary seek
             if (seekOpTriggered)
             {
+                if (m_bSeekPointsReady && !m_aSeekPoints.empty())
+                {
+                    auto iter = find_if(m_aSeekPoints.begin(), m_aSeekPoints.end(), [seekPts] (const auto& elem) {
+                        return elem > seekPts;
+                    });
+                    if (iter != m_aSeekPoints.begin())
+                        iter--;
+                    const auto i64SeekPointPts = *iter;
+                    const auto i64PktPtsTail = ptsList.empty() ? INT64_MIN : ptsList.back();
+                    int64_t i64VfrmPtsHead = INT64_MAX;
+                    {
+                        lock_guard<mutex> _lk(m_vfrmQLock);
+                        if (!m_vfrmQ.empty())
+                            i64VfrmPtsHead = m_vfrmQ.front()->Pts();
+                    }
+                    if (i64SeekPointPts <= i64PktPtsTail && seekPts >= i64VfrmPtsHead)
+                    {
+                        // in this case, the seek operation can be discarded
+                        m_logger->Log(WARN) << "DISCARD SEEK-OP, seekPts=" << seekPts << "(mts=" << CvtPtsToMts(seekPts)
+                                << "), readPts=" << m_readPts << "(mts=" << CvtPtsToMts(m_readPts) << ")" << endl;
+                        seekOpTriggered = false;
+                        m_inSeeking = false;
+                    }
+                }
+            }
+
+            if (seekOpTriggered)
+            {
+                needSeek = needFlushVfrmQ = true;
                 // clear avpacket queue
                 {
                     m_logger->Log(DEBUG) << "--> Flush vpacket Queue." << endl;
@@ -1249,7 +1308,7 @@ private:
                         if (seekPts < m_vidStartTime) seekPts = m_vidStartTime;
                         m_logger->Log(WARN) << "try to seek to earlier position " << seekPts << "!" << endl;
                         lock_guard<mutex> _lk(m_seekPosLock);
-                        m_seekPos = CvtPtsToMts(seekPts);
+                        m_seekPts = seekPts;
                         m_inSeeking = true;
                         m_seekPosUpdated = true;
                         idleLoop = false;
@@ -1302,8 +1361,20 @@ private:
                     if (pktPtr->stream_index == m_vidStmIdx)
                     {
                         m_logger->Log(VERBOSE) << "=== Get video packet: pts=" << pktPtr->pts << ", ts=" << (double)CvtPtsToMts(pktPtr->pts)/1000 << "." << endl;
-                        if (needPtsSafeCheck) ptsList.push_back(pktPtr->pts);
+                        auto iterPts = find(ptsList.begin(), ptsList.end(), pktPtr->pts);
+                        if (iterPts == ptsList.end()) ptsList.push_back(pktPtr->pts);
                         if (pktPtr->pts >= m_vidStartTime && pktPtr->pts < minPtsAfterSeek) minPtsAfterSeek = pktPtr->pts;
+                        if (ptsList.size() >= 16)
+                        {  // add new seek point to table if this one is newly found.
+                            auto iterCheck = find_if(m_aSeekPoints.begin(), m_aSeekPoints.end(), [minPtsAfterSeek] (const auto& elem) {
+                                return elem >= minPtsAfterSeek;
+                            });
+                            if (iterCheck == m_aSeekPoints.end() || *iterCheck > minPtsAfterSeek)
+                            {
+                                m_aSeekPoints.insert(iterCheck, minPtsAfterSeek);
+                                m_logger->Log(DEBUG) << "FOUND NEW SEEK POINT. pts=" << minPtsAfterSeek << "(mts=" << CvtPtsToMts(minPtsAfterSeek) << ")." << endl;
+                            }
+                        }
                         nullPktSent = false;
                         VideoPacket::Holder hVpkt(new VideoPacket({pktPtr, afterSeek, needFlushVfrmQ}));
                         hVpkt->isStartPacket = isStartPacket; isStartPacket = false;
@@ -1492,7 +1563,19 @@ private:
                         if (iter != m_vfrmQ.end() && (*iter)->Pts() == pts)
                             m_logger->Log(DEBUG) << "DISCARD duplicated VF@" << hVfrm->Pos() << "(" << hVfrm->Pts() << ")." << endl;
                         else
+                        {
+                            if (m_bSeekingMode)
+                            {
+                                bool bRefreshCache = m_vfrmQ.empty() ||
+                                        m_hSeekingFlash && abs(hVfrm->Pos()-m_hSeekingFlash->Pos()) >= m_seekingFlashCacheRefreshThresh;
+                                if (bRefreshCache)
+                                {
+                                    m_logger->Log(DEBUG) << "UPDATE SEEKING FLASH. pts=" << hVfrm->Pts() << "(mts=" << CvtPtsToMts(hVfrm->Pts()) << ")." << endl;
+                                    m_hSeekingFlash = hVfrm;
+                                }
+                            }
                             m_vfrmQ.insert(iter, hVfrm);
+                        }
                     }
                     idleLoop = false;
                 }
@@ -1579,6 +1662,17 @@ private:
 
             // remove unused frames and find the next frame needed to do the conversion
             VideoFrame::Holder hVfrm;
+            if (m_bSeekingMode)
+            {  // in seeking mode, we don't remove frames
+                lock_guard<mutex> _lk(m_vfrmQLock);
+                auto iter = find_if(m_vfrmQ.begin(), m_vfrmQ.end(), [] (const auto& elem) {
+                    VideoFrame_Impl* pVf = dynamic_cast<VideoFrame_Impl*>(elem.get());
+                    return pVf->isHwfrm;
+                });
+                if (iter != m_vfrmQ.end())
+                    hVfrm = *iter;
+            }
+            else
             {
                 lock_guard<mutex> _lk(m_vfrmQLock);
                 auto iter = m_vfrmQ.begin();
@@ -1740,11 +1834,16 @@ private:
     pair<int64_t, VideoFrame::Holder> m_prevReadResult;
     bool m_readForward{true};
     bool m_seekPosUpdated{false};
-    int64_t m_seekPos{0};
+    int64_t m_seekPts{0};
     bool m_inSeeking{false};
     mutex m_seekPosLock;
     int64_t m_vidfrmIntvPts{0};
     int64_t m_vidDurMts{0};
+    bool m_bSeekingMode{false};
+    int64_t m_seekingFlashCacheRefreshThresh{1000};
+    bool m_bSeekPointsReady{false};
+    list<int64_t> m_aSeekPoints;
+    VideoFrame::Holder m_hSeekingFlash;
 
     uint32_t m_outWidth{0}, m_outHeight{0};
     float m_ssWFactor{1.f}, m_ssHFactor{1.f};
