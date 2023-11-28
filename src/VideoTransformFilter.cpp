@@ -51,10 +51,10 @@ namespace MediaCore
             return m_filter->GetFilterName();
         }
 
-        Holder Clone(uint32_t outWidth, uint32_t outHeight) override
+        Holder Clone(SharedSettings::Holder hSettings) override
         {
             VideoTransformFilter::Holder newInstance = VideoTransformFilter::CreateInstance();
-            if (!newInstance->Initialize(outWidth, outHeight))
+            if (!newInstance->Initialize(hSettings))
                 return nullptr;
             newInstance->SetScaleType(GetScaleType());
             newInstance->SetScaleH(GetScaleH());
@@ -81,9 +81,9 @@ namespace MediaCore
             return m_filter->FilterImage(vmat, pos);
         }
 
-        bool Initialize(uint32_t outWidth, uint32_t outHeight) override
+        bool Initialize(SharedSettings::Holder hSettings) override
         {
-            return m_filter->Initialize(outWidth, outHeight);
+            return m_filter->Initialize(hSettings);
         }
 
         bool SetOutputFormat(const string& outputFormat) override

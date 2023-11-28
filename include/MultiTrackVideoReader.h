@@ -49,8 +49,8 @@ struct MultiTrackVideoReader
     virtual VideoTrack::Holder RemoveTrackById(int64_t trackId) = 0;
     virtual bool ChangeTrackViewOrder(int64_t targetId, int64_t insertAfterId) = 0;
     virtual bool SetDirection(bool forward, int64_t pos = -1) = 0;
-    virtual bool SeekTo(int64_t pos) = 0;
-    virtual bool SeekToByIdx(int64_t frmIdx) = 0;
+    virtual bool SeekTo(int64_t pos, bool bForceReseek = false) = 0;
+    virtual bool SeekToByIdx(int64_t frmIdx, bool bForceReseek = false) = 0;
     virtual bool ConsecutiveSeek(int64_t pos) = 0;
     virtual bool StopConsecutiveSeek() = 0;
     virtual bool SetTrackVisible(int64_t id, bool visible) = 0;

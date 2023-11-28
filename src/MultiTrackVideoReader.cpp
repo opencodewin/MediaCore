@@ -361,7 +361,7 @@ public:
         return true;
     }
 
-    bool SeekTo(int64_t pos) override
+    bool SeekTo(int64_t pos, bool bForceReseek = false) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_started)
@@ -371,10 +371,10 @@ public:
         }
         m_logger->Log(DEBUG) << "------> SeekTo pos=" << pos << endl;
         auto frmIdx = MillsecToFrameIndex(pos);
-        return SeekToByIdx(frmIdx);
+        return SeekToByIdx(frmIdx, bForceReseek);
     }
 
-    bool SeekToByIdx(int64_t frmIdx) override
+    bool SeekToByIdx(int64_t frmIdx, bool bForceReseek = false) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_started)
@@ -387,7 +387,7 @@ public:
         m_prevOutFrame = nullptr;
         m_readFrameIdx = frmIdx;
         int step = m_readForward ? 1 : -1;
-        AddMixFrameTask(m_readFrameIdx, false, true);
+        AddMixFrameTask(m_readFrameIdx, bForceReseek, true);
         AddMixFrameTask(m_readFrameIdx+step, false, false);
         return true;
     }
@@ -649,10 +649,13 @@ public:
             m_errMsg = "Video data type CANNOT be changed in UpdateSettings()!";
             return false;
         }
+
+        TerminateMixingThread();
         for (auto& hTrack : m_tracks)
             hTrack->UpdateSettings(hSettings);
         m_hSettings->SyncVideoSettingsFrom(hSettings.get());
-        Refresh(false);
+        SeekToByIdx(m_readFrameIdx, true);
+        StartMixingThread();
         return true;
     }
 

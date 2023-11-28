@@ -722,8 +722,22 @@ public:
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (m_prepared && m_pFrmCvt)
         {
-            m_pFrmCvt->SetOutSize(outWidth, outHeight);
-            m_pFrmCvt->SetResizeInterpolateMode(rszInterp);
+            bool bNeedFlushVfrmQ = false;
+            if (m_pFrmCvt->GetOutWidth() != outWidth || m_pFrmCvt->GetOutHeight() != outHeight)
+            {
+                m_pFrmCvt->SetOutSize(outWidth, outHeight);
+                bNeedFlushVfrmQ = true;
+            }
+            if (m_pFrmCvt->GetResizeInterpolateMode() != rszInterp)
+            {
+                m_pFrmCvt->SetResizeInterpolateMode(rszInterp);
+                bNeedFlushVfrmQ = true;
+            }
+            if (bNeedFlushVfrmQ)
+            {
+                lock_guard<mutex> lk2(m_vfrmQLock);
+                m_vfrmQ.clear();
+            }
         }
         m_outWidth = outWidth;
         m_outHeight = outHeight;

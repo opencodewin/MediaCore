@@ -661,6 +661,7 @@ private:
             // check if there is a task need to be processed
             {
                 lock_guard<mutex> lk(m_readFrameTasksLock);
+                // 1st, try to find a task that needs to be processed
                 auto iter = m_readFrameTasks.begin();
                 while (iter != m_readFrameTasks.end())
                 {
@@ -682,17 +683,29 @@ private:
                 }
                 if (!hTask)
                 {
+                    // 2nd, if no frame needs to be processed, then try to find a frame that needs to read the source mat
                     int index = 0;
                     iter = m_readFrameTasks.begin();
                     while (iter != m_readFrameTasks.end() && index < 4)
                     {
+                        // remove this task if it's discarded
+                        if ((*iter)->IsDiscarded())
+                        {
+                            iter = m_readFrameTasks.erase(iter);
+                            continue;
+                        }
+
                         ReadFrameTask_Impl* pt = dynamic_cast<ReadFrameTask_Impl*>(iter->get());
                         if (!pt->IsSourceFrameReady())
                         {
                             if (!pt->IsStarted())
                             {
                                 if (!pt->Start())
+                                {
+                                    iter = m_readFrameTasks.erase(iter);
                                     pt->SetDiscarded();
+                                    continue;
+                                }
                             }
                             if (pt->IsStarted())
                             {
@@ -711,10 +724,10 @@ private:
                 UpdateClipState();
 
             // handle read frame task
-            if (pTask)
+            if (pTask && !pTask->IsDiscarded())
             {
                 const int64_t readPos = pTask->ReadPos();
-                if (!pTask->IsInited())
+                if (!pTask->IsInited() && !pTask->IsDiscarded())
                 {
                     UpdateReadIterator(readPos);
                     VideoClip::Holder hClip1, hClip2;
@@ -738,7 +751,7 @@ private:
                     for (auto& c : clips)
                         c->NotifyReadPos(readPos);
                 }
-                if (!pTask->IsSourceFrameReady())
+                if (!pTask->IsSourceFrameReady() && !pTask->IsDiscarded())
                 {
                     if (pTask->NeedSeek() && !pTask->HasSeeked())
                     {
@@ -752,7 +765,7 @@ private:
                         idleLoop = false;
                     }
                 }
-                if (pTask->IsSourceFrameReady() && pTask->NeedProcess())
+                if (pTask->IsSourceFrameReady() && pTask->NeedProcess() && !pTask->IsDiscarded())
                 {
                     pTask->ProcessFrame();
                     // m_logger->Log(DEBUG) << "Track#" << m_id << ", frameIndex=" << pTask->FrameIndex() << "  OUTPUT READY" << endl;

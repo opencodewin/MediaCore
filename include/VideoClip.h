@@ -35,7 +35,7 @@ struct VideoFilter
     virtual ~VideoFilter() {}
 
     virtual const std::string GetFilterName() const = 0;
-    virtual Holder Clone() = 0;
+    virtual Holder Clone(SharedSettings::Holder hSettings) = 0;
     virtual void ApplyTo(VideoClip* clip) = 0;
     virtual const MediaCore::VideoClip* GetVideoClip() const = 0;
     virtual void UpdateClipRange() = 0;

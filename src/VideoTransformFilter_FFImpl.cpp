@@ -80,8 +80,10 @@ namespace MediaCore
         return "VideoTransformFilter_FFImpl";
     }
 
-    bool VideoTransformFilter_FFImpl::Initialize(uint32_t outWidth, uint32_t outHeight)
+    bool VideoTransformFilter_FFImpl::Initialize(SharedSettings::Holder hSettings)
     {
+        const auto outWidth = hSettings->VideoOutWidth();
+        const auto outHeight = hSettings->VideoOutHeight();
         lock_guard<recursive_mutex> lk(m_processLock);
         if (outWidth == 0 || outHeight == 0)
         {

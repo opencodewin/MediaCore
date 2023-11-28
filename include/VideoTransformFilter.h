@@ -20,6 +20,7 @@
 #include <memory>
 #include "imgui_extra_widget.h"
 #include "imgui_curve.h"
+#include "SharedSettings.h"
 
 namespace MediaCore
 {
@@ -36,8 +37,8 @@ namespace MediaCore
         using Holder = std::shared_ptr<VideoTransformFilter>;
         static Holder CreateInstance();
 
-        virtual bool Initialize(uint32_t outWidth, uint32_t outHeight) = 0;
-        virtual Holder Clone(uint32_t outWidth, uint32_t outHeight) = 0;
+        virtual bool Initialize(SharedSettings::Holder hSettings) = 0;
+        virtual Holder Clone(SharedSettings::Holder hSettings) = 0;
         virtual bool SetOutputFormat(const std::string& outputFormat) = 0;
         virtual bool SetScaleType(ScaleType type) = 0;
         virtual bool SetPositionOffset(int32_t offsetH, int32_t offsetV) = 0;

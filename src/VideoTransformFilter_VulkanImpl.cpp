@@ -40,8 +40,10 @@ namespace MediaCore
         }
     }
 
-    bool VideoTransformFilter_VulkanImpl::Initialize(uint32_t outWidth, uint32_t outHeight)
+    bool VideoTransformFilter_VulkanImpl::Initialize(SharedSettings::Holder hSettings)
     {
+        const auto outWidth = hSettings->VideoOutWidth();
+        const auto outHeight = hSettings->VideoOutHeight();
         if (outWidth == 0 || outHeight == 0)
         {
             m_errMsg = "INVALID argument! 'outWidth' and 'outHeight' must be positive value.";

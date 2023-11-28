@@ -150,7 +150,7 @@ public:
         if (!m_hReader->Start(suspend))
             throw runtime_error(m_hReader->GetError());
         m_hWarpFilter = VideoTransformFilter::CreateInstance();
-        if (!m_hWarpFilter->Initialize(outWidth, outHeight))
+        if (!m_hWarpFilter->Initialize(hSettings))
             throw runtime_error(m_hWarpFilter->GetError());
     }
 
@@ -295,15 +295,15 @@ public:
         // LogCheckPointsTimeInfo();
         frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, image});
 
+        // process with transform filter
+        image = m_hWarpFilter->FilterImage(image, pos);
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, image});
+
         // process with external filter
         auto hFilter = m_hFilter;
         if (hFilter)
             image = hFilter->FilterImage(image, pos);
         frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, image});
-
-        // process with transform filter
-        image = m_hWarpFilter->FilterImage(image, pos);
-        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, image});
         out = image;
     }
 
@@ -342,15 +342,15 @@ public:
         ImGui::ImMat image = in;
         frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, image});
 
+        // process with transform filter
+        image = m_hWarpFilter->FilterImage(image, pos);
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, image});
+
         // process with external filter
         auto hFilter = m_hFilter;
         if (hFilter)
             image = hFilter->FilterImage(image, pos);
         frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, image});
-
-        // process with transform filter
-        image = m_hWarpFilter->FilterImage(image, pos);
-        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, image});
         out = image;
     }
 
@@ -443,7 +443,7 @@ public:
         if (readerWidth*readerHeight < vidStm->width*vidStm->height)
             interpMode = IM_INTERPOLATE_AREA;
         m_hReader->ChangeVideoOutputSize(readerWidth, readerHeight, interpMode);
-        m_hWarpFilter = m_hWarpFilter->Clone(outWidth, outHeight);
+        m_hWarpFilter = m_hWarpFilter->Clone(hSettings);
     }
 
     void SetLogLevel(Level l) override
@@ -491,8 +491,8 @@ VideoClip::Holder VideoClip_VideoImpl::Clone(SharedSettings::Holder hSettings) c
 {
     VideoClip_VideoImpl* newInstance = new VideoClip_VideoImpl(
         m_id, m_hReader->GetMediaParser(), hSettings, m_start, End(), m_startOffset, m_endOffset, 0, true);
-    if (m_hFilter) newInstance->SetFilter(m_hFilter->Clone());
-    newInstance->m_hWarpFilter = m_hWarpFilter->Clone(hSettings->VideoOutWidth(), hSettings->VideoOutHeight());
+    if (m_hFilter) newInstance->SetFilter(m_hFilter->Clone(hSettings));
+    newInstance->m_hWarpFilter = m_hWarpFilter->Clone(hSettings);
     return VideoClip::Holder(newInstance, VIDEO_CLIP_HOLDER_VIDEOIMPL_DELETER);
 }
 
@@ -542,7 +542,7 @@ public:
         if (!m_hReader->Start())
             throw runtime_error(m_hReader->GetError());
         m_hWarpFilter = VideoTransformFilter::CreateInstance();
-        if (!m_hWarpFilter->Initialize(outWidth, outHeight))
+        if (!m_hWarpFilter->Initialize(hSettings))
             throw runtime_error(m_hWarpFilter->GetError());
     }
 
@@ -647,15 +647,15 @@ public:
             throw runtime_error(m_hReader->GetError());
         frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, image});
 
+        // process with transform filter
+        image = m_hWarpFilter->FilterImage(image, pos/*+m_start*/);
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, image});
+
         // process with external filter
         VideoFilter::Holder filter = m_hFilter;
         if (filter)
             image = filter->FilterImage(image, pos/*+m_start*/);
         frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, image});
-
-        // process with transform filter
-        image = m_hWarpFilter->FilterImage(image, pos/*+m_start*/);
-        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, image});
         out = image;
     }
 
@@ -683,15 +683,15 @@ public:
         ImGui::ImMat image = in;
         frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, image});
 
+        // process with transform filter
+        image = m_hWarpFilter->FilterImage(image, pos);
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, image});
+
         // process with external filter
         auto hFilter = m_hFilter;
         if (hFilter)
             image = hFilter->FilterImage(image, pos);
         frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, image});
-
-        // process with transform filter
-        image = m_hWarpFilter->FilterImage(image, pos);
-        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, image});
         out = image;
     }
 
@@ -749,7 +749,7 @@ public:
         if (readerWidth*readerHeight < vidStm->width*vidStm->height)
             interpMode = IM_INTERPOLATE_AREA;
         m_hReader->ChangeVideoOutputSize(readerWidth, readerHeight, interpMode);
-        m_hWarpFilter = m_hWarpFilter->Clone(outWidth, outHeight);
+        m_hWarpFilter = m_hWarpFilter->Clone(hSettings);
     }
 
     void SetLogLevel(Level l) override
@@ -788,8 +788,8 @@ VideoClip::Holder VideoClip_ImageImpl::Clone(SharedSettings::Holder hSettings) c
 {
     VideoClip_ImageImpl* newInstance = new VideoClip_ImageImpl(
         m_id, m_hReader->GetMediaParser(), hSettings, m_start, m_srcDuration);
-    if (m_hFilter) newInstance->SetFilter(m_hFilter->Clone());
-    newInstance->m_hWarpFilter = m_hWarpFilter->Clone(hSettings->VideoOutWidth(), hSettings->VideoOutHeight());
+    if (m_hFilter) newInstance->SetFilter(m_hFilter->Clone(hSettings));
+    newInstance->m_hWarpFilter = m_hWarpFilter->Clone(hSettings);
     return VideoClip::Holder(newInstance, VIDEO_CLIP_HOLDER_IMAGEIMPL_DELETER);
 }
 
