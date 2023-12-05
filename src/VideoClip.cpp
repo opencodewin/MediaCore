@@ -24,7 +24,6 @@
 #include "VideoTransformFilter.h"
 #include "Logger.h"
 #include "DebugHelper.h"
-#include "SysUtils.h"
 
 using namespace std;
 using namespace Logger;
