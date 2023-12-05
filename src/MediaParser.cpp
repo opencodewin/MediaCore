@@ -24,6 +24,7 @@
 #include <unordered_map>
 #include <algorithm>
 #include <sstream>
+#include "ThreadUtils.h"
 #include "MediaParser.h"
 #include "FFUtils.h"
 extern "C"

@@ -23,7 +23,7 @@
 #include <list>
 #include "MediaReader.h"
 #include "FFUtils.h"
-#include "SysUtils.h"
+#include "ThreadUtils.h"
 #include "DebugHelper.h"
 extern "C"
 {

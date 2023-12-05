@@ -25,7 +25,7 @@
 #include <cmath>
 #include "MediaReader.h"
 #include "FFUtils.h"
-#include "SysUtils.h"
+#include "ThreadUtils.h"
 extern "C"
 {
     #include "libavutil/avutil.h"

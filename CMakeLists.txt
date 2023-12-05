@@ -70,7 +70,7 @@ endif(MEDIACORE_STATIC)
 
 set(MEDIACORE_VERSION_MAJOR 1)
 set(MEDIACORE_VERSION_MINOR 10)
-set(MEDIACORE_VERSION_PATCH 1)
+set(MEDIACORE_VERSION_PATCH 2)
 string(TIMESTAMP MEDIACORE_VERSION_BUILD "%y%m%d")
 set(MEDIACORE_VERSION_STRING ${MEDIACORE_VERSION_MAJOR}.${MEDIACORE_VERSION_MINOR}.${MEDIACORE_VERSION_PATCH})
 add_definitions(-DMEDIACORE_VERSION_MAJOR=${MEDIACORE_VERSION_MAJOR})
@@ -89,7 +89,6 @@ add_library(MediaCore ${LIBRARY}
     ${LIB_SRC_DIR}/FontManager_Fontconfig.cpp
     ${LIB_SRC_DIR}/HwaccelManager.cpp
     ${LIB_SRC_DIR}/ImageSequenceReader.cpp
-    ${LIB_SRC_DIR}/Logger.cpp
     ${LIB_SRC_DIR}/MatUtils.cpp
     ${LIB_SRC_DIR}/MediaCore.cpp
     ${LIB_SRC_DIR}/MediaEncoder.cpp
@@ -104,7 +103,6 @@ add_library(MediaCore ${LIBRARY}
     ${LIB_SRC_DIR}/SubtitleClip_AssImpl.cpp
     ${LIB_SRC_DIR}/SubtitleTrack_AssImpl.cpp
     ${LIB_SRC_DIR}/SubtitleTrack.cpp
-    ${LIB_SRC_DIR}/SysUtils.cpp
     ${LIB_SRC_DIR}/TextureManager.cpp
     ${LIB_SRC_DIR}/VideoBlender.cpp
     ${LIB_SRC_DIR}/VideoClip.cpp
@@ -131,6 +129,7 @@ target_link_libraries(MediaCore PUBLIC
     PkgConfig::FFMPEG
     PkgConfig::LIBASS
     ${FONTCONFIG_LIBRARIES}
+    BaseUtils
     imgui
 )
 # <<<

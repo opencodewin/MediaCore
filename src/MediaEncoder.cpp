@@ -23,7 +23,8 @@
 #include <algorithm>
 #include "MediaEncoder.h"
 #include "FFUtils.h"
-#include "SysUtils.h"
+#include "FileSystemUtils.h"
+#include "ThreadUtils.h"
 extern "C"
 {
     #include "libavutil/avutil.h"

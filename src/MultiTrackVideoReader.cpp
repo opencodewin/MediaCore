@@ -24,7 +24,7 @@
 #include "MultiTrackVideoReader.h"
 #include "VideoBlender.h"
 #include "FFUtils.h"
-#include "SysUtils.h"
+#include "ThreadUtils.h"
 
 using namespace std;
 using namespace Logger;

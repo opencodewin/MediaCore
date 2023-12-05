@@ -25,7 +25,7 @@
 #include <functional>
 #include "MediaReader.h"
 #include "FFUtils.h"
-#include "SysUtils.h"
+#include "ThreadUtils.h"
 #include "ConditionalMutex.h"
 #include "DebugHelper.h"
 extern "C"
