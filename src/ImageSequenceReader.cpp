@@ -233,6 +233,7 @@ public:
         }
 
         m_logger->Log(DEBUG) << "--> Seek[0]: Set seek pos " << pos << endl;
+        if (!bSeekingMode) m_hSeekingFlash = nullptr;
         int64_t seekPts = CvtMtsToPts(pos);
         UpdateReadPts(seekPts);
         return true;
@@ -447,7 +448,7 @@ public:
 
     VideoFrame::Holder GetSeekingFlash() const override
     {
-        throw std::runtime_error("This interface is NOT SUPPORTED!");
+        return m_hSeekingFlash;
     }
 
     bool ReadAudioSamples(uint8_t* buf, uint32_t& size, int64_t& pos, bool& eof, bool wait) override
@@ -637,25 +638,28 @@ private:
 
         ImageSequenceReader_Impl* owner;
         thread m_decThread;
-        string imagePath;
+        string m_imagePath;
         AVFormatContext* m_avfmtCtx{nullptr};
         AVCodecContext* m_viddecCtx{nullptr};
         atomic_bool isBusy{false};
         VideoFrame_Impl* m_pVfrm{nullptr};
         mutex m_vfLock;
+        VideoFrame::Holder m_hVfrm;
         bool quit{false};
 
-        bool StartDecode(const string& filePath, VideoFrame_Impl* pVfrm)
+        bool StartDecode(VideoFrame::Holder hVfrm)
         {
-            if (filePath.empty())
+            VideoFrame_Impl* pVfrm = dynamic_cast<VideoFrame_Impl*>(hVfrm.get());
+            if (pVfrm->imageFilePath.empty())
                 return false;
             bool testVal = false;
             if (!isBusy.compare_exchange_strong(testVal, true))
                 return false;
-            imagePath = filePath;
+            m_imagePath = pVfrm->imageFilePath;
             {
                 lock_guard<mutex> lk(m_vfLock);
                 m_pVfrm = pVfrm;
+                m_hVfrm = hVfrm;
             }
             return true;
         }
@@ -829,7 +833,10 @@ private:
         {
             lock_guard<mutex> lk(m_vfLock);
             if (m_pVfrm == pVfrm)
+            {
                 m_pVfrm = nullptr;
+                m_hVfrm = nullptr;
+            }
         }
 
         void DecodeImageProc()
@@ -838,11 +845,11 @@ private:
             {
                 bool idleLoop = true;
 
-                if (!imagePath.empty())
+                if (!m_imagePath.empty())
                 {
-                    if (DecodeImageFile(imagePath))
+                    if (DecodeImageFile(m_imagePath))
                     {
-                        owner->m_logger->Log(VERBOSE) << "--> Imgsq decode done. '" << imagePath << "'" << endl;
+                        owner->m_logger->Log(VERBOSE) << "--> Imgsq decode done. '" << m_imagePath << "'" << endl;
                         idleLoop = false;
                     }
                     else
@@ -852,7 +859,7 @@ private:
                             m_pVfrm->decodeFailed = true;
                     }
                     ReleaseFormatContext();
-                    imagePath.clear();
+                    m_imagePath.clear();
                     isBusy = false;
                 }
 
@@ -887,7 +894,7 @@ private:
             }
             if (!frmPtr)
             {
-                while (!frmPtr && !decodeFailed)
+                while (!frmPtr && !decodeFailed && !discarded)
                 {
                     this_thread::sleep_for(chrono::milliseconds(2));
                 }
@@ -945,6 +952,7 @@ private:
         bool bAutoCvtToMat{false};
         DecodeImageContext::Holder hDecCtx;
         bool decodeFailed{false};
+        bool discarded{false};
         string imageFilePath;
     };
 
@@ -1153,9 +1161,12 @@ private:
                 {
                     if (!hDecCtx->isBusy)
                     {
+                        auto pCurrVfrm = hDecCtx->m_pVfrm;
+                        if (pCurrVfrm && !pCurrVfrm->decodeFailed)
+                            m_hSeekingFlash = hDecCtx->m_hVfrm;
                         pVfrm->hDecCtx = hDecCtx;
-                        m_logger->Log(INFO) << "-> StartDecode[idx=" << fileIndex << ", pos=" << pVfrm->pos << "]: '" << pVfrm->imageFilePath << "'" << endl;
-                        hDecCtx->StartDecode(pVfrm->imageFilePath, pVfrm);
+                        m_logger->Log(DEBUG) << "-> StartDecode[idx=" << fileIndex << ", pos=" << pVfrm->pos << "]: '" << pVfrm->imageFilePath << "'" << endl;
+                        hDecCtx->StartDecode(hVfrm);
                         idleLoop = false;
                         break;
                     }
@@ -1205,6 +1216,7 @@ private:
                     if (remove)
                     {
                         m_logger->Log(VERBOSE) << "   --------- Remove video frame: pts=" << pVf->pts << ", pos=" << pVf->pos << "." << endl;
+                        pVf->discarded = true;
                         iter = m_vfrmQ.erase(iter);
                         continue;
                     }
@@ -1309,6 +1321,7 @@ private:
     pair<int64_t, int64_t> m_cacheRange;
     pair<int32_t, int32_t> m_cacheFrameCount{0, 3};
     mutex m_cacheRangeLock;
+    VideoFrame::Holder m_hSeekingFlash;
 
     list<DecodeImageContext::Holder> m_decCtxs;
     uint8_t m_decWorkerCount{4};

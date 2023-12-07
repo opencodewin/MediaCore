@@ -1410,6 +1410,7 @@ private:
                     frames.push_back({CorrelativeFrame::PHASE_AFTER_MIXING, 0, 0, mixedFrame});
                     double timestamp = (double)mft->frameIndex*frameRate.den/frameRate.num;
                     auto rftIter = mft->readFrameTaskTable.begin();
+                    int mixFrameCnt = 0;
                     while (rftIter != mft->readFrameTaskTable.end())
                     {
                         auto elem = *rftIter++;
@@ -1417,7 +1418,10 @@ private:
                         auto& rft = elem.second;
                         ImGui::ImMat vmat;
                         if (trk->IsVisible())
+                        {
                             rft->GetVideoFrame(frames, vmat);
+                            mixFrameCnt++;
+                        }
                         if (!vmat.empty())
                         {
                             if (mixedFrame.empty())
@@ -1430,7 +1434,8 @@ private:
                         }
                     }
 
-                    if (mixedFrame.empty())
+                    const bool bMixedFrameIsEmpty = mixedFrame.empty();
+                    if (bMixedFrameIsEmpty)
                     {
                         mixedFrame.create_type(outWidth, outHeight, 4, matDtype);
                         memset(mixedFrame.data, 0, mixedFrame.total()*mixedFrame.elemsize);
@@ -1442,7 +1447,8 @@ private:
                     mixedFrame.index_count = mft->frameIndex;
                     frames[0].frame = mixedFrame;
                     mft->outputFrames = frames;
-                    m_seekingFlash = std::move(frames);
+                    if (mixFrameCnt == 0 || !bMixedFrameIsEmpty)
+                        m_seekingFlash = std::move(frames);
                     mft->outputReady = true;
                     m_logger->Log(DEBUG) << "---------> Got mixed frame at frameIndex=" << mft->frameIndex << ", pos=" << (int64_t)(timestamp*1000) << endl;
                     idleLoop = false;

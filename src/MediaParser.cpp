@@ -472,7 +472,14 @@ private:
                 vidstm->isImage = false;
                 vidstm->frameNum = m_hFileIter->GetValidFileCount();
                 vidstm->duration = (double)vidstm->frameNum*(double)m_imgsqFrameRate.den/m_imgsqFrameRate.num;
+                m_hMediaInfo->duration = vidstm->duration;
             }
+            else
+            {
+                m_hMediaInfo->duration = 0;
+            }
+            m_hMediaInfo->startTime = 0;
+            m_hMediaInfo->isComplete = true;
             m_logger->Log(INFO) << "Parse general media info of media '" << fullPath << "' done." << endl;
         }
 

@@ -1257,7 +1257,7 @@ private:
                 {
                     if (!hImgsqDecCtx->m_hVfrm->GetMat(hImgsqDecCtx->m_hSs->img->mImgMat))
                         m_logger->Log(WARN) << "FAILED to GetMat for image-sequence at ss index@" << hImgsqDecCtx->m_hSs->index << ", pos@" << hImgsqDecCtx->m_hSs->img->mTimestampMs << "." << endl;
-                    m_logger->Log(INFO) << "<--- Finished decoding ss-idx=" << hImgsqDecCtx->m_hSs->index << ", pos=" << hImgsqDecCtx->m_hSs->img->mTimestampMs <<
+                    m_logger->Log(DEBUG) << "<--- Finished decoding ss-idx=" << hImgsqDecCtx->m_hSs->index << ", pos=" << hImgsqDecCtx->m_hSs->img->mTimestampMs <<
                             ", mat.timestamp=" << hImgsqDecCtx->m_hSs->img->mImgMat.time_stamp << "." << endl;
                     hImgsqDecCtx->isIdle = true;
                     hImgsqDecCtx->m_hVfrm = nullptr;
