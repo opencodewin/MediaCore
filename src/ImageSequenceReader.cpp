@@ -540,6 +540,8 @@ public:
         m_outWidth = outWidth;
         m_outHeight = outHeight;
         m_interpMode = rszInterp;
+        lock_guard<mutex> lk2(m_vfrmQLock);
+        FlushAllQueues();
     }
 
     bool ChangeAudioOutputFormat(uint32_t outChannels, uint32_t outSampleRate, const string& outPcmFormat) override
