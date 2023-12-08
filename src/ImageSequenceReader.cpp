@@ -234,7 +234,11 @@ public:
         }
 
         m_logger->Log(DEBUG) << "--> Seek[0]: Set seek pos " << pos << endl;
-        if (!bSeekingMode) m_hSeekingFlash = nullptr;
+        if (m_bInSeekingMode != bSeekingMode)
+        {
+            if (!bSeekingMode) m_hSeekingFlash = nullptr;
+            m_bInSeekingMode = bSeekingMode;
+        }
         int64_t seekPts = CvtMtsToPts(pos);
         UpdateReadPts(seekPts);
         return true;
@@ -345,6 +349,12 @@ public:
                 });
                 if (iter != m_vfrmQ.end())
                     hVfrm = *iter;
+            }
+            if (hVfrm)
+            {
+                auto pVf = dynamic_cast<VideoFrame_Impl*>(hVfrm.get());
+                if (!pVf->decodeStarted)
+                    hVfrm = nullptr;
             }
             if (hVfrm || !wait)
                 break;
@@ -898,7 +908,7 @@ private:
             }
             if (!frmPtr)
             {
-                while (!frmPtr && !decodeFailed && !discarded)
+                while (!frmPtr && !decodeFailed && (!discarded || decodeStarted))
                 {
                     this_thread::sleep_for(chrono::milliseconds(2));
                 }
@@ -944,11 +954,7 @@ private:
         void Discard()
         {
             discarded = true;
-            if (hDecCtx)
-            {
-                hDecCtx->UnlinkVideoFrame(this);
-                hDecCtx = nullptr;
-            }
+            hDecCtx = nullptr;
         }
 
         bool IsReady() const override { return !vmat.empty() || decodeFailed; }
@@ -977,7 +983,7 @@ private:
     {
         lock_guard<mutex> _lk(m_cacheRangeLock);
         m_readPts = readPts;
-        auto& cacheFrameCount = m_cacheFrameCount;
+        const auto cacheFrameCount = m_bInSeekingMode ? pair<int32_t, int32_t>(0, 0) : m_cacheFrameCount;
         if (m_readForward)
         {
             m_cacheRange.first = readPts-cacheFrameCount.first*m_vidfrmIntvPts;
@@ -1201,7 +1207,10 @@ private:
                     {
                         auto pCurrVfrm = hDecCtx->m_pVfrm;
                         if (pCurrVfrm && !pCurrVfrm->decodeFailed)
+                        {
                             m_hSeekingFlash = hDecCtx->m_hVfrm;
+                            m_logger->Log(VERBOSE) << "Update seeking flash at " << m_hSeekingFlash->Pos() << endl;
+                        }
                         pVfrm->hDecCtx = hDecCtx;
                         m_logger->Log(DEBUG) << "-> StartDecode[idx=" << fileIndex << ", pos=" << pVfrm->pos << "]: '" << pVfrm->imageFilePath << "'" << endl;
                         hDecCtx->StartDecode(hVfrm);
@@ -1361,8 +1370,9 @@ private:
     pair<int64_t, VideoFrame::Holder> m_prevReadResult;
     int64_t m_readPts{0};
     pair<int64_t, int64_t> m_cacheRange;
-    pair<int32_t, int32_t> m_cacheFrameCount{0, 3};
+    pair<int32_t, int32_t> m_cacheFrameCount{0, 1};
     mutex m_cacheRangeLock;
+    bool m_bInSeekingMode{false};
     VideoFrame::Holder m_hSeekingFlash;
 
     list<DecodeImageContext::Holder> m_decCtxs;
