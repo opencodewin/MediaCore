@@ -1269,6 +1269,7 @@ private:
             if (idleLoop)
                 this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
         }
+        imgsqDecCtxList.clear();
         m_logger->Log(VERBOSE) << "Leave BuildSnapshotFromImageSequence()." << endl;
     }
 

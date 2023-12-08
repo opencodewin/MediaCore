@@ -198,6 +198,7 @@ public:
         m_close = true;
         lock_guard<recursive_mutex> lk(m_apiLock);
         WaitAllThreadsQuit();
+        m_decCtxs.clear();
         FlushAllQueues();
 
         m_hParser = nullptr;
@@ -938,6 +939,16 @@ private:
         void SetAutoConvertToMat(bool enable) override
         { bAutoCvtToMat = enable; }
 
+        void Discard()
+        {
+            discarded = true;
+            if (hDecCtx)
+            {
+                hDecCtx->UnlinkVideoFrame(this);
+                hDecCtx = nullptr;
+            }
+        }
+
         bool IsReady() const override { return !vmat.empty() || decodeFailed; }
 
         ImageSequenceReader_Impl* owner;
@@ -1027,7 +1038,7 @@ private:
         for (const auto& hVfrm : m_vfrmQ)
         {
             VideoFrame_Impl* pVfrm = dynamic_cast<VideoFrame_Impl*>(hVfrm.get());
-            pVfrm->discarded = true;
+            pVfrm->Discard();
         }
         m_vfrmQ.clear();
     }
@@ -1241,7 +1252,7 @@ private:
                     if (remove)
                     {
                         m_logger->Log(VERBOSE) << "   --------- Remove video frame: pts=" << pVf->pts << ", pos=" << pVf->pos << "." << endl;
-                        pVf->discarded = true;
+                        pVf->Discard();
                         iter = m_vfrmQ.erase(iter);
                         continue;
                     }
@@ -1277,7 +1288,7 @@ private:
                             auto iter = find(m_vfrmQ.begin(), m_vfrmQ.end(), hVfrm);
                             if (iter != m_vfrmQ.end())
                             {
-                                pVf->discarded = true;
+                                pVf->Discard();
                                 m_vfrmQ.erase(iter);
                             }
                         }

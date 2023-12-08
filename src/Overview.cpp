@@ -1264,6 +1264,7 @@ private:
         if (!m_quit)
             FillBlankSsByDuplication();
 
+        imgsqDecCtxList.clear();
         m_genSsEof = true;
         m_logger->Log(DEBUG) << "Leave GenerateSsByImgsqThreadProc()." << endl;
     }
