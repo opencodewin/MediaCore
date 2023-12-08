@@ -656,6 +656,7 @@ private:
             if (!isBusy.compare_exchange_strong(testVal, true))
                 return false;
             m_imagePath = pVfrm->imageFilePath;
+            pVfrm->decodeStarted = true;
             {
                 lock_guard<mutex> lk(m_vfLock);
                 m_pVfrm = pVfrm;
@@ -951,6 +952,7 @@ private:
         atomic_bool frmPtrInUse{false};
         bool bAutoCvtToMat{false};
         DecodeImageContext::Holder hDecCtx;
+        bool decodeStarted{false};
         bool decodeFailed{false};
         bool discarded{false};
         string imageFilePath;
@@ -1022,6 +1024,11 @@ private:
 
     void FlushAllQueues()
     {
+        for (const auto& hVfrm : m_vfrmQ)
+        {
+            VideoFrame_Impl* pVfrm = dynamic_cast<VideoFrame_Impl*>(hVfrm.get());
+            pVfrm->discarded = true;
+        }
         m_vfrmQ.clear();
     }
 
@@ -1113,6 +1120,14 @@ private:
             const bool readForward = m_readForward;
             {
                 lock_guard<mutex> lk(m_vfrmQLock);
+                for (const auto& hVfrm : m_vfrmQ)
+                {
+                    VideoFrame_Impl* pVfrm = dynamic_cast<VideoFrame_Impl*>(hVfrm.get());
+                    const auto pts = pVfrm->pts;
+                    if ((pts < frontFileIndex || pts > endFileIndex) && !pVfrm->discarded && !pVfrm->decodeStarted)
+                        undecodedFrames.push_back(hVfrm);
+                }
+                list<VideoFrame::Holder> inCacheRangeFrames;
                 for (uint32_t i = frontFileIndex; i <= endFileIndex; i++)
                 {
                     auto iter = find_if(m_vfrmQ.begin(), m_vfrmQ.end(), [i] (auto& hFrm) {
@@ -1127,15 +1142,25 @@ private:
                         if (i == m_hFileIter->GetValidFileCount()-1)
                             pVfrmImpl->isEofFrame = true;
                         m_vfrmQ.insert(iter, hVfrm);
-                        undecodedFrames.push_back(hVfrm);
+                        if (readForward)
+                            inCacheRangeFrames.push_back(hVfrm);
+                        else
+                            inCacheRangeFrames.push_front(hVfrm);
                     }
                     else
                     {
-                        VideoFrame_Impl* pVfrm = dynamic_cast<VideoFrame_Impl*>(iter->get());
+                        auto hVfrm = *iter;
+                        VideoFrame_Impl* pVfrm = dynamic_cast<VideoFrame_Impl*>(hVfrm.get());
                         if (!pVfrm->hDecCtx)
-                            undecodedFrames.push_back(*iter);
+                        {
+                            if (readForward)
+                                inCacheRangeFrames.push_back(hVfrm);
+                            else
+                                inCacheRangeFrames.push_front(hVfrm);
+                        }
                     }
                 }
+                undecodedFrames.splice(undecodedFrames.begin(), inCacheRangeFrames);
             }
 
             for (auto& hVfrm : undecodedFrames)
@@ -1250,7 +1275,11 @@ private:
                             pVf->frmPtr = nullptr;
                             lock_guard<mutex> _lk(m_vfrmQLock);
                             auto iter = find(m_vfrmQ.begin(), m_vfrmQ.end(), hVfrm);
-                            if (iter != m_vfrmQ.end()) m_vfrmQ.erase(iter);
+                            if (iter != m_vfrmQ.end())
+                            {
+                                pVf->discarded = true;
+                                m_vfrmQ.erase(iter);
+                            }
                         }
                         else
                         {
