@@ -407,7 +407,7 @@ private:
             if (m_vidStmIdx < 0)
             {
                 ostringstream oss;
-                oss << "No video stream can be found from image-sequence '" << m_avfmtCtx->url << "'.";
+                oss << "No video stream can be found from image-sequence '" << hParser->GetUrl() << "'.";
                 m_errMsg = oss.str();
                 return false;
             }
