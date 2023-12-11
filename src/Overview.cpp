@@ -210,7 +210,7 @@ public:
             m_errMsg = m_frmCvt.GetError();
             return false;
         }
-        m_logger->Log(INFO) << "Overview size for file '" << (m_hMediaInfo ? m_hMediaInfo->url : "(NOT OPENED YET)") << "' is set as " << width << "x" << height << "." << endl;
+        m_logger->Log(DEBUG) << "Overview size for file '" << (m_hMediaInfo ? m_hMediaInfo->url : "(NOT OPENED YET)") << "' is set as " << width << "x" << height << "." << endl;
         RebuildSnapshots();
         return true;
     }

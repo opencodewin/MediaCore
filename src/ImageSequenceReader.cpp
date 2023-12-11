@@ -824,12 +824,13 @@ private:
                     owner->m_logger->Log(WARN) << "FAILED to invoke 'avcodec_receive_frame' on file '" << filePath << "'! fferr=" << fferr << "." << endl;
                 }
             }
-            if (!vidfrmReady)
+            if (!vidfrmReady && !quit)
             {
                 owner->m_logger->Log(Error) << "FAILED to decode picture out of img-sq file '" << filePath << "'!" << endl;
                 return false;
             }
 
+            if (vidfrmReady)
             {
                 lock_guard<mutex> lk(m_vfLock);
                 if (m_pVfrm)
