@@ -443,7 +443,7 @@ private:
         SysUtils::SetThreadName(m_taskThread, thnOss.str());
 
         m_hMediaInfo = MediaInfo::Holder(new MediaInfo());
-        m_hMediaInfo->url = dirPath;
+        m_hMediaInfo->url = m_url;
         auto filePath = m_hFileIter->GetQuickSample();
         if (!filePath.empty())
         {
