@@ -124,7 +124,7 @@ private:
     std::string m_errMsg;
 };
 
-class ImMatToAVFrameConverter
+class MEDIACORE_API ImMatToAVFrameConverter
 {
 public:
     ImMatToAVFrameConverter();
@@ -177,7 +177,7 @@ private:
     std::string m_errMsg;
 };
 
-class ImMatWrapper_AVFrame
+class MEDIACORE_API ImMatWrapper_AVFrame
 {
 public:
     ImMatWrapper_AVFrame(ImGui::ImMat& mat, bool isVideo) : m_mat(mat), m_isVideo(isVideo) {}
