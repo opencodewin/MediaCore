@@ -894,7 +894,7 @@ public:
         m_vidPreferUseHw = enable;
     }
 
-    void ChangeVideoOutputSize(uint32_t outWidth, uint32_t outHeight, ImInterpolateMode rszInterp) override
+    bool ChangeVideoOutputSize(uint32_t outWidth, uint32_t outHeight, ImInterpolateMode rszInterp) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (m_prepared && m_pFrmCvt)
@@ -905,6 +905,7 @@ public:
         m_outWidth = outWidth;
         m_outHeight = outHeight;
         m_interpMode = rszInterp;
+        return true;
     }
 
     bool ChangeAudioOutputFormat(uint32_t outChannels, uint32_t outSampleRate, const string& outPcmFormat) override

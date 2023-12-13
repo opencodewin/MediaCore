@@ -539,19 +539,49 @@ public:
         m_vidPreferUseHw = enable;
     }
 
-    void ChangeVideoOutputSize(uint32_t outWidth, uint32_t outHeight, ImInterpolateMode rszInterp) override
+    bool ChangeVideoOutputSize(uint32_t outWidth, uint32_t outHeight, ImInterpolateMode rszInterp) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (m_prepared && m_pFrmCvt)
         {
-            m_pFrmCvt->SetOutSize(outWidth, outHeight);
-            m_pFrmCvt->SetResizeInterpolateMode(rszInterp);
+            bool bNeedFlushVfrmQ = false;
+            if (m_pFrmCvt->GetOutWidth() != outWidth || m_pFrmCvt->GetOutHeight() != outHeight)
+            {
+                if (!m_pFrmCvt->SetOutSize(outWidth, outHeight))
+                {
+                    ostringstream oss; oss << "FAILED to set output size to 'AVFrameToImMatConverter'! Error is '" << m_pFrmCvt->GetError() << "'.";
+                    m_errMsg = oss.str();
+                    return false;
+                }
+                bNeedFlushVfrmQ = true;
+            }
+            if (rszInterp == (ImInterpolateMode)-1)
+            {
+                if (outWidth*outHeight >= m_pVidstm->width*m_pVidstm->height)
+                    rszInterp = IM_INTERPOLATE_BICUBIC;
+                else
+                    rszInterp = IM_INTERPOLATE_AREA;
+            }
+            if (m_pFrmCvt->GetResizeInterpolateMode() != rszInterp)
+            {
+                if (!m_pFrmCvt->SetResizeInterpolateMode(rszInterp))
+                {
+                    ostringstream oss; oss << "FAILED to set resize interp-mode to 'AVFrameToImMatConverter'! Error is '" << m_pFrmCvt->GetError() << "'.";
+                    m_errMsg = oss.str();
+                    return false;
+                }
+                bNeedFlushVfrmQ = true;
+            }
+            if (bNeedFlushVfrmQ)
+            {
+                lock_guard<mutex> lk2(m_vfrmQLock);
+                FlushAllQueues();
+            }
         }
         m_outWidth = outWidth;
         m_outHeight = outHeight;
         m_interpMode = rszInterp;
-        lock_guard<mutex> lk2(m_vfrmQLock);
-        FlushAllQueues();
+        return true;
     }
 
     bool ChangeAudioOutputFormat(uint32_t outChannels, uint32_t outSampleRate, const string& outPcmFormat) override
@@ -1079,17 +1109,15 @@ private:
             }
             if (m_useSizeFactor)
             {
-                m_outWidth = (uint32_t)ceil(m_pVidstm->width*m_ssWFactor);
-                if ((m_outWidth&0x1) == 1)
-                    m_outWidth++;
-                m_outHeight = (uint32_t)ceil(m_pVidstm->height*m_ssHFactor);
-                if ((m_outHeight&0x1) == 1)
-                    m_outHeight++;
-            }
-            if (!m_pFrmCvt->SetOutSize(m_outWidth, m_outHeight))
-            {
-                m_errMsg = m_pFrmCvt->GetError();
-                return false;
+                auto u32OutWidth = (uint32_t)ceil(m_pVidstm->width*m_ssWFactor);
+                if ((u32OutWidth&0x1) == 1)
+                    u32OutWidth++;
+                auto u32OutHeight = (uint32_t)ceil(m_pVidstm->height*m_ssHFactor);
+                if ((u32OutHeight&0x1) == 1)
+                    u32OutHeight++;
+                m_outWidth = m_outHeight = 0;
+                if (!ChangeVideoOutputSize(u32OutWidth, u32OutHeight, m_interpMode))
+                    return false;
             }
             if (!m_pFrmCvt->SetOutColorFormat(m_outClrFmt))
             {
@@ -1097,11 +1125,6 @@ private:
                 return false;
             }
             if (!m_pFrmCvt->SetOutDataType(m_outDtype))
-            {
-                m_errMsg = m_pFrmCvt->GetError();
-                return false;
-            }
-            if (!m_pFrmCvt->SetResizeInterpolateMode(m_interpMode))
             {
                 m_errMsg = m_pFrmCvt->GetError();
                 return false;

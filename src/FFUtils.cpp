@@ -218,7 +218,7 @@ static ImColorFormat FindPresentColorFormatForPixelFormat(AVPixelFormat pixfmt)
     return clrfmt;
 }
 
-static AVPixelFormat ConvertColorFormatToPixelFormat(ImColorFormat clrfmt, ImDataType dtype)
+AVPixelFormat ConvertColorFormatToPixelFormat(ImColorFormat clrfmt, ImDataType dtype)
 {
     AVPixelFormat pixfmt = AV_PIX_FMT_NONE;
     if (clrfmt == IM_CF_GRAY)
