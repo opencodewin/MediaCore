@@ -1085,7 +1085,7 @@ private:
         void SetAutoConvertToMat(bool enable) override {}
         bool IsReady() const override { return !vmat.empty(); }
 
-        NativeData GetNativeData() const
+        NativeData GetNativeData() const override
         {
             if (frmPtr)
                 return { NativeData::AVFRAME_HOLDER, (void*)&frmPtr };

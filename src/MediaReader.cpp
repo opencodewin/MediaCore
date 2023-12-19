@@ -3556,7 +3556,7 @@ public:
     void SetAutoConvertToMat(bool enable) override {}
     bool IsReady() const override { return !m_vmat.empty(); }
 
-    NativeData GetNativeData() const
+    NativeData GetNativeData() const override
     {
         return { NativeData::MAT, (void*)&m_vmat };
     }
