@@ -3556,6 +3556,11 @@ public:
     void SetAutoConvertToMat(bool enable) override {}
     bool IsReady() const override { return !m_vmat.empty(); }
 
+    NativeData GetNativeData() const
+    {
+        return { NativeData::MAT, (void*)&m_vmat };
+    }
+
 private:
     ImGui::ImMat m_vmat;
 };

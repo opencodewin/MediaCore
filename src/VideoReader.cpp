@@ -225,7 +225,7 @@ public:
             avcodec_free_context(&m_viddecCtx);
             m_viddecCtx = nullptr;
         }
-        if (m_viddecDevType != AV_HWDEVICE_TYPE_NONE)
+        if (m_viddecOpenOpts.hHwaMgr && m_viddecDevType != AV_HWDEVICE_TYPE_NONE)
         {
             m_viddecOpenOpts.hHwaMgr->DecreaseDecoderInstanceCount(av_hwdevice_get_type_name(m_viddecDevType));
             m_viddecDevType = AV_HWDEVICE_TYPE_NONE;
@@ -257,7 +257,7 @@ public:
             avcodec_free_context(&m_viddecCtx);
             m_viddecCtx = nullptr;
         }
-        if (m_viddecDevType != AV_HWDEVICE_TYPE_NONE)
+        if (m_viddecOpenOpts.hHwaMgr && m_viddecDevType != AV_HWDEVICE_TYPE_NONE)
         {
             m_viddecOpenOpts.hHwaMgr->DecreaseDecoderInstanceCount(av_hwdevice_get_type_name(m_viddecDevType));
             m_viddecDevType = AV_HWDEVICE_TYPE_NONE;
@@ -842,7 +842,7 @@ private:
             avcodec_free_context(&m_viddecCtx);
             m_viddecCtx = nullptr;
         }
-        if (m_viddecDevType != AV_HWDEVICE_TYPE_NONE)
+        if (m_viddecOpenOpts.hHwaMgr && m_viddecDevType != AV_HWDEVICE_TYPE_NONE)
         {
             m_viddecOpenOpts.hHwaMgr->DecreaseDecoderInstanceCount(av_hwdevice_get_type_name(m_viddecDevType));
             m_viddecDevType = AV_HWDEVICE_TYPE_NONE;
@@ -894,8 +894,8 @@ private:
         {
             m_viddecCtx = res.decCtx;
             m_viddecDevType = res.hwDevType;
-            if (m_viddecDevType != AV_HWDEVICE_TYPE_NONE)
-                m_viddecOpenOpts.hHwaMgr->IncreaseDecoderInstanceCount(av_hwdevice_get_type_name(m_viddecDevType));
+            if (m_hHwaMgr && m_viddecDevType != AV_HWDEVICE_TYPE_NONE)
+                m_hHwaMgr->IncreaseDecoderInstanceCount(av_hwdevice_get_type_name(m_viddecDevType));
 #if DONOT_CACHE_HWAVFRAME
             m_hwDecCtxLock.TurnOff();
 #else
@@ -1084,6 +1084,16 @@ private:
 
         void SetAutoConvertToMat(bool enable) override {}
         bool IsReady() const override { return !vmat.empty(); }
+
+        NativeData GetNativeData() const
+        {
+            if (frmPtr)
+                return { NativeData::AVFRAME_HOLDER, (void*)&frmPtr };
+            else if (!vmat.empty())
+                return { NativeData::MAT, (void*)&vmat };
+            else
+                return { NativeData::UNKNOWN, nullptr };
+        }
 
         VideoReader_Impl* owner;
         SelfFreeAVFramePtr frmPtr;

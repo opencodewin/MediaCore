@@ -990,6 +990,16 @@ private:
 
         bool IsReady() const override { return !vmat.empty() || decodeFailed; }
 
+        NativeData GetNativeData() const
+        {
+            if (frmPtr)
+                return { NativeData::AVFRAME_HOLDER, (void*)&frmPtr };
+            else if (!vmat.empty())
+                return { NativeData::MAT, (void*)&vmat };
+            else
+                return { NativeData::UNKNOWN, nullptr };
+        }
+
         ImageSequenceReader_Impl* owner;
         SelfFreeAVFramePtr frmPtr;
         ImGui::ImMat vmat;

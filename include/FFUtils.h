@@ -180,7 +180,9 @@ private:
 class MEDIACORE_API ImMatWrapper_AVFrame
 {
 public:
-    ImMatWrapper_AVFrame(ImGui::ImMat& mat, bool isVideo) : m_mat(mat), m_isVideo(isVideo) {}
+    ImMatWrapper_AVFrame(bool isVideo = true) : m_isVideo(isVideo) {}
+    ImMatWrapper_AVFrame(const ImGui::ImMat& mat, bool isVideo) : m_mat(mat), m_isVideo(isVideo) {}
+    void SetMat(const ImGui::ImMat& mat) { m_mat = mat; }
     SelfFreeAVFramePtr GetWrapper(int64_t pts = 0);
 
 private:
