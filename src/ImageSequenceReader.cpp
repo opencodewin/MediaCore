@@ -990,7 +990,7 @@ private:
 
         bool IsReady() const override { return !vmat.empty() || decodeFailed; }
 
-        NativeData GetNativeData() const
+        NativeData GetNativeData() const override
         {
             if (frmPtr)
                 return { NativeData::AVFRAME_HOLDER, (void*)&frmPtr };
