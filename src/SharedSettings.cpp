@@ -1,8 +1,10 @@
 #include <functional>
+#include <Logger.h>
 #include "SharedSettings.h"
 #include "FFUtils.h"
 
 using namespace std;
+using namespace Logger;
 
 namespace MediaCore
 {
@@ -144,6 +146,24 @@ class SharedSettings_Impl : public SharedSettings
         SetAudioOutIsPlanar(pSettings->AudioOutIsPlanar());
     }
 
+    bool SaveAsJson(imgui_json::value& jnSettings) const override
+    {
+        if (!jnSettings.is_null())
+            jnSettings = imgui_json::value();
+        jnSettings["video_out_width"] = imgui_json::number(VideoOutWidth());
+        jnSettings["video_out_height"] = imgui_json::number(VideoOutHeight());
+        const auto tFrameRate = VideoOutFrameRate();
+        jnSettings["video_out_framerate_num"] = imgui_json::number(tFrameRate.num);
+        jnSettings["video_out_framerate_den"] = imgui_json::number(tFrameRate.den);
+        jnSettings["video_out_colorformat"] = imgui_json::number((int)VideoOutColorFormat());
+        jnSettings["video_out_datatype"] = imgui_json::number((int)VideoOutDataType());
+        jnSettings["audio_out_channels"] = imgui_json::number(AudioOutChannels());
+        jnSettings["audio_out_samplerate"] = imgui_json::number(AudioOutSampleRate());
+        jnSettings["audio_out_datatype"] = imgui_json::number((int)AudioOutDataType());
+        jnSettings["audio_out_isplanar"] = AudioOutIsPlanar();
+        return true;
+    }
+
 public:
     static const function<void(SharedSettings*)> SHARED_SETTINGS_DELETER;
 
@@ -170,5 +190,89 @@ const function<void(SharedSettings*)> SharedSettings_Impl::SHARED_SETTINGS_DELET
 SharedSettings::Holder SharedSettings::CreateInstance()
 {
     return SharedSettings::Holder(new SharedSettings_Impl(), SharedSettings_Impl::SHARED_SETTINGS_DELETER);
+}
+
+SharedSettings::Holder SharedSettings::CreateInstanceFromJson(const imgui_json::value& jnSettings)
+{
+    if (!jnSettings.is_object())
+    {
+        Log(Error) << "SharedSettings json is NOT a json-object!" << endl;
+        return nullptr;
+    }
+    auto hSettings = MediaCore::SharedSettings::CreateInstance();
+    string strAttrName;
+    strAttrName = "video_out_width";
+    if (!jnSettings.contains(strAttrName) || !jnSettings[strAttrName].is_number())
+    {
+        Log(Error) << "INVALID SharedSettings json! Can NOT find attribute '" << strAttrName << "'." << endl;
+        return nullptr;
+    }
+    hSettings->SetVideoOutWidth((uint32_t)jnSettings[strAttrName].get<imgui_json::number>());
+    strAttrName = "video_out_height";
+    if (!jnSettings.contains(strAttrName) || !jnSettings[strAttrName].is_number())
+    {
+        Log(Error) << "INVALID SharedSettings json! Can NOT find attribute '" << strAttrName << "'." << endl;
+        return nullptr;
+    }
+    hSettings->SetVideoOutHeight((uint32_t)jnSettings[strAttrName].get<imgui_json::number>());
+    MediaCore::Ratio tFrameRate;
+    strAttrName = "video_out_framerate_num";
+    if (!jnSettings.contains(strAttrName) || !jnSettings[strAttrName].is_number())
+    {
+        Log(Error) << "INVALID SharedSettings json! Can NOT find attribute '" << strAttrName << "'." << endl;
+        return nullptr;
+    }
+    tFrameRate.num = (int32_t)jnSettings[strAttrName].get<imgui_json::number>();
+    strAttrName = "video_out_framerate_den";
+    if (!jnSettings.contains(strAttrName) || !jnSettings[strAttrName].is_number())
+    {
+        Log(Error) << "INVALID SharedSettings json! Can NOT find attribute '" << strAttrName << "'." << endl;
+        return nullptr;
+    }
+    tFrameRate.den = (int32_t)jnSettings[strAttrName].get<imgui_json::number>();
+    hSettings->SetVideoOutFrameRate(tFrameRate);
+    strAttrName = "video_out_colorformat";
+    if (!jnSettings.contains(strAttrName) || !jnSettings[strAttrName].is_number())
+    {
+        Log(Error) << "INVALID SharedSettings json! Can NOT find attribute '" << strAttrName << "'." << endl;
+        return nullptr;
+    }
+    hSettings->SetVideoOutColorFormat((ImColorFormat)jnSettings[strAttrName].get<imgui_json::number>());
+    strAttrName = "video_out_datatype";
+    if (!jnSettings.contains(strAttrName) || !jnSettings[strAttrName].is_number())
+    {
+        Log(Error) << "INVALID SharedSettings json! Can NOT find attribute '" << strAttrName << "'." << endl;
+        return nullptr;
+    }
+    hSettings->SetVideoOutDataType((ImDataType)jnSettings[strAttrName].get<imgui_json::number>());
+    strAttrName = "audio_out_channels";
+    if (!jnSettings.contains(strAttrName) || !jnSettings[strAttrName].is_number())
+    {
+        Log(Error) << "INVALID SharedSettings json! Can NOT find attribute '" << strAttrName << "'." << endl;
+        return nullptr;
+    }
+    hSettings->SetAudioOutChannels((uint32_t)jnSettings[strAttrName].get<imgui_json::number>());
+    strAttrName = "audio_out_samplerate";
+    if (!jnSettings.contains(strAttrName) || !jnSettings[strAttrName].is_number())
+    {
+        Log(Error) << "INVALID SharedSettings json! Can NOT find attribute '" << strAttrName << "'." << endl;
+        return nullptr;
+    }
+    hSettings->SetAudioOutSampleRate((uint32_t)jnSettings[strAttrName].get<imgui_json::number>());
+    strAttrName = "audio_out_datatype";
+    if (!jnSettings.contains(strAttrName) || !jnSettings[strAttrName].is_number())
+    {
+        Log(Error) << "INVALID SharedSettings json! Can NOT find attribute '" << strAttrName << "'." << endl;
+        return nullptr;
+    }
+    hSettings->SetAudioOutDataType((ImDataType)jnSettings[strAttrName].get<imgui_json::number>());
+    strAttrName = "audio_out_isplanar";
+    if (!jnSettings.contains(strAttrName) || !jnSettings[strAttrName].is_boolean())
+    {
+        Log(Error) << "INVALID SharedSettings json! Can NOT find attribute '" << strAttrName << "'." << endl;
+        return nullptr;
+    }
+    hSettings->SetAudioOutIsPlanar(jnSettings[strAttrName].get<imgui_json::boolean>());
+    return hSettings;
 }
 }

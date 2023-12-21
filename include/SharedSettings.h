@@ -1,12 +1,13 @@
 #pragma once
 
+#include <string>
+#include <memory>
+#include <cstdint>
 #include "MediaCore.h"
 #include "MediaInfo.h"
 #include "HwaccelManager.h"
 #include "immat.h"
-#include <string>
-#include <memory>
-#include <cstdint>
+#include "imgui_json.h"
 
 namespace MediaCore
 {
@@ -42,6 +43,9 @@ struct SharedSettings
 
     virtual void SyncVideoSettingsFrom(const SharedSettings* pSettings) = 0;
     virtual void SyncAudioSettingsFrom(const SharedSettings* pSettings) = 0;
+
+    virtual bool SaveAsJson(imgui_json::value& jnSettings) const = 0;
+    static Holder CreateInstanceFromJson(const imgui_json::value& jnSettings);
 };
 
 }
