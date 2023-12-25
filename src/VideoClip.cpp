@@ -270,7 +270,7 @@ public:
 
     void ReadVideoFrame(int64_t pos, vector<CorrelativeFrame>& frames, ImGui::ImMat& out, bool& eof) override
     {
-        if (m_eof)
+        if (m_eof || pos >= Duration())
         {
             eof = true;
             return;
@@ -309,9 +309,9 @@ public:
         out = image;
     }
 
-    MediaReader::VideoFrame::Holder ReadSourceFrame(int64_t pos, bool& eof, bool wait) override
+    VideoFrame::Holder ReadSourceFrame(int64_t pos, bool& eof, bool wait) override
     {
-        if (m_eof)
+        if (m_eof || pos >= Duration())
         {
             eof = true;
             return nullptr;
@@ -331,7 +331,7 @@ public:
         return hVf;
     }
 
-    void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, MediaReader::VideoFrame::Holder hInVf) override
+    void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, VideoFrame::Holder hInVf) override
     {
         if (!hInVf)
             return;
@@ -644,6 +644,11 @@ public:
 
     void ReadVideoFrame(int64_t pos, vector<CorrelativeFrame>& frames, ImGui::ImMat& out, bool& eof) override
     {
+        if (pos >= Duration())
+        {
+            eof = true;
+            return;
+        }
         ImGui::ImMat image;
         if (!m_hReader->ReadVideoFrame(0, image, eof))
             throw runtime_error(m_hReader->GetError());
@@ -661,18 +666,23 @@ public:
         out = image;
     }
 
-    MediaReader::VideoFrame::Holder ReadSourceFrame(int64_t pos, bool& eof, bool wait) override
+    VideoFrame::Holder ReadSourceFrame(int64_t pos, bool& eof, bool wait) override
     {
+        if (pos >= Duration())
+        {
+            eof = true;
+            return nullptr;
+        }
         if (m_hVf)
             return m_hVf;
         ImGui::ImMat out;
         if (!m_hReader->ReadVideoFrame(0, out, eof, wait))
             throw runtime_error(m_hReader->GetError());
-        m_hVf = MediaReader::VideoFrame::CreateMatInstance(out);
+        m_hVf = VideoFrame::CreateMatInstance(out);
         return m_hVf;
     }
 
-    void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, MediaReader::VideoFrame::Holder hInVf) override
+    void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, VideoFrame::Holder hInVf) override
     {
         if (!hInVf)
             return;
@@ -764,7 +774,7 @@ private:
     SharedSettings::Holder m_hSettings;
     MediaInfo::Holder m_hInfo;
     MediaReader::Holder m_hReader;
-    MediaReader::VideoFrame::Holder m_hVf;
+    VideoFrame::Holder m_hVf;
     int64_t m_srcDuration;
     int64_t m_start;
     VideoFilter::Holder m_hFilter;
@@ -931,7 +941,7 @@ public:
         frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSITION, m_hFrontClip->Id(), m_hFrontClip->TrackId(), out});
     }
 
-    void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, MediaReader::VideoFrame::Holder hInVf1, MediaReader::VideoFrame::Holder hInVf2) override
+    void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, VideoFrame::Holder hInVf1, VideoFrame::Holder hInVf2) override
     {
         if (pos < 0 || pos > Duration())
             throw invalid_argument("Argument 'pos' can NOT be NEGATIVE or larger than overlap duration!");

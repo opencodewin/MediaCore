@@ -235,7 +235,7 @@ public:
         return success;
     }
 
-    bool EncodeVideoFrame(ImGui::ImMat& vmat, bool wait) override
+    bool EncodeVideoFrame(VideoFrame::Holder hVfrm, bool wait) override
     {
         if (!m_opened)
         {
@@ -263,17 +263,17 @@ public:
             return false;
         }
 
-        if (vmat.empty())
+        if (!hVfrm)
         {
             m_vidinpEof = true;
             return true;
         }
 
-        while (wait && m_vmatQ.size() >= m_vmatQMaxSize && !m_quit)
+        while (wait && m_vfrmQ.size() >= m_vmatQMaxSize && !m_quit)
             this_thread::sleep_for(chrono::milliseconds(5));
         if (m_quit)
             return false;
-        if (m_vmatQ.size() >= m_vmatQMaxSize)
+        if (m_vfrmQ.size() >= m_vmatQMaxSize)
         {
             m_errMsg = "Queue full!";
             return false;
@@ -281,10 +281,17 @@ public:
 
         {
             lock_guard<mutex> lk(m_vmatQLock);
-            m_vmatQ.push_back(vmat);
+            m_vfrmQ.push_back(hVfrm);
         }
-
         return true;
+    }
+
+    bool EncodeVideoFrame(ImGui::ImMat& vmat, bool wait) override
+    {
+        VideoFrame::Holder hVfrm;
+        if (!vmat.empty())
+            hVfrm = VideoFrame::CreateMatInstance(vmat);
+        return EncodeVideoFrame(hVfrm, wait);
     }
 
     bool EncodeAudioSamples(uint8_t* buf, uint32_t size, bool wait) override
@@ -1030,7 +1037,7 @@ private:
 
     void FlushAllQueues()
     {
-        m_vmatQ.clear();
+        m_vfrmQ.clear();
         m_audfrmQ.clear();
     }
 
@@ -1062,15 +1069,23 @@ private:
 
             if (!encfrm)
             {
-                if (!m_vmatQ.empty())
+                if (!m_vfrmQ.empty())
                 {
-                    ImGui::ImMat vmat;
+                    VideoFrame::Holder hVfrm;
                     {
                         lock_guard<mutex> lk(m_vmatQLock);
-                        vmat = m_vmatQ.front();
-                        m_vmatQ.pop_front();
+                        hVfrm = m_vfrmQ.front();
+                        m_vfrmQ.pop_front();
                     }
-                    encfrm = ConvertImMatToAVFrame(vmat);
+                    auto tNatvieData = hVfrm->GetNativeData();
+                    if (tNatvieData.eType == VideoFrame::NativeData::AVFRAME)
+                        encfrm = CloneSelfFreeAVFramePtr((const AVFrame*)tNatvieData.pData);
+                    else if (tNatvieData.eType == VideoFrame::NativeData::AVFRAME_HOLDER)
+                        encfrm = *((SelfFreeAVFramePtr*)tNatvieData.pData);
+                    else if (tNatvieData.eType == VideoFrame::NativeData::MAT)
+                        encfrm = ConvertImMatToAVFrame(*((ImGui::ImMat*)tNatvieData.pData));
+                    else
+                        m_logger->Log(Error) << "UNSUPPORTED 'VideoFrame::NativeData::Type' " << (int)tNatvieData.eType << "!" << endl;
                 }
                 else if (m_vidinpEof)
                 {
@@ -1357,7 +1372,7 @@ private:
     double m_dataQCacheDur{5};
     // video encoding thread
     thread m_videncThread;
-    list<ImGui::ImMat> m_vmatQ;
+    list<VideoFrame::Holder> m_vfrmQ;
     uint32_t m_vmatQMaxSize;
     mutex m_vmatQLock;
     bool m_vidinpEof{false};

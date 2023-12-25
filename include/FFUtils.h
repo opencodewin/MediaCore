@@ -39,6 +39,7 @@ extern "C"
 }
 
 #include "MediaCore.h"
+#include "MediaData.h"
 #include "HwaccelManager.h"
 
 #if LIBAVFORMAT_VERSION_MAJOR >= 59
@@ -259,6 +260,9 @@ bool OpenVideoDecoder(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, Op
 uint32_t CopyPcmDataEx(uint8_t channels, uint8_t bytesPerSample, uint32_t copySamples,
     bool isDstPlanar,       uint8_t** ppDst, uint32_t dstOffsetSamples,
     bool isSrcPlanar, const uint8_t** ppSrc, uint32_t srcOffsetSamples);
+
+MEDIACORE_API MediaCore::VideoFrame::Holder CreateVideoFrameFromAVFrame(const AVFrame* pAvfrm, int64_t pos);
+MEDIACORE_API MediaCore::VideoFrame::Holder CreateVideoFrameFromAVFrame(SelfFreeAVFramePtr hAvfrm, int64_t pos);
 }
 
 #include "MediaInfo.h"

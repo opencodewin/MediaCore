@@ -2375,6 +2375,60 @@ uint32_t CopyPcmDataEx(uint8_t channels, uint8_t bytesPerSample, uint32_t copySa
     }
     return copySamples;
 }
+
+class VideoFrame_AVFrameImpl : public MediaCore::VideoFrame
+{
+public:
+    VideoFrame_AVFrameImpl(SelfFreeAVFramePtr hAvfrm, int64_t pos) : m_hAvfrm(hAvfrm), m_pos(pos) {}
+    virtual ~VideoFrame_AVFrameImpl() {}
+
+    bool GetMat(ImGui::ImMat& m) override
+    {
+        return false;
+    }
+
+    int64_t Pos() const override
+    {
+        return m_pos;
+    }
+
+    int64_t Pts() const override
+    {
+        return m_hAvfrm ? m_hAvfrm->pts : INT64_MIN;
+    }
+
+    int64_t Dur() const override
+    {
+        return m_hAvfrm ? m_hAvfrm->duration : 0;
+    }
+
+    void SetAutoConvertToMat(bool enable) override {}
+    bool IsReady() const override { return m_hAvfrm != nullptr; }
+
+    NativeData GetNativeData() const override
+    {
+        return { NativeData::AVFRAME_HOLDER, (void*)&m_hAvfrm };
+    }
+
+private:
+    SelfFreeAVFramePtr m_hAvfrm;
+    int64_t m_pos;
+};
+
+const auto _VIDEOFRAME_AVFRAMEIMPL_DELETER = [] (MediaCore::VideoFrame* p) {
+    VideoFrame_AVFrameImpl* ptr = dynamic_cast<VideoFrame_AVFrameImpl*>(p);
+    delete ptr;
+};
+
+MediaCore::VideoFrame::Holder CreateVideoFrameFromAVFrame(const AVFrame* pAvfrm, int64_t pos)
+{
+    return MediaCore::VideoFrame::Holder(new VideoFrame_AVFrameImpl(CloneSelfFreeAVFramePtr(pAvfrm), pos), _VIDEOFRAME_AVFRAMEIMPL_DELETER);
+}
+
+MediaCore::VideoFrame::Holder CreateVideoFrameFromAVFrame(SelfFreeAVFramePtr hAvfrm, int64_t pos)
+{
+    return MediaCore::VideoFrame::Holder(new VideoFrame_AVFrameImpl(hAvfrm, pos), _VIDEOFRAME_AVFRAMEIMPL_DELETER);
+}
 }
 
 static MediaCore::Ratio MediaInfoRatioFromAVRational(const AVRational& src)

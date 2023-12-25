@@ -228,12 +228,12 @@ private:
     bool m_inited{false};
     bool m_needProcess{false};
     bool m_visible{true};
-    MediaReader::VideoFrame::Holder m_srcVf1;
+    VideoFrame::Holder m_srcVf1;
     bool m_eof1{false};
     VideoClip::Holder m_hClip1;
     bool m_src1Ready{false};
     bool m_hasOvlp{false};
-    MediaReader::VideoFrame::Holder m_srcVf2;
+    VideoFrame::Holder m_srcVf2;
     bool m_eof2{false};
     VideoClip::Holder m_hClip2;
     bool m_src2Ready{false};

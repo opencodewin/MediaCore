@@ -22,6 +22,7 @@
 #include <utility>
 #include "immat.h"
 #include "MediaCore.h"
+#include "MediaData.h"
 #include "MediaParser.h"
 #include "HwaccelManager.h"
 #include "Logger.h"
@@ -36,32 +37,6 @@ struct MediaReader
     static MEDIACORE_API Holder CreateImageSequenceInstance(const std::string& loggerName = "");
     static MEDIACORE_API Logger::ALogger* GetDefaultLogger();
     static MEDIACORE_API Logger::ALogger* GetVideoLogger();
-
-
-    struct VideoFrame
-    {
-        using Holder = std::shared_ptr<VideoFrame>;
-        static Holder CreateMatInstance(ImGui::ImMat& m);
-        virtual bool GetMat(ImGui::ImMat& m) = 0;
-        virtual int64_t Pos() const = 0;
-        virtual int64_t Pts() const = 0;
-        virtual int64_t Dur() const = 0;
-        virtual void SetAutoConvertToMat(bool enable) = 0;
-        virtual bool IsReady() const = 0;
-        struct NativeData
-        {
-            enum Type
-            {
-                UNKNOWN = 0,
-                AVFRAME,
-                AVFRAME_HOLDER,
-                MAT,
-            };
-            enum Type eType;
-            void* pData;
-        };
-        virtual NativeData GetNativeData() const = 0;
-    };
 
     virtual bool Open(const std::string& url) = 0;
     virtual bool Open(MediaParser::Holder hParser) = 0;

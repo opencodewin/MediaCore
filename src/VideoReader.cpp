@@ -1890,7 +1890,7 @@ private:
     AVFrameToImMatConverter* m_pFrmCvt{nullptr};
 };
 
-const function<void (MediaReader::VideoFrame*)> VideoReader_Impl::VIDEO_READER_VIDEO_FRAME_HOLDER_DELETER = [] (MediaReader::VideoFrame* p) {
+const function<void (VideoFrame*)> VideoReader_Impl::VIDEO_READER_VIDEO_FRAME_HOLDER_DELETER = [] (VideoFrame* p) {
     VideoReader_Impl::VideoFrame_Impl* ptr = dynamic_cast<VideoReader_Impl::VideoFrame_Impl*>(p);
     delete ptr;
 };

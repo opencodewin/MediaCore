@@ -1360,7 +1360,7 @@ private:
         int64_t pos;
         bool isIdle{true};
         MediaReader::Holder m_hImgsqReader;
-        MediaReader::VideoFrame::Holder m_hVfrm;
+        VideoFrame::Holder m_hVfrm;
     };
 
     ImgsqDecodeContext::Holder CreateImgsqDecodeContext()

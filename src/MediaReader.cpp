@@ -1392,7 +1392,7 @@ private:
         UpdateCacheWindow(pos);
 
         bool foundBestFrame = false;
-        VideoFrame* pBestCandidate = nullptr;
+        VideoFrame_Internal* pBestCandidate = nullptr;
         int64_t pts = CvtMtsToPts(pos);
         while (!m_close)
         {
@@ -1486,8 +1486,8 @@ private:
         const uint32_t outChannels = GetAudioOutChannels();
         uint32_t readSize = 0, toReadSize = IsPlanar() ? size/outChannels : size;
         uint32_t skipSize = m_audReadOffset > 0 ? m_audReadOffset : 0;
-        unique_ptr<list<AudioFrame>::iterator> fwditerPtr;
-        unique_ptr<list<AudioFrame>::reverse_iterator> bwditerPtr;
+        unique_ptr<list<AudioFrame_Internal>::iterator> fwditerPtr;
+        unique_ptr<list<AudioFrame_Internal>::reverse_iterator> bwditerPtr;
         bool isIterSet = false;
         bool isPosSet = false;
         bool needLoop;
@@ -1514,9 +1514,9 @@ private:
                     if (!isIterSet)
                     {
                         if (m_readForward)
-                            fwditerPtr = unique_ptr<list<AudioFrame>::iterator>(new list<AudioFrame>::iterator(afAry.begin()));
+                            fwditerPtr = unique_ptr<list<AudioFrame_Internal>::iterator>(new list<AudioFrame_Internal>::iterator(afAry.begin()));
                         else
-                            bwditerPtr = unique_ptr<list<AudioFrame>::reverse_iterator>(new list<AudioFrame>::reverse_iterator(afAry.rbegin()));
+                            bwditerPtr = unique_ptr<list<AudioFrame_Internal>::reverse_iterator>(new list<AudioFrame_Internal>::reverse_iterator(afAry.rbegin()));
                         isIterSet = true;
                     }
 
@@ -1653,14 +1653,14 @@ private:
         return true;
     }
 
-    struct VideoFrame
+    struct VideoFrame_Internal
     {
         SelfFreeAVFramePtr decfrm;
         ImGui::ImMat vmat;
         int64_t pos;
     };
 
-    struct AudioFrame
+    struct AudioFrame_Internal
     {
         SelfFreeAVFramePtr decfrm;
         SelfFreeAVFramePtr fwdfrm;
@@ -1689,7 +1689,7 @@ private:
         {
             for (AVPacket* avpkt : avpktQ)
                 av_packet_free(&avpkt);
-            for (VideoFrame& vf : vfAry)
+            for (VideoFrame_Internal& vf : vfAry)
                 if (vf.decfrm)
                     outterObj.m_pendingVidfrmCnt--;
             vfAry.clear();
@@ -1697,8 +1697,8 @@ private:
 
         MediaReader_Impl& outterObj;
         pair<int64_t, int64_t> seekPts;
-        list<VideoFrame> vfAry;
-        list<AudioFrame> afAry;
+        list<VideoFrame_Internal> vfAry;
+        list<AudioFrame_Internal> afAry;
         atomic_int32_t frmCnt{0};
         list<AVPacket*> avpktQ;
         list<int64_t> frmPtsAry;
@@ -1991,7 +1991,7 @@ private:
                     << ", BUT CANNOT find the matching packet with the same pts!" << endl;
         }
 
-        VideoFrame vf;
+        VideoFrame_Internal vf;
         vf.pos = pos;
         vf.decfrm = CloneSelfFreeAVFramePtr(frm);
         if (!vf.decfrm)
@@ -2222,7 +2222,7 @@ private:
 
             if (currTask)
             {
-                for (VideoFrame& vf : currTask->vfAry)
+                for (VideoFrame_Internal& vf : currTask->vfAry)
                 {
                     if (vf.decfrm)
                     {
@@ -2257,7 +2257,7 @@ private:
         });
         if (iter != m_bldtskPriOrder.end())
         {
-            AudioFrame af;
+            AudioFrame_Internal af;
             af.pos = pos;
             af.pts = frm->pts;
             af.decfrm = CloneSelfFreeAVFramePtr(frm);
@@ -2289,7 +2289,7 @@ private:
             }
             else
             {
-                auto afRvsIter = find_if(task->afAry.rbegin(), task->afAry.rend(), [pos](const AudioFrame& af) {
+                auto afRvsIter = find_if(task->afAry.rbegin(), task->afAry.rend(), [pos](const AudioFrame_Internal& af) {
                     return af.pos <= pos;
                 });
                 if (afRvsIter != task->afAry.rend() && afRvsIter->pos == pos)
@@ -2462,7 +2462,7 @@ private:
 
             if (currTask)
             {
-                for (AudioFrame& af : currTask->afAry)
+                for (AudioFrame_Internal& af : currTask->afAry)
                 {
                     int fferr;
                     SelfFreeAVFramePtr fwdfrm;
@@ -3524,54 +3524,5 @@ MediaReader::Holder MediaReader::CreateInstance(const string& loggerName)
 ALogger* MediaReader::GetDefaultLogger()
 {
     return Logger::GetLogger("MReader");
-}
-
-class VideoFrame_MatImpl : public MediaReader::VideoFrame
-{
-public:
-    VideoFrame_MatImpl(ImGui::ImMat& vmat) : m_vmat(vmat) {}
-    virtual ~VideoFrame_MatImpl() {}
-
-    bool GetMat(ImGui::ImMat& m) override
-    {
-        m = m_vmat;
-        return true;
-    }
-
-    int64_t Pos() const override
-    {
-        return (int64_t)(m_vmat.time_stamp*1000);
-    }
-
-    int64_t Pts() const override
-    {
-        return 0;
-    }
-
-    int64_t Dur() const override
-    {
-        return 0;
-    }
-
-    void SetAutoConvertToMat(bool enable) override {}
-    bool IsReady() const override { return !m_vmat.empty(); }
-
-    NativeData GetNativeData() const override
-    {
-        return { NativeData::MAT, (void*)&m_vmat };
-    }
-
-private:
-    ImGui::ImMat m_vmat;
-};
-
-static const auto MEDIA_READER_VIDEO_FRAME_MATIMPL_HOLDER_DELETER = [] (MediaReader::VideoFrame* p) {
-    VideoFrame_MatImpl* ptr = dynamic_cast<VideoFrame_MatImpl*>(p);
-    delete ptr;
-};
-
-MediaReader::VideoFrame::Holder MediaReader::VideoFrame::CreateMatInstance(ImGui::ImMat& m)
-{
-    return MediaReader::VideoFrame::Holder(new VideoFrame_MatImpl(m), MEDIA_READER_VIDEO_FRAME_MATIMPL_HOLDER_DELETER);
 }
 }
