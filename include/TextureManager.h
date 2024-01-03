@@ -60,6 +60,7 @@ struct ManagedTexture
 
     virtual ImTextureID TextureID() const = 0;
     virtual Rect<float> GetDisplayRoi() const = 0;
+    virtual Vec2<int32_t> GetDisplaySize() const = 0;
     virtual bool IsValid() const = 0;
     virtual void Invalidate() = 0;
     virtual bool RenderMatToTexture(const ImGui::ImMat& vmat) = 0;

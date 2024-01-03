@@ -263,6 +263,18 @@ uint32_t CopyPcmDataEx(uint8_t channels, uint8_t bytesPerSample, uint32_t copySa
 
 MEDIACORE_API MediaCore::VideoFrame::Holder CreateVideoFrameFromAVFrame(const AVFrame* pAvfrm, int64_t pos);
 MEDIACORE_API MediaCore::VideoFrame::Holder CreateVideoFrameFromAVFrame(SelfFreeAVFramePtr hAvfrm, int64_t pos);
+
+struct FFFilterGraph
+{
+    using Holder = std::shared_ptr<FFFilterGraph>;
+    static Holder CreateInstance(const std::string& strName = "");
+
+    virtual MediaCore::ErrorCode Initialize(const std::string& strFgArgs, const MediaCore::Ratio& tFrameRate, MediaCore::VideoFrame::NativeData::Type eOutputNativeType = MediaCore::VideoFrame::NativeData::MAT) = 0;
+    virtual MediaCore::ErrorCode SendFrame(MediaCore::VideoFrame::Holder hVfrm) = 0;
+    virtual MediaCore::ErrorCode ReceiveFrame(MediaCore::VideoFrame::Holder& hVfrm) = 0;
+
+    virtual std::string GetError() const = 0;
+};
 }
 
 #include "MediaInfo.h"

@@ -33,6 +33,7 @@ extern "C"
     #include "libavutil/avutil.h"
     #include "libavutil/avstring.h"
     #include "libavutil/pixdesc.h"
+    #include "libavutil/display.h"
     #include "libavformat/avformat.h"
     #include "libavcodec/avcodec.h"
 }
@@ -237,6 +238,7 @@ public:
         m_seekPosUpdated = false;
         m_seekPts = 0;
         m_vidDurMts = 0;
+        m_hTransposeFilter = nullptr;
 
         m_prepared = false;
         m_started = false;
@@ -282,6 +284,7 @@ public:
             delete m_pFrmCvt;
             m_pFrmCvt = nullptr;
         }
+        m_hTransposeFilter = nullptr;
 
         m_prepared = false;
         m_started = false;
@@ -915,6 +918,43 @@ private:
             m_errMsg = oss.str();
             return false;
         }
+        // handle display matrix
+        size_t szSideDataSize = 0;
+        auto pDispMatrix = av_stream_get_side_data(m_vidAvStm, AV_PKT_DATA_DISPLAYMATRIX, &szSideDataSize);
+        if (pDispMatrix && szSideDataSize >= 9*4)
+        {
+            const auto dRotateAngle = av_display_rotation_get((int32_t*)pDispMatrix);
+            const double dTimesTo90 = dRotateAngle/90.0;
+            double _integ;
+            const double frac = modf(dTimesTo90, &_integ);
+            int integ = (int)_integ;
+            MediaCore::Ratio tFrameRate(m_vidAvStm->r_frame_rate.num, m_vidAvStm->r_frame_rate.den);
+            if (frac == 0.0 && (integ&0x1) == 1)
+            {
+                m_hTransposeFilter = FFUtils::FFFilterGraph::CreateInstance();
+                MediaCore::ErrorCode eErrCode;
+                if (integ%4 == 1)
+                    eErrCode = m_hTransposeFilter->Initialize("transpose=cclock", tFrameRate, MediaCore::VideoFrame::NativeData::AVFRAME_HOLDER);
+                else
+                    eErrCode = m_hTransposeFilter->Initialize("transpose=clock", tFrameRate, MediaCore::VideoFrame::NativeData::AVFRAME_HOLDER);
+                if (eErrCode != MediaCore::Ok)
+                {
+                    m_hTransposeFilter = nullptr;
+                    m_logger->Log(Error) << "FAILED to initialize 'FFFilterGraph' transpose filter instance!" << endl;
+                    return false;
+                }
+            }
+            else if (integ > 0)
+            {
+                m_hTransposeFilter = FFUtils::FFFilterGraph::CreateInstance();
+                if (m_hTransposeFilter->Initialize("hflip,vflip", tFrameRate, MediaCore::VideoFrame::NativeData::AVFRAME_HOLDER) != MediaCore::Ok)
+                {
+                    m_hTransposeFilter = nullptr;
+                    m_logger->Log(Error) << "FAILED to initialize 'FFFilterGraph' transpose filter instance!" << endl;
+                    return false;
+                }
+            }
+        }
 
         if (!m_pFrmCvt)
         {
@@ -1059,17 +1099,59 @@ private:
                 this_thread::sleep_for(chrono::milliseconds(5));
             }
 
+            // transfer hw-frame to sw-frame if needed
+            if (isHwfrm)
+            {
+                SelfFreeAVFramePtr swfrm = AllocSelfFreeAVFramePtr();
+                isHwfrm = false;
+                lock_guard<ConditionalMutex> lk(owner->m_hwDecCtxLock);
+                if (TransferHwFrameToSwFrame(swfrm.get(), frmPtr.get()))
+                    frmPtr = swfrm;
+                else
+                {
+                    owner->m_logger->Log(Error) << "TransferHwFrameToSwFrame() FAILED at pos " << pos << "(" << pts << ")!" << endl;
+                    frmPtr = nullptr;
+                    frmPtrInUse = false;
+                    return false;
+                }
+            }
+
+            // do transpose if needed
+            auto hTransposeFilter = owner->m_hTransposeFilter;
+            if (hTransposeFilter)
+            {
+                auto hFgInFrm = FFUtils::CreateVideoFrameFromAVFrame(frmPtr, pos);
+                if (hTransposeFilter->SendFrame(hFgInFrm) != MediaCore::Ok)
+                {
+                    owner->m_logger->Log(Error) << "FAILED to do transpose filtering when invoking 'SendFrame()' on VideoFrame@" << pos << "(pts=" << pts << ")." << endl;
+                    frmPtr = nullptr;
+                    frmPtrInUse = false;
+                    return false;
+                }
+                VideoFrame::Holder hFgOutVfrm;
+                if (hTransposeFilter->ReceiveFrame(hFgOutVfrm) != MediaCore::Ok)
+                {
+                    owner->m_logger->Log(Error) << "FAILED to do transpose filtering when invoking 'ReceiveFrame()' on VideoFrame@" << pos << "(pts=" << pts << ")." << endl;
+                    frmPtr = nullptr;
+                    frmPtrInUse = false;
+                    return false;
+                }
+                auto tNativeData = hFgOutVfrm->GetNativeData();
+                if (tNativeData.eType != VideoFrame::NativeData::AVFRAME_HOLDER)
+                {
+                    owner->m_logger->Log(Error) << "FAILED to do transpose filtering on VideoFrame@" << pos << "(pts=" << pts << "), received native data type is NOT AVFRAME_HOLDER." << endl;
+                    frmPtr = nullptr;
+                    frmPtrInUse = false;
+                    return false;
+                }
+                frmPtr = *((SelfFreeAVFramePtr*)tNativeData.pData);
+            }
+
             // avframe -> ImMat
             double ts = (double)pos/1000;
-            {
-                bool isHwfrm = IsHwFrame(frmPtr.get());
-                if (isHwfrm) owner->m_hwDecCtxLock.lock();
-                if (!owner->m_pFrmCvt->ConvertImage(frmPtr.get(), vmat, ts))
-                    owner->m_logger->Log(Error) << "AVFrameToImMatConverter::ConvertImage() FAILED at pos " << pos << "(" << pts << ")!" << endl;
-                if (isHwfrm) owner->m_hwDecCtxLock.unlock();
-            }
+            if (!owner->m_pFrmCvt->ConvertImage(frmPtr.get(), vmat, ts))
+                owner->m_logger->Log(Error) << "AVFrameToImMatConverter::ConvertImage() FAILED at pos " << pos << "(" << pts << ")!" << endl;
             frmPtr = nullptr;
-            isHwfrm = false;
             frmPtrInUse = false;
 
             if (vmat.empty())
@@ -1579,6 +1661,7 @@ private:
                         const int64_t dur = pAvfrm->pkt_duration;
 #endif
                         pAvfrm = nullptr;
+
                         auto pVf = new VideoFrame_Impl(this, frmPtr, CvtPtsToMts(pts), pts, dur, isHwfrm);
                         if (isStartFrame)
                         {
@@ -1859,6 +1942,7 @@ private:
     // convert hw frame to sw frame thread
     thread m_cnvMatThread;
     bool m_cnvThdRunning{false};
+    FFUtils::FFFilterGraph::Holder m_hTransposeFilter;
 
     int64_t m_readPts{0};
     pair<int64_t, int64_t> m_cacheRange;

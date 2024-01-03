@@ -39,6 +39,7 @@ extern "C"
     #include "libavutil/avutil.h"
     #include "libavutil/avstring.h"
     #include "libavutil/pixdesc.h"
+    #include "libavutil/display.h"
     #include "libavformat/avformat.h"
     #include "libavcodec/avcodec.h"
     #include "libavdevice/avdevice.h"
@@ -140,6 +141,7 @@ public:
         m_vidStream = nullptr;
         m_hParser = nullptr;
         m_hMediaInfo = nullptr;
+        m_hTransposeFilter = nullptr;
 
         m_vidStartMts = 0;
         m_vidStartPts = 0;
@@ -676,6 +678,44 @@ private:
                     oss << "Snapshot::Generator for file '" << m_hMediaInfo->url << "' FAILED to open video decoder! Error is '" << res.errMsg << "'.";
                     m_errMsg = oss.str();
                     return false;
+                }
+
+                // handle display matrix
+                size_t szSideDataSize = 0;
+                auto pDispMatrix = av_stream_get_side_data(m_vidStream, AV_PKT_DATA_DISPLAYMATRIX, &szSideDataSize);
+                if (pDispMatrix && szSideDataSize >= 9*4)
+                {
+                    const auto dRotateAngle = av_display_rotation_get((int32_t*)pDispMatrix);
+                    const double dTimesTo90 = dRotateAngle/90.0;
+                    double _integ;
+                    const double frac = modf(dTimesTo90, &_integ);
+                    int integ = (int)_integ;
+                    MediaCore::Ratio tFrameRate(m_vidStream->r_frame_rate.num, m_vidStream->r_frame_rate.den);
+                    if (frac == 0.0 && (integ&0x1) == 1)
+                    {
+                        m_hTransposeFilter = FFUtils::FFFilterGraph::CreateInstance();
+                        MediaCore::ErrorCode eErrCode;
+                        if (integ%4 == 1)
+                            eErrCode = m_hTransposeFilter->Initialize("transpose=cclock", tFrameRate, MediaCore::VideoFrame::NativeData::AVFRAME_HOLDER);
+                        else
+                            eErrCode = m_hTransposeFilter->Initialize("transpose=clock", tFrameRate, MediaCore::VideoFrame::NativeData::AVFRAME_HOLDER);
+                        if (eErrCode != MediaCore::Ok)
+                        {
+                            m_hTransposeFilter = nullptr;
+                            m_logger->Log(Error) << "FAILED to initialize 'FFFilterGraph' transpose filter instance!" << endl;
+                            return false;
+                        }
+                    }
+                    else if (integ > 0)
+                    {
+                        m_hTransposeFilter = FFUtils::FFFilterGraph::CreateInstance();
+                        if (m_hTransposeFilter->Initialize("hflip,vflip", tFrameRate, MediaCore::VideoFrame::NativeData::AVFRAME_HOLDER) != MediaCore::Ok)
+                        {
+                            m_hTransposeFilter = nullptr;
+                            m_logger->Log(Error) << "FAILED to initialize 'FFFilterGraph' transpose filter instance!" << endl;
+                            return false;
+                        }
+                    }
                 }
 
                 ResetGopDecodeTaskList();
@@ -2127,6 +2167,30 @@ private:
         return nxttsk;
     }
 
+    SelfFreeAVFramePtr DoTranspose(SelfFreeAVFramePtr hAvfrm)
+    {
+        auto hFgInFrm = FFUtils::CreateVideoFrameFromAVFrame(hAvfrm, hAvfrm->pts);
+        if (m_hTransposeFilter->SendFrame(hFgInFrm) != MediaCore::Ok)
+        {
+            m_logger->Log(Error) << "FAILED to do transpose filtering when invoking 'SendFrame()' on SnapshotGenerator SS@(pts=" << hAvfrm->pts << ")." << endl;
+            return nullptr;
+        }
+        VideoFrame::Holder hFgOutVfrm;
+        if (m_hTransposeFilter->ReceiveFrame(hFgOutVfrm) != MediaCore::Ok)
+        {
+            m_logger->Log(Error) << "FAILED to do transpose filtering when invoking 'ReceiveFrame()' on SnapshotGenerator SS@(pts=" << hAvfrm->pts << ")." << endl;
+            return nullptr;
+        }
+        auto tNativeData = hFgOutVfrm->GetNativeData();
+        if (tNativeData.eType != VideoFrame::NativeData::AVFRAME_HOLDER)
+        {
+            m_logger->Log(Error) << "FAILED to do transpose filtering on SnapshotGenerator SS@(pts=" << hAvfrm->pts << "), received native data type is NOT AVFRAME_HOLDER." << endl;
+            return nullptr;
+        }
+        hAvfrm = *((SelfFreeAVFramePtr*)tNativeData.pData);
+        return hAvfrm;
+    }
+
     bool EnqueueSnapshotAVFrame(list<GopDecodeTaskHolder> ssGopTasks, AVFrame* avfrm, int32_t ssIdx, uint32_t bias)
     {
         if (ssGopTasks.empty())
@@ -2145,6 +2209,10 @@ private:
             m_pendingVidfrmCnt--;
         });
         m_pendingVidfrmCnt++;
+
+        // do transpose if needed
+        if (m_hTransposeFilter)
+            frm = DoTranspose(frm);
 
         DisplayData::Holder hDispData;
         auto ssIdxNxt = (int32_t)round((double)(frm->pts+m_vidfrmIntvPts)/m_ssIntvPts);
@@ -2411,6 +2479,7 @@ private:
     thread m_viddecThread;
     // update snapshots thread
     thread m_updateSsThread;
+    FFUtils::FFFilterGraph::Holder m_hTransposeFilter;
 
     int64_t m_vidStartMts{0};
     int64_t m_vidStartPts{0};

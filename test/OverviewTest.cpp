@@ -3,6 +3,7 @@
 #include <imgui_helper.h>
 #include <imgui_extra_widget.h>
 #include <ImGuiFileDialog.h>
+#include <cmath>
 #include <string>
 #include <sstream>
 #include "Overview.h"
@@ -17,7 +18,7 @@ static Overview::Holder g_movr;
 // static MediaOverview::Holder g_movr2;
 static uint32_t g_ssCount = 12;
 static vector<ImTextureID> g_snapshotTids;
-ImVec2 g_snapImageSize;
+ImVec2 g_v2SsDisplaySize(0, 0);
 const string c_imguiIniPath = "movr_test.ini";
 const string c_bookmarkPath = "bookmark.ini";
 static bool g_isImageSequence = false;
@@ -84,8 +85,6 @@ static bool MediaOverview_Frame(void * handle, bool app_will_quit)
 {
     bool app_done = false;
     auto& io = ImGui::GetIO();
-    g_snapImageSize.x = io.DisplaySize.x/(g_ssCount+1);
-    g_snapImageSize.y = g_snapImageSize.x*9/16;
 
     ImGui::SetNextWindowPos({0, 0});
     ImGui::SetNextWindowSize(io.DisplaySize);
@@ -151,42 +150,40 @@ static bool MediaOverview_Frame(void * handle, bool app_will_quit)
         }
         for (int i = 0; i < snapshots.size(); i++)
         {
-            ImGui::BeginGroup();
-            if (i >= snapshots.size())
+            const auto& vmat = snapshots[i];
+            if (g_v2SsDisplaySize.x == 0.0 && !vmat.empty())
             {
-                ImGui::Dummy(g_snapImageSize);
-                ImGui::TextUnformatted("No image");
+                g_v2SsDisplaySize.x = floor(io.DisplaySize.x/(g_ssCount+1));
+                g_v2SsDisplaySize.y = g_v2SsDisplaySize.x*vmat.h/vmat.w;
+            }
+
+            ImGui::BeginGroup();
+            string tag = TimestampToString(vmat.time_stamp);
+            bool valid = true;
+            if (vmat.empty())
+            {
+                valid = false;
+                tag += "(loading)";
+            }
+            if (valid &&
+                ((vmat.color_format != IM_CF_RGBA && vmat.color_format != IM_CF_ABGR) ||
+                vmat.type != IM_DT_INT8 ||
+                (vmat.device != IM_DD_CPU && vmat.device != IM_DD_VULKAN)))
+            {
+                Log(Error) << "WRONG snapshot format!" << endl;
+                valid = false;
+                tag += "(bad format)";
+            }
+            if (valid)
+            {
+                ImGui::ImMatToTexture(vmat, g_snapshotTids[i]);
+                if (g_snapshotTids[i]) ImGui::Image(g_snapshotTids[i], g_v2SsDisplaySize);
             }
             else
             {
-                ImGui::ImMat vmat = snapshots[i];
-                string tag = TimestampToString(vmat.time_stamp);
-                bool valid = true;
-                if (vmat.empty())
-                {
-                    valid = false;
-                    tag += "(loading)";
-                }
-                if (valid &&
-                    ((vmat.color_format != IM_CF_RGBA && vmat.color_format != IM_CF_ABGR) ||
-                    vmat.type != IM_DT_INT8 ||
-                    (vmat.device != IM_DD_CPU && vmat.device != IM_DD_VULKAN)))
-                {
-                    Log(Error) << "WRONG snapshot format!" << endl;
-                    valid = false;
-                    tag += "(bad format)";
-                }
-                if (valid)
-                {
-                    ImGui::ImMatToTexture(vmat, g_snapshotTids[i]);
-                    if (g_snapshotTids[i]) ImGui::Image(g_snapshotTids[i], g_snapImageSize);
-                }
-                else
-                {
-                    ImGui::Dummy(g_snapImageSize);
-                }
-                ImGui::TextUnformatted(tag.c_str());
+                ImGui::Dummy(g_v2SsDisplaySize);
             }
+            ImGui::TextUnformatted(tag.c_str());
             ImGui::EndGroup();
             ImGui::SameLine();
         }

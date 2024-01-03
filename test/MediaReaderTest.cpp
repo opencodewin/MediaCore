@@ -47,7 +47,7 @@ static const pair<double, double> G_DurTable[] = {
     {  5, 1 },
     { 10, 2 },
 };
-static Vec2<int32_t> g_imageDisplaySize = { 800, 450 };
+static Vec2<int32_t> g_v2DisplayViewSize = { 800, 450 };
 // audio
 static MediaReader::Holder g_audrdr;
 static AudioRender* g_audrnd = nullptr;
@@ -403,7 +403,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         {
             bool eof;
             ImGui::ImMat vmat;
-            MediaReader::VideoFrame::Holder hVf;
+            MediaCore::VideoFrame::Holder hVf;
             if (g_bInStepMode)
             {
                 if (bDoStepNext)
@@ -452,7 +452,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                     if (!g_tx)
                     {
                         Vec2<int32_t> txSize(vmat.w, vmat.h);
-                        // Vec2<int32_t> txSize(g_imageDisplaySize);
+                        // Vec2<int32_t> txSize(g_v2DisplayViewSize);
                         g_tx = g_txmgr->CreateManagedTextureFromMat(vmat, txSize);
                         if (!g_tx)
                             Log(Error) << "FAILED to create ManagedTexture from ImMat! Error is '" << g_txmgr->GetError() << "'." << endl;
@@ -471,9 +471,20 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         // AddCheckPoint("ShowImage0");
         ImTextureID tid = g_tx ? g_tx->TextureID() : nullptr;
         if (tid)
-            ImGui::Image(tid, g_imageDisplaySize);
+        {
+            ImVec2 v2DisplaySize = g_v2DisplayViewSize;
+            const auto v2TextureSize = g_tx->GetDisplaySize();
+            if (fabs((float)v2TextureSize.x/v2TextureSize.y - v2DisplaySize.x/v2DisplaySize.y) > FLT_EPSILON)
+            {
+                if (v2TextureSize.x*v2DisplaySize.y > v2TextureSize.y*v2DisplaySize.x)
+                    v2DisplaySize.y = v2TextureSize.y*v2DisplaySize.x/v2TextureSize.x;
+                else
+                    v2DisplaySize.x = v2TextureSize.x*v2DisplaySize.y/v2TextureSize.y;
+            }
+            ImGui::Image(tid, v2DisplaySize);
+        }
         else
-            ImGui::Dummy(g_imageDisplaySize);
+            ImGui::Dummy(g_v2DisplayViewSize);
         // AddCheckPoint("ShowImage1");
         // LogCheckPointsTimeInfo();
         ImGui::TextUnformatted(imgTag.c_str());
@@ -502,7 +513,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                     g_vidrdr->SetLogLevel(INFO);
                     g_vidrdr->EnableHwAccel(g_useHwAccel);
                     g_vidrdr->Open(g_mediaParser);
-                    g_vidrdr->ConfigVideoReader((uint32_t)g_imageDisplaySize.x, (uint32_t)g_imageDisplaySize.y,
+                    g_vidrdr->ConfigVideoReader((uint32_t)g_v2DisplayViewSize.x, (uint32_t)g_v2DisplayViewSize.y,
                             IM_CF_RGBA, IM_DT_INT8, IM_INTERPOLATE_AREA, HwaccelManager::GetDefaultInstance());
                     // g_vidrdr->ConfigVideoReader(1.0f, 1.0f);
                     if (playMts > 0)

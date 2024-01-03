@@ -31,6 +31,7 @@ extern "C"
     #include "libavutil/avutil.h"
     #include "libavutil/avstring.h"
     #include "libavutil/pixdesc.h"
+    #include "libavutil/display.h"
     #include "libavformat/avformat.h"
     #include "libavcodec/avcodec.h"
     #include "libavdevice/avdevice.h"
@@ -526,6 +527,44 @@ private:
                     oss << "Overview FAILED to open the video decoder for file '" << m_hMediaInfo->url << "'! Error is '" << res.errMsg << "'.";
                     m_errMsg = oss.str();
                     m_vidStmIdx = -1;
+                }
+
+                // handle display matrix
+                size_t szSideDataSize = 0;
+                auto pDispMatrix = av_stream_get_side_data(m_vidAvStm, AV_PKT_DATA_DISPLAYMATRIX, &szSideDataSize);
+                if (pDispMatrix && szSideDataSize >= 9*4)
+                {
+                    const auto dRotateAngle = av_display_rotation_get((int32_t*)pDispMatrix);
+                    const double dTimesTo90 = dRotateAngle/90.0;
+                    double _integ;
+                    const double frac = modf(dTimesTo90, &_integ);
+                    int integ = (int)_integ;
+                    MediaCore::Ratio tFrameRate(m_vidAvStm->r_frame_rate.num, m_vidAvStm->r_frame_rate.den);
+                    if (frac == 0.0 && (integ&0x1) == 1)
+                    {
+                        m_hTransposeFilter = FFUtils::FFFilterGraph::CreateInstance();
+                        MediaCore::ErrorCode eErrCode;
+                        if (integ%4 == 1)
+                            eErrCode = m_hTransposeFilter->Initialize("transpose=cclock", tFrameRate, MediaCore::VideoFrame::NativeData::AVFRAME_HOLDER);
+                        else
+                            eErrCode = m_hTransposeFilter->Initialize("transpose=clock", tFrameRate, MediaCore::VideoFrame::NativeData::AVFRAME_HOLDER);
+                        if (eErrCode != MediaCore::Ok)
+                        {
+                            m_hTransposeFilter = nullptr;
+                            m_logger->Log(Error) << "FAILED to initialize 'FFFilterGraph' transpose filter instance!" << endl;
+                            return false;
+                        }
+                    }
+                    else if (integ > 0)
+                    {
+                        m_hTransposeFilter = FFUtils::FFFilterGraph::CreateInstance();
+                        if (m_hTransposeFilter->Initialize("hflip,vflip", tFrameRate, MediaCore::VideoFrame::NativeData::AVFRAME_HOLDER) != MediaCore::Ok)
+                        {
+                            m_hTransposeFilter = nullptr;
+                            m_logger->Log(Error) << "FAILED to initialize 'FFFilterGraph' transpose filter instance!" << endl;
+                            return false;
+                        }
+                    }
                 }
             }
             m_decodeVideo = !openVideoFailed;
@@ -1035,6 +1074,30 @@ private:
         }
     }
 
+    SelfFreeAVFramePtr DoTranspose(SelfFreeAVFramePtr hAvfrm)
+    {
+        auto hFgInFrm = FFUtils::CreateVideoFrameFromAVFrame(hAvfrm, hAvfrm->pts);
+        if (m_hTransposeFilter->SendFrame(hFgInFrm) != MediaCore::Ok)
+        {
+            m_logger->Log(Error) << "FAILED to do transpose filtering when invoking 'SendFrame()' on overview SS@(pts=" << hAvfrm->pts << ")." << endl;
+            return nullptr;
+        }
+        VideoFrame::Holder hFgOutVfrm;
+        if (m_hTransposeFilter->ReceiveFrame(hFgOutVfrm) != MediaCore::Ok)
+        {
+            m_logger->Log(Error) << "FAILED to do transpose filtering when invoking 'ReceiveFrame()' on overview SS@(pts=" << hAvfrm->pts << ")." << endl;
+            return nullptr;
+        }
+        auto tNativeData = hFgOutVfrm->GetNativeData();
+        if (tNativeData.eType != VideoFrame::NativeData::AVFRAME_HOLDER)
+        {
+            m_logger->Log(Error) << "FAILED to do transpose filtering on overview SS@(pts=" << hAvfrm->pts << "), received native data type is NOT AVFRAME_HOLDER." << endl;
+            return nullptr;
+        }
+        hAvfrm = *((SelfFreeAVFramePtr*)tNativeData.pData);
+        return hAvfrm;
+    }
+
     void GenerateSsThreadProc()
     {
         m_logger->Log(DEBUG) << "Enter GenerateSsThreadProc()." << endl;
@@ -1052,60 +1115,65 @@ private:
 
             if (!m_vidfrmQ.empty())
             {
-                AVFrame* frm = m_vidfrmQ.front();
+                SelfFreeAVFramePtr hAvfrm = CloneSelfFreeAVFramePtr(m_vidfrmQ.front());
                 {
                     lock_guard<mutex> lk(m_vidfrmQLock);
                     m_vidfrmQ.pop_front();
                 }
 
-                double ts = (double)av_rescale_q(frm->pts, m_vidAvStm->time_base, MILLISEC_TIMEBASE)/1000.;
-                auto iter = find_if(m_snapshots.begin(), m_snapshots.end(), [frm](const Snapshot& ss){
-                    return ss.ssFrmPts == frm->pts;
-                });
-                if (iter != m_snapshots.end())
+                // do transpose if needed
+                if (m_hTransposeFilter)
+                    hAvfrm = DoTranspose(hAvfrm);
+
+                if (hAvfrm)
                 {
-                    lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
-                    if (!m_frmCvt.ConvertImage(frm, iter->img, ts))
-                        m_logger->Log(Error) << "FAILED to convert AVFrame to ImGui::ImMat! Message is '" << m_frmCvt.GetError() << "'." << endl;
-                    // else
-                    //     m_logger->Log(DEBUG) << "Add SS#" << iter->index << "." << endl;
-                }
-                else
-                {
-                    bool discarded = false;
-                    if (!m_snapshots.empty())
+                    double ts = (double)av_rescale_q(hAvfrm->pts, m_vidAvStm->time_base, MILLISEC_TIMEBASE)/1000.;
+                    auto iter = find_if(m_snapshots.begin(), m_snapshots.end(), [hAvfrm](const Snapshot& ss){
+                        return ss.ssFrmPts == hAvfrm->pts;
+                    });
+                    if (iter != m_snapshots.end())
                     {
-                        auto bestMatchIter = m_snapshots.begin();
-                        int64_t minDiff = abs(bestMatchIter->ssFrmPts-frm->pts);
-                        auto searchIter = bestMatchIter; searchIter++;
-                        while (searchIter != m_snapshots.end())
+                        lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
+                        if (!m_frmCvt.ConvertImage(hAvfrm.get(), iter->img, ts))
+                            m_logger->Log(Error) << "FAILED to convert AVFrame to ImGui::ImMat! Message is '" << m_frmCvt.GetError() << "'." << endl;
+                        // else
+                        //     m_logger->Log(DEBUG) << "Add SS#" << iter->index << "." << endl;
+                    }
+                    else
+                    {
+                        bool discarded = false;
+                        if (!m_snapshots.empty())
                         {
-                            const int64_t diff = abs(searchIter->ssFrmPts-frm->pts);
-                            if (diff < minDiff)
+                            auto bestMatchIter = m_snapshots.begin();
+                            int64_t minDiff = abs(bestMatchIter->ssFrmPts-hAvfrm->pts);
+                            auto searchIter = bestMatchIter; searchIter++;
+                            while (searchIter != m_snapshots.end())
                             {
-                                bestMatchIter = searchIter;
-                                minDiff = diff;
+                                const int64_t diff = abs(searchIter->ssFrmPts-hAvfrm->pts);
+                                if (diff < minDiff)
+                                {
+                                    bestMatchIter = searchIter;
+                                    minDiff = diff;
+                                }
+                                else
+                                    break;
+                            }
+                            if (bestMatchIter->img.empty())
+                            {
+                                lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
+                                if (!m_frmCvt.ConvertImage(hAvfrm.get(), bestMatchIter->img, ts))
+                                    m_logger->Log(Error) << "FAILED to convert AVFrame to ImGui::ImMat! Message is '" << m_frmCvt.GetError() << "'." << endl;
                             }
                             else
-                                break;
-                        }
-                        if (bestMatchIter->img.empty())
-                        {
-                            lock_guard<ConditionalMutex> lk(m_hwDecCtxLock);
-                            if (!m_frmCvt.ConvertImage(frm, bestMatchIter->img, ts))
-                                m_logger->Log(Error) << "FAILED to convert AVFrame to ImGui::ImMat! Message is '" << m_frmCvt.GetError() << "'." << endl;
+                                discarded = true;
                         }
                         else
                             discarded = true;
+                        if (discarded)
+                            m_logger->Log(DEBUG) << "Discard AVFrame with pts=" << hAvfrm->pts << "(ts=" << ts << ")!" << endl;
                     }
-                    else
-                        discarded = true;
-                    if (discarded)
-                        m_logger->Log(DEBUG) << "Discard AVFrame with pts=" << frm->pts << "(ts=" << ts << ")!" << endl;
+                    idleLoop = false;
                 }
-
-                av_frame_free(&frm);
-                idleLoop = false;
             }
             else if (m_viddecEof)
                 break;
@@ -1676,6 +1744,7 @@ private:
         m_vidAvStm = nullptr;
         m_audAvStm = nullptr;
         m_auddec = nullptr;
+        m_hTransposeFilter = nullptr;
 
         m_demuxVidEof = false;
         m_viddecEof = false;
@@ -1762,6 +1831,7 @@ private:
     // generate snapshots thread
     thread m_genSsThread;
     bool m_genSsEof{false};
+    FFUtils::FFFilterGraph::Holder m_hTransposeFilter;
     // demux audio thread
     thread m_demuxAudThread;
     list<AVPacket*> m_audpktQ;

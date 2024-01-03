@@ -23,7 +23,7 @@ static Snapshot::Viewer::Holder g_ssvw1;
 static double g_windowPos = 0.f;
 static double g_windowSize = 300.f;
 static double g_windowFrames = 14.0f;
-static Vec2<int32_t> g_snapImageSize;
+static Vec2<int32_t> g_v2SsDisplaySize;
 static TextureManager::Holder g_txmgr;
 static string g_snapTxPoolName = "SnapshotGridTexturePool";
 const string c_imguiIniPath = "ms_test.ini";
@@ -92,13 +92,6 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
 {
     bool app_done = false;
     auto& io = ImGui::GetIO();
-    if (g_snapImageSize.x == 0 || g_snapImageSize.y == 0)
-    {
-        g_snapImageSize.x = (int32_t)(io.DisplaySize.x/(g_windowFrames+1));
-        g_snapImageSize.y = (int32_t)(g_snapImageSize.x*9/16);
-        g_ssgen->SetSnapshotSize(g_snapImageSize.x, g_snapImageSize.y);
-        g_txmgr->CreateGridTexturePool(g_snapTxPoolName, g_snapImageSize, IM_DT_INT8, {16, 9}, 0);
-    }
 
     ImGui::SetNextWindowPos({0, 0});
     ImGui::SetNextWindowSize(io.DisplaySize);
@@ -158,7 +151,7 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
             ImGui::BeginGroup();
             if (i >= snapshots.size())
             {
-                ImGui::Dummy(g_snapImageSize);
+                ImGui::Dummy(g_v2SsDisplaySize);
                 ImGui::TextUnformatted("No image");
             }
             else
@@ -169,13 +162,13 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
                 ImTextureID tid = hTx ? hTx->TextureID() : nullptr;
                 if (!tid)
                 {
-                    ImGui::Dummy(g_snapImageSize);
+                    ImGui::Dummy(g_v2SsDisplaySize);
                     tag += "(loading)";
                 }
                 else
                 {
                     auto roiRect = hTx->GetDisplayRoi();
-                    ImGui::Image(tid, g_snapImageSize, roiRect.lt, roiRect.rb);
+                    ImGui::Image(tid, g_v2SsDisplaySize, roiRect.lt, roiRect.rb);
                 }
                 ImGui::TextUnformatted(tag.c_str());
             }
@@ -195,6 +188,7 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
         if (ImGuiFileDialog::Instance()->IsOk())
 		{
             g_ssgen->Close();
+            g_txmgr->ReleaseTexturePool(g_snapTxPoolName);
             string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
             g_mediaParser = MediaParser::CreateInstance();
             if (g_isImageSequence)
@@ -207,6 +201,11 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
             g_movr->Open(g_mediaParser, 20);
             g_ssgen->Open(g_mediaParser);
             g_ssgen->SetOverview(g_movr);
+            const auto pVidstm = g_ssgen->GetVideoStream();
+            g_v2SsDisplaySize.x = (int32_t)(io.DisplaySize.x/(g_windowFrames+1));
+            g_v2SsDisplaySize.y = (int32_t)(g_v2SsDisplaySize.x*pVidstm->height/pVidstm->width);
+            g_ssgen->SetSnapshotSize(g_v2SsDisplaySize.x, g_v2SsDisplaySize.y);
+            g_txmgr->CreateGridTexturePool(g_snapTxPoolName, g_v2SsDisplaySize, IM_DT_INT8, {16, 9}, 0);
             g_windowPos = (float)g_ssgen->GetVideoMinPos()/1000.f;
             g_windowSize = (float)g_ssgen->GetVideoDuration()/10000.f;
             g_ssgen->ConfigSnapWindow(g_windowSize, g_windowFrames);

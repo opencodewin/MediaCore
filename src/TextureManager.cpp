@@ -49,6 +49,8 @@ private:
 
         Rect<float> GetDisplayRoi() const override { return (Rect<float>)m_roiRect/(Vec2<float>)m_textureSize; }
 
+        Vec2<int32_t> GetDisplaySize() const override { return m_roiSize; }
+
         bool IsValid() const override { return m_valid; }
 
         bool IsDiscarded() const { return m_discarded; }

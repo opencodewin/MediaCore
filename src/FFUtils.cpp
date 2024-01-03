@@ -30,6 +30,7 @@ extern "C"
     #include "libavutil/avutil.h"
     #include "libavutil/opt.h"
     #include "libavutil/channel_layout.h"
+    #include "libavutil/display.h"
 #if LIBAVCODEC_VERSION_MAJOR > 58 || (LIBAVCODEC_VERSION_MAJOR == 58 && LIBAVCODEC_VERSION_MINOR >= 78)
     #include "libavcodec/codec_desc.h"
 #endif
@@ -634,7 +635,6 @@ bool MapAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat, do
     
     ImColorFormat color_format = clrfmt;
     const bool flipped = avfrm->linesize[0] < 0;
-    const int lineSizeInPixel = (flipped ? -avfrm->linesize[0] : avfrm->linesize[0]) / (desc->comp[0].step > 0 ? desc->comp[0].step : 1);
     const int width = avfrm->width;
     const int height = avfrm->height;
     int channel = ISNV12(avfrm->format) ? 2 : desc->nb_components;
@@ -643,7 +643,8 @@ bool MapAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat, do
     for (int i = 0; i < desc->nb_components; i++)
     {
         ImGui::ImMat mat_component;
-        int chLinesize = lineSizeInPixel;
+        const int bytePerElem = (int)ceil((float)desc->comp[i].depth/8.0f);
+        int chLinesize = (flipped ? -avfrm->linesize[i] : avfrm->linesize[i]) / bytePerElem;
         int chWidth = width;
         int chHeight = height;
         if (!isRgb && i > 0)
@@ -2429,6 +2430,262 @@ MediaCore::VideoFrame::Holder CreateVideoFrameFromAVFrame(SelfFreeAVFramePtr hAv
 {
     return MediaCore::VideoFrame::Holder(new VideoFrame_AVFrameImpl(hAvfrm, pos), _VIDEOFRAME_AVFRAMEIMPL_DELETER);
 }
+
+class FFFilterGraph_Impl : public FFFilterGraph
+{
+public:
+    FFFilterGraph_Impl(const string& strName)
+        : m_strName(strName)
+    {
+        m_pLogger = strName.empty() ? GetLogger("FFFilterGraph") : GetLogger(strName);
+    }
+
+    MediaCore::ErrorCode Initialize(const std::string& strFgArgs, const MediaCore::Ratio& tFrameRate, MediaCore::VideoFrame::NativeData::Type eOutputNativeType) override
+    {
+        m_strFgArgs = strFgArgs;
+        m_tFrameRate = tFrameRate;
+        m_eOutputNativeType = eOutputNativeType;
+        m_bInputEof = false;
+        m_i64FrmIdx = 0;
+        m_tMat2AvfrmCvter.SetOutPixelFormat(AV_PIX_FMT_RGBA);
+        m_hFgOutfrmPtr = AllocSelfFreeAVFramePtr();
+        return MediaCore::Ok;
+    }
+
+    MediaCore::ErrorCode SendFrame(MediaCore::VideoFrame::Holder hVfrm) override
+    {
+        if (m_bInputEof)
+            return MediaCore::Eof;
+
+        SelfFreeAVFramePtr hFgInfrmPtr;
+        ImMatWrapper_AVFrame tAvfrmWrapper;
+        if (hVfrm)
+        {
+            auto tNativeData = hVfrm->GetNativeData();
+            if (tNativeData.eType == MediaCore::VideoFrame::NativeData::AVFRAME)
+                hFgInfrmPtr = CloneSelfFreeAVFramePtr((AVFrame*)tNativeData.pData);
+            else if (tNativeData.eType == MediaCore::VideoFrame::NativeData::AVFRAME_HOLDER)
+                hFgInfrmPtr = *((SelfFreeAVFramePtr*)tNativeData.pData);
+            else if (tNativeData.eType == MediaCore::VideoFrame::NativeData::MAT)
+            {
+                const auto& vmat = *((ImGui::ImMat*)tNativeData.pData);
+                if (vmat.device != IM_DD_CPU)
+                {
+                    hFgInfrmPtr = AllocSelfFreeAVFramePtr();
+                    m_tMat2AvfrmCvter.ConvertImage(vmat, hFgInfrmPtr.get(), m_i64FrmIdx);
+                }
+                else
+                {
+                    tAvfrmWrapper.SetMat(vmat);
+                    hFgInfrmPtr = tAvfrmWrapper.GetWrapper(m_i64FrmIdx);
+                }
+            }
+            else
+                return MediaCore::Unsupported;
+        }
+
+        MediaCore::ErrorCode eErrCode;
+        int fferr;
+        if (hFgInfrmPtr)
+        {
+            if (!m_bFgSetupDone)
+            {
+                eErrCode = SetupFilterGraph(hFgInfrmPtr.get());
+                if (eErrCode != MediaCore::Ok)
+                {
+                    m_pLogger->Log(Error) << "'SetupFilterGraph()' FAILED! Error is '" << m_strErrMsg << "'." << endl;
+                    return eErrCode;
+                }
+                m_bFgSetupDone = true;
+            }
+
+            fferr = av_buffersrc_add_frame(m_pBufsrcCtx, hFgInfrmPtr.get());
+            if (fferr < 0)
+            {
+                ostringstream oss; oss << "FAILED when invoking 'av_buffersrc_add_frame()' at frame #" << (m_i64FrmIdx-1) << "! fferr=" << fferr << ".";
+                m_strErrMsg = oss.str(); m_pLogger->Log(Error) << m_strErrMsg << endl;
+                return MediaCore::Failed;
+            }
+            m_i64FrmIdx++;
+        }
+        else
+        {
+            fferr = av_buffersrc_add_frame(m_pBufsrcCtx, nullptr);
+            if (fferr < 0)
+            {
+                ostringstream oss; oss << "FAILED when invoking 'av_buffersrc_add_frame()' sending eof 'nullptr' frame! fferr=" << fferr << ".";
+                m_strErrMsg = oss.str(); m_pLogger->Log(Error) << m_strErrMsg << endl;
+                return MediaCore::Failed;
+            }
+            m_bInputEof = true;
+        }
+        return MediaCore::Ok;
+    }
+
+    MediaCore::ErrorCode ReceiveFrame(MediaCore::VideoFrame::Holder& hVfrm) override
+    {
+        if (m_bOutputEof)
+            return MediaCore::Eof;
+
+        int fferr;
+        auto pAvfrm = m_hFgOutfrmPtr.get();
+        av_frame_unref(pAvfrm);
+        fferr = av_buffersink_get_frame(m_pBufsinkCtx, pAvfrm);
+        if (fferr == AVERROR(EAGAIN))
+            return MediaCore::NotReady;
+        if (fferr == AVERROR_EOF)
+        {
+            m_bOutputEof = true;
+            return MediaCore::Eof;
+        }
+        if (fferr < 0)
+        {
+            ostringstream oss; oss << "FAILED when invoking 'av_buffersink_get_frame()'! fferr=" << fferr << ".";
+            m_strErrMsg = oss.str(); m_pLogger->Log(Error) << m_strErrMsg << endl;
+            return MediaCore::Failed;
+        }
+
+        const auto& tFrameRate = m_tFrameRate;
+        int64_t i64Pos = (double)pAvfrm->pts*1000.0*tFrameRate.den/tFrameRate.num;
+        if (m_eOutputNativeType == MediaCore::VideoFrame::NativeData::Type::AVFRAME ||
+            m_eOutputNativeType == MediaCore::VideoFrame::NativeData::Type::AVFRAME_HOLDER)
+            hVfrm = CreateVideoFrameFromAVFrame(m_hFgOutfrmPtr.get(), i64Pos);
+        else if (m_eOutputNativeType == MediaCore::VideoFrame::NativeData::Type::MAT)
+        {
+            ImGui::ImMat vmat;
+            if (!m_tAvfrm2MatCvter.ConvertImage(pAvfrm, vmat, (double)i64Pos/1000.0))
+            {
+                m_strErrMsg = "FAILED to convert AVFrame -> ImMat by 'AVFrameToImMatConverter::ConvertImage()'!";
+                m_pLogger->Log(Error) << m_strErrMsg << endl;
+                return MediaCore::Failed;
+            }
+            hVfrm = MediaCore::VideoFrame::CreateMatInstance(vmat);
+        }
+        else
+        {
+            return MediaCore::Unsupported;
+        }
+
+        return MediaCore::Ok;
+    }
+
+    string GetError() const override
+    {
+        return m_strErrMsg;
+    }
+
+private:
+    MediaCore::ErrorCode SetupFilterGraph(const AVFrame* pInAvfrm)
+    {
+        const AVFilter *buffersink = avfilter_get_by_name("buffersink");
+        const AVFilter *buffersrc  = avfilter_get_by_name("buffer");
+
+        m_pFilterGraph = avfilter_graph_alloc();
+        if (!m_pFilterGraph)
+        {
+            m_strErrMsg = "FAILED to allocate new 'AVFilterGraph'!";
+            return MediaCore::Failed;
+        }
+
+        int fferr;
+        ostringstream oss;
+        m_eFgInputPixfmt = (AVPixelFormat)pInAvfrm->format;
+        const auto& tFrameRate = m_tFrameRate;
+        oss << pInAvfrm->width << ":" << pInAvfrm->height << ":pix_fmt=" << (int)m_eFgInputPixfmt << ":sar=1"
+                << ":time_base=" << tFrameRate.den << "/" << tFrameRate.num << ":frame_rate=" << tFrameRate.num << "/" << tFrameRate.den;
+        string bufsrcArg = oss.str();
+        m_pBufsrcCtx = nullptr;
+        fferr = avfilter_graph_create_filter(&m_pBufsrcCtx, buffersrc, "buffer_source", bufsrcArg.c_str(), nullptr, m_pFilterGraph);
+        if (fferr < 0)
+        {
+            oss << "FAILED when invoking 'avfilter_graph_create_filter' for INPUT 'buffer_source'! fferr=" << fferr << ".";
+            m_strErrMsg = oss.str();
+            return MediaCore::Failed;
+        }
+        AVFilterInOut* filtInOutPtr = avfilter_inout_alloc();
+        if (!filtInOutPtr)
+        {
+            m_strErrMsg = "FAILED to allocate 'AVFilterInOut' instance!";
+            return MediaCore::Failed;
+        }
+        filtInOutPtr->name       = av_strdup("in");
+        filtInOutPtr->filter_ctx = m_pBufsrcCtx;
+        filtInOutPtr->pad_idx    = 0;
+        filtInOutPtr->next       = nullptr;
+        m_pFilterOutputs = filtInOutPtr;
+
+        m_pBufsinkCtx = nullptr;
+        fferr = avfilter_graph_create_filter(&m_pBufsinkCtx, buffersink, "buffer_sink", nullptr, nullptr, m_pFilterGraph);
+        if (fferr < 0)
+        {
+            oss << "FAILED when invoking 'avfilter_graph_create_filter' for OUTPUT 'out'! fferr=" << fferr << ".";
+            m_strErrMsg = oss.str();
+            return MediaCore::Failed;
+        }
+        filtInOutPtr = avfilter_inout_alloc();
+        if (!filtInOutPtr)
+        {
+            m_strErrMsg = "FAILED to allocate 'AVFilterInOut' instance!";
+            return MediaCore::Failed;
+        }
+        filtInOutPtr->name        = av_strdup("out");
+        filtInOutPtr->filter_ctx  = m_pBufsinkCtx;
+        filtInOutPtr->pad_idx     = 0;
+        filtInOutPtr->next        = nullptr;
+        m_pFilterInputs = filtInOutPtr;
+
+        fferr = avfilter_graph_parse_ptr(m_pFilterGraph, m_strFgArgs.c_str(), &m_pFilterInputs, &m_pFilterOutputs, nullptr);
+        if (fferr < 0)
+        {
+            oss.str(""); oss << "FAILED to invoke 'avfilter_graph_parse_ptr'! fferr=" << fferr << ". Arguments are \"" << m_strFgArgs << "\".";
+            m_strErrMsg = oss.str();
+            return MediaCore::Failed;
+        }
+        m_pLogger->Log(INFO) << "Setup filter-graph with arguments: '" << m_strFgArgs << "'." << endl;
+
+        fferr = avfilter_graph_config(m_pFilterGraph, nullptr);
+        if (fferr < 0)
+        {
+            oss << "FAILED to invoke 'avfilter_graph_config'! fferr=" << fferr << ".";
+            m_strErrMsg = oss.str();
+            return MediaCore::Failed;
+        }
+
+        if (m_pFilterOutputs)
+            avfilter_inout_free(&m_pFilterOutputs);
+        if (m_pFilterInputs)
+            avfilter_inout_free(&m_pFilterInputs);
+        return MediaCore::Ok;
+    }
+
+private:
+    ALogger* m_pLogger;
+    string m_strErrMsg;
+    string m_strName;
+    string m_strFgArgs;
+    MediaCore::Ratio m_tFrameRate;
+    MediaCore::VideoFrame::NativeData::Type m_eOutputNativeType;
+    bool m_bInputEof{false}, m_bOutputEof{false};
+    bool m_bFgSetupDone{false};
+    AVFilterGraph* m_pFilterGraph{nullptr};
+    AVFilterContext* m_pBufsrcCtx;
+    AVFilterContext* m_pBufsinkCtx;
+    AVFilterInOut* m_pFilterOutputs{nullptr};
+    AVFilterInOut* m_pFilterInputs{nullptr};
+    AVPixelFormat m_eFgInputPixfmt;
+    SelfFreeAVFramePtr m_hFgOutfrmPtr;
+    ImMatToAVFrameConverter m_tMat2AvfrmCvter;
+    AVFrameToImMatConverter m_tAvfrm2MatCvter;
+    int64_t m_i64FrmIdx{0};
+};
+
+FFFilterGraph::Holder FFFilterGraph::CreateInstance(const string& strName)
+{
+    return FFFilterGraph::Holder(new FFFilterGraph_Impl(strName), [] (FFFilterGraph* p) {
+        FFFilterGraph_Impl* ptr = dynamic_cast<FFFilterGraph_Impl*>(p);
+        delete ptr;
+    });
+}
 }
 
 static MediaCore::Ratio MediaInfoRatioFromAVRational(const AVRational& src)
@@ -2513,6 +2770,22 @@ MediaCore::MediaInfo::Holder GenerateMediaInfoByAVFormatContext(const AVFormatCo
             const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get((AVPixelFormat)codecpar->format);
             if (desc && desc->nb_components > 0)
                 vidStream->bitDepth = desc->comp[0].depth;
+            vidStream->rawWidth = vidStream->width;
+            vidStream->rawHeight = vidStream->height;
+            size_t szSideDataSize = 0;
+            auto pDispMatrix = av_stream_get_side_data(stream, AV_PKT_DATA_DISPLAYMATRIX, &szSideDataSize);
+            if (pDispMatrix && szSideDataSize >= 9*4)
+            {
+                const auto dRotateAngle = av_display_rotation_get((int32_t*)pDispMatrix);
+                const double dTimesTo90 = dRotateAngle/90.0;
+                double integ;
+                const double frac = modf(dTimesTo90, &integ);
+                if (frac == 0.0 && (((int32_t)integ)&0x1) == 1)
+                {
+                    vidStream->width = vidStream->rawHeight;
+                    vidStream->height = vidStream->rawWidth;
+                }
+            }
             hStream = MediaCore::Stream::Holder(vidStream);
         }
         else if (codecpar->codec_type == AVMEDIA_TYPE_AUDIO)

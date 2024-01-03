@@ -33,20 +33,15 @@
 
 namespace MediaCore
 {
-struct CorrelativeFrame
+enum ErrorCode
 {
-    enum Phase
-    {
-        PHASE_SOURCE_FRAME = 0,
-        PHASE_AFTER_FILTER,
-        PHASE_AFTER_TRANSFORM,
-        PHASE_AFTER_AUDIOEFFECT,
-        PHASE_AFTER_TRANSITION,
-        PHASE_AFTER_MIXING,
-    } phase;
-    int64_t clipId{0};
-    int64_t trackId{0};
-    ImGui::ImMat frame;
+    Ok = 0,
+    Failed,
+    InvalidArgument,
+    Eof,
+    NotReady,
+    Unsupported,
+    UnknownError,
 };
 
 MEDIACORE_API void GetVersion(int& major, int& minor, int& patch, int& build);
