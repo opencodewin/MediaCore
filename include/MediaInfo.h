@@ -54,6 +54,7 @@ namespace MediaCore
         bool isImage{false};
         bool isHdr{false};
         uint8_t bitDepth{0};
+        double displayRotation{0};  // the angle (in degrees) by which the transformation rotates the frame counterclockwise.
     };
 
     struct AudioStream : public Stream

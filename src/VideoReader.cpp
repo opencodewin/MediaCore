@@ -918,13 +918,12 @@ private:
             m_errMsg = oss.str();
             return false;
         }
-        // handle display matrix
-        size_t szSideDataSize = 0;
-        auto pDispMatrix = av_stream_get_side_data(m_vidAvStm, AV_PKT_DATA_DISPLAYMATRIX, &szSideDataSize);
-        if (pDispMatrix && szSideDataSize >= 9*4)
+
+        const auto pVidstm = GetVideoStream();
+        if (pVidstm->displayRotation != 0)
         {
-            const auto dRotateAngle = av_display_rotation_get((int32_t*)pDispMatrix);
-            const double dTimesTo90 = dRotateAngle/90.0;
+            // handle display matrix
+            const double dTimesTo90 = pVidstm->displayRotation/90.0;
             double _integ;
             const double frac = modf(dTimesTo90, &_integ);
             int integ = (int)_integ;

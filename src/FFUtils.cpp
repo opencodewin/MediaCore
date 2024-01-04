@@ -598,7 +598,12 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, ImGui::ImMat& vmat, double time
     if (avfrm->pict_type == AV_PICTURE_TYPE_I) mat_V.flags |= IM_MAT_FLAGS_VIDEO_FRAME_I;
     if (avfrm->pict_type == AV_PICTURE_TYPE_P) mat_V.flags |= IM_MAT_FLAGS_VIDEO_FRAME_P;
     if (avfrm->pict_type == AV_PICTURE_TYPE_B) mat_V.flags |= IM_MAT_FLAGS_VIDEO_FRAME_B;
-    if (avfrm->interlaced_frame) mat_V.flags |= IM_MAT_FLAGS_VIDEO_INTERLACED;
+#if LIBAVUTIL_VERSION_MAJOR > 59 || defined(FF_API_INTERLACED_FRAME)
+    if ((avfrm->flags&AV_FRAME_FLAG_INTERLACED) > 0)
+#else
+    if (avfrm->interlaced_frame) 
+#endif
+        mat_V.flags |= IM_MAT_FLAGS_VIDEO_INTERLACED;
     mat_V.time_stamp = timestamp;
 
     vmat = mat_V;
@@ -696,7 +701,12 @@ bool MapAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat, do
         if (avfrm->pict_type == AV_PICTURE_TYPE_I) vmat[0].flags |= IM_MAT_FLAGS_VIDEO_FRAME_I;
         if (avfrm->pict_type == AV_PICTURE_TYPE_P) vmat[0].flags |= IM_MAT_FLAGS_VIDEO_FRAME_P;
         if (avfrm->pict_type == AV_PICTURE_TYPE_B) vmat[0].flags |= IM_MAT_FLAGS_VIDEO_FRAME_B;
-        if (avfrm->interlaced_frame) vmat[0].flags |= IM_MAT_FLAGS_VIDEO_INTERLACED;
+#if LIBAVUTIL_VERSION_MAJOR > 59 || defined(FF_API_INTERLACED_FRAME)
+        if ((avfrm->flags&AV_FRAME_FLAG_INTERLACED) > 0)
+#else
+        if (avfrm->interlaced_frame) 
+#endif
+            vmat[0].flags |= IM_MAT_FLAGS_VIDEO_INTERLACED;
         vmat[0].time_stamp = timestamp;
         return true;
     }
@@ -2772,15 +2782,26 @@ MediaCore::MediaInfo::Holder GenerateMediaInfoByAVFormatContext(const AVFormatCo
                 vidStream->bitDepth = desc->comp[0].depth;
             vidStream->rawWidth = vidStream->width;
             vidStream->rawHeight = vidStream->height;
+
             size_t szSideDataSize = 0;
+#if LIBAVFORMAT_VERSION_MAJOR > 60 || (LIBAVFORMAT_VERSION_MAJOR == 60 && LIBAVFORMAT_VERSION_MINOR > 14)
+            const auto pSideData = av_packet_side_data_get(stream->codecpar->coded_side_data, stream->codecpar->nb_coded_side_data, AV_PKT_DATA_DISPLAYMATRIX);
+            auto pDispMatrix = pSideData ? pSideData->data : nullptr;
+            szSideDataSize = pSideData ? pSideData->size : 0;
+#else
             auto pDispMatrix = av_stream_get_side_data(stream, AV_PKT_DATA_DISPLAYMATRIX, &szSideDataSize);
+#endif
             if (pDispMatrix && szSideDataSize >= 9*4)
+                vidStream->displayRotation = av_display_rotation_get((const int32_t*)pDispMatrix);
+            else
+                vidStream->displayRotation = 0;
+            if (vidStream->displayRotation != 0)
             {
-                const auto dRotateAngle = av_display_rotation_get((int32_t*)pDispMatrix);
-                const double dTimesTo90 = dRotateAngle/90.0;
-                double integ;
-                const double frac = modf(dTimesTo90, &integ);
-                if (frac == 0.0 && (((int32_t)integ)&0x1) == 1)
+                const double dTimesTo90 = vidStream->displayRotation/90.0;
+                double integ_;
+                const double frac = modf(dTimesTo90, &integ_);
+                const int integ = (int)integ_;
+                if (frac == 0.0 && ((integ&0x1) == 1))
                 {
                     vidStream->width = vidStream->rawHeight;
                     vidStream->height = vidStream->rawWidth;
