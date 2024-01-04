@@ -520,6 +520,42 @@ private:
                     m_logger->Log(INFO) << "Overview for file '" << m_hMediaInfo->url << "' opened a video decoder '" << 
                         m_viddecCtx->codec->name << "'(" << (res.hwDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(res.hwDevType)) << ")." << endl;
                     openVideoFailed = false;
+
+                    const auto pVidstm = GetVideoStream();
+                    if (pVidstm->displayRotation != 0)
+                    {
+                        // handle display matrix
+                        const double dTimesTo90 = pVidstm->displayRotation/90.0;
+                        double _integ;
+                        const double frac = modf(dTimesTo90, &_integ);
+                        int integ = (int)_integ;
+                        MediaCore::Ratio tFrameRate(m_vidAvStm->r_frame_rate.num, m_vidAvStm->r_frame_rate.den);
+                        if (frac == 0.0 && (integ&0x1) == 1)
+                        {
+                            m_hTransposeFilter = FFUtils::FFFilterGraph::CreateInstance();
+                            MediaCore::ErrorCode eErrCode;
+                            if (integ%4 == 1)
+                                eErrCode = m_hTransposeFilter->Initialize("transpose=cclock", tFrameRate, MediaCore::VideoFrame::NativeData::AVFRAME_HOLDER);
+                            else
+                                eErrCode = m_hTransposeFilter->Initialize("transpose=clock", tFrameRate, MediaCore::VideoFrame::NativeData::AVFRAME_HOLDER);
+                            if (eErrCode != MediaCore::Ok)
+                            {
+                                m_hTransposeFilter = nullptr;
+                                m_logger->Log(Error) << "FAILED to initialize 'FFFilterGraph' transpose filter instance!" << endl;
+                                return false;
+                            }
+                        }
+                        else if (integ > 0)
+                        {
+                            m_hTransposeFilter = FFUtils::FFFilterGraph::CreateInstance();
+                            if (m_hTransposeFilter->Initialize("hflip,vflip", tFrameRate, MediaCore::VideoFrame::NativeData::AVFRAME_HOLDER) != MediaCore::Ok)
+                            {
+                                m_hTransposeFilter = nullptr;
+                                m_logger->Log(Error) << "FAILED to initialize 'FFFilterGraph' transpose filter instance!" << endl;
+                                return false;
+                            }
+                        }
+                    }
                 }
                 else
                 {
@@ -527,42 +563,6 @@ private:
                     oss << "Overview FAILED to open the video decoder for file '" << m_hMediaInfo->url << "'! Error is '" << res.errMsg << "'.";
                     m_errMsg = oss.str();
                     m_vidStmIdx = -1;
-                }
-
-                const auto pVidstm = GetVideoStream();
-                if (pVidstm->displayRotation != 0)
-                {
-                    // handle display matrix
-                    const double dTimesTo90 = pVidstm->displayRotation/90.0;
-                    double _integ;
-                    const double frac = modf(dTimesTo90, &_integ);
-                    int integ = (int)_integ;
-                    MediaCore::Ratio tFrameRate(m_vidAvStm->r_frame_rate.num, m_vidAvStm->r_frame_rate.den);
-                    if (frac == 0.0 && (integ&0x1) == 1)
-                    {
-                        m_hTransposeFilter = FFUtils::FFFilterGraph::CreateInstance();
-                        MediaCore::ErrorCode eErrCode;
-                        if (integ%4 == 1)
-                            eErrCode = m_hTransposeFilter->Initialize("transpose=cclock", tFrameRate, MediaCore::VideoFrame::NativeData::AVFRAME_HOLDER);
-                        else
-                            eErrCode = m_hTransposeFilter->Initialize("transpose=clock", tFrameRate, MediaCore::VideoFrame::NativeData::AVFRAME_HOLDER);
-                        if (eErrCode != MediaCore::Ok)
-                        {
-                            m_hTransposeFilter = nullptr;
-                            m_logger->Log(Error) << "FAILED to initialize 'FFFilterGraph' transpose filter instance!" << endl;
-                            return false;
-                        }
-                    }
-                    else if (integ > 0)
-                    {
-                        m_hTransposeFilter = FFUtils::FFFilterGraph::CreateInstance();
-                        if (m_hTransposeFilter->Initialize("hflip,vflip", tFrameRate, MediaCore::VideoFrame::NativeData::AVFRAME_HOLDER) != MediaCore::Ok)
-                        {
-                            m_hTransposeFilter = nullptr;
-                            m_logger->Log(Error) << "FAILED to initialize 'FFFilterGraph' transpose filter instance!" << endl;
-                            return false;
-                        }
-                    }
                 }
             }
             m_decodeVideo = !openVideoFailed;
