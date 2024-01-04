@@ -36,6 +36,7 @@ namespace MediaCore
         double startTime;
         double duration;
         Ratio timebase;
+        int64_t startPts{0};
     };
 
     struct VideoStream : public Stream

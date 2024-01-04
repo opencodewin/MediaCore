@@ -2698,7 +2698,7 @@ FFFilterGraph::Holder FFFilterGraph::CreateInstance(const string& strName)
 }
 }
 
-static MediaCore::Ratio MediaInfoRatioFromAVRational(const AVRational& src)
+static MediaCore::Ratio MediaCoreRatioFromAVRational(const AVRational& src)
 {
     return { src.num, src.den };
 }
@@ -2731,7 +2731,8 @@ MediaCore::MediaInfo::Holder GenerateMediaInfoByAVFormatContext(const AVFormatCo
                 vidStream->duration = stream->duration*streamtb;
             else
                 vidStream->duration = hInfo->duration;
-            vidStream->timebase = MediaInfoRatioFromAVRational(stream->time_base);
+            vidStream->timebase = MediaCoreRatioFromAVRational(stream->time_base);
+            vidStream->startPts = stream->start_time != AV_NOPTS_VALUE ? stream->start_time : 0;
             vidStream->width = codecpar->width;
             vidStream->height = codecpar->height;
             const char* formatName = av_get_pix_fmt_name((AVPixelFormat)codecpar->format);
@@ -2741,11 +2742,11 @@ MediaCore::MediaInfo::Holder GenerateMediaInfoByAVFormatContext(const AVFormatCo
             auto cd = avcodec_descriptor_get(codecpar->codec_id);
             vidStream->codec = string(cd->long_name ? cd->long_name : cd->name ? cd->name : "unknown");
             if (stream->sample_aspect_ratio.num > 0 && stream->sample_aspect_ratio.den > 0)
-                vidStream->sampleAspectRatio = MediaInfoRatioFromAVRational(stream->sample_aspect_ratio);
+                vidStream->sampleAspectRatio = MediaCoreRatioFromAVRational(stream->sample_aspect_ratio);
             else
                 vidStream->sampleAspectRatio = {1, 1};
-            vidStream->avgFrameRate = MediaInfoRatioFromAVRational(stream->avg_frame_rate);
-            vidStream->realFrameRate = MediaInfoRatioFromAVRational(stream->r_frame_rate);
+            vidStream->avgFrameRate = MediaCoreRatioFromAVRational(stream->avg_frame_rate);
+            vidStream->realFrameRate = MediaCoreRatioFromAVRational(stream->r_frame_rate);
             auto cdcdesc = avcodec_descriptor_get(codecpar->codec_id);
             string mimeType = cdcdesc && cdcdesc->mime_types ? string(cdcdesc->mime_types[0]) : "";
             string demuxerName(avfmtCtx->iformat->name);
@@ -2821,7 +2822,8 @@ MediaCore::MediaInfo::Holder GenerateMediaInfoByAVFormatContext(const AVFormatCo
                 audStream->duration = stream->duration*streamtb;
             else
                 audStream->duration = hInfo->duration;
-            audStream->timebase = MediaInfoRatioFromAVRational(stream->time_base);
+            audStream->timebase = MediaCoreRatioFromAVRational(stream->time_base);
+            audStream->startPts = stream->start_time != AV_NOPTS_VALUE ? stream->start_time : 0;
 #if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
             audStream->channels = codecpar->channels;
 #else
@@ -2849,7 +2851,8 @@ MediaCore::MediaInfo::Holder GenerateMediaInfoByAVFormatContext(const AVFormatCo
                 subStream->duration = stream->duration*streamtb;
             else
                 subStream->duration = hInfo->duration;
-            subStream->timebase = MediaInfoRatioFromAVRational(stream->time_base);
+            subStream->timebase = MediaCoreRatioFromAVRational(stream->time_base);
+            subStream->startPts = stream->start_time != AV_NOPTS_VALUE ? stream->start_time : 0;
             hStream = MediaCore::Stream::Holder(subStream);
         }
         if (hStream)

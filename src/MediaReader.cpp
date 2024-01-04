@@ -1015,12 +1015,12 @@ private:
 
     int64_t CvtVidPtsToMts(int64_t pts)
     {
-        return av_rescale_q_rnd(pts-m_vidStartTime, m_vidTimeBase, MILLISEC_TIMEBASE, AV_ROUND_DOWN);
+        return av_rescale_q_rnd(pts-m_vidStartPts, m_vidTimeBase, MILLISEC_TIMEBASE, AV_ROUND_DOWN);
     }
 
     int64_t CvtVidMtsToPts(int64_t mts)
     {
-        return av_rescale_q_rnd(mts, MILLISEC_TIMEBASE, m_vidTimeBase, AV_ROUND_DOWN)+m_vidStartTime;
+        return av_rescale_q_rnd(mts, MILLISEC_TIMEBASE, m_vidTimeBase, AV_ROUND_DOWN)+m_vidStartPts;
     }
 
     int64_t CvtAudPtsToMts(int64_t pts)
@@ -1067,6 +1067,12 @@ private:
             oss << "Neither video nor audio stream can be found in '" << m_avfmtCtx->url << "'.";
             m_errMsg = oss.str();
             return false;
+        }
+        if (m_vidStmIdx >= 0)
+        {
+            const auto pVidstm = dynamic_cast<const VideoStream*>(m_hMediaInfo->streams[m_vidStmIdx].get());
+            m_vidTimeBase = { pVidstm->timebase.num, pVidstm->timebase.den };
+            m_vidStartPts = pVidstm->startPts;
         }
 
         m_seekPos = 0;
@@ -1143,7 +1149,7 @@ private:
             }
 
             m_vidAvStm = m_avfmtCtx->streams[m_vidStmIdx];
-            m_vidStartTime = m_vidAvStm->start_time != AV_NOPTS_VALUE ? m_vidAvStm->start_time : 0;
+            m_vidStartPts = m_vidAvStm->start_time != AV_NOPTS_VALUE ? m_vidAvStm->start_time : 0;
             m_vidTimeBase = m_vidAvStm->time_base;
             m_vidfrmIntvPts = av_rescale_q(1, av_inv_q(m_vidAvStm->r_frame_rate), m_vidAvStm->time_base);
 
@@ -3436,7 +3442,7 @@ private:
     AVCodecContext* m_viddecCtx{nullptr};
     bool m_vidPreferUseHw{true};
     AVHWDeviceType m_vidUseHwType{AV_HWDEVICE_TYPE_NONE};
-    int64_t m_vidStartTime{0};
+    int64_t m_vidStartPts{0};
     AVRational m_vidTimeBase;
     AVCodecContext* m_auddecCtx{nullptr};
     bool m_swrPassThrough{false};
