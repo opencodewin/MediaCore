@@ -598,7 +598,7 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, ImGui::ImMat& vmat, double time
     if (avfrm->pict_type == AV_PICTURE_TYPE_I) mat_V.flags |= IM_MAT_FLAGS_VIDEO_FRAME_I;
     if (avfrm->pict_type == AV_PICTURE_TYPE_P) mat_V.flags |= IM_MAT_FLAGS_VIDEO_FRAME_P;
     if (avfrm->pict_type == AV_PICTURE_TYPE_B) mat_V.flags |= IM_MAT_FLAGS_VIDEO_FRAME_B;
-    if (avfrm->interlaced_frame) mat_V.flags |= IM_MAT_FLAGS_VIDEO_INTERLACED;
+    if (avfrm->flags & AV_FRAME_FLAG_INTERLACED) mat_V.flags |= IM_MAT_FLAGS_VIDEO_INTERLACED;
     mat_V.time_stamp = timestamp;
 
     vmat = mat_V;
@@ -696,7 +696,7 @@ bool MapAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat, do
         if (avfrm->pict_type == AV_PICTURE_TYPE_I) vmat[0].flags |= IM_MAT_FLAGS_VIDEO_FRAME_I;
         if (avfrm->pict_type == AV_PICTURE_TYPE_P) vmat[0].flags |= IM_MAT_FLAGS_VIDEO_FRAME_P;
         if (avfrm->pict_type == AV_PICTURE_TYPE_B) vmat[0].flags |= IM_MAT_FLAGS_VIDEO_FRAME_B;
-        if (avfrm->interlaced_frame) vmat[0].flags |= IM_MAT_FLAGS_VIDEO_INTERLACED;
+        if (avfrm->flags & AV_FRAME_FLAG_INTERLACED) vmat[0].flags |= IM_MAT_FLAGS_VIDEO_INTERLACED;
         vmat[0].time_stamp = timestamp;
         return true;
     }
