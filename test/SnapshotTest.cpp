@@ -4,6 +4,7 @@
 #include <ImGuiFileDialog.h>
 #include <string>
 #include <sstream>
+#include <MatUtilsImVecHelper.h>
 #include "Overview.h"
 #include "Snapshot.h"
 #include "FFUtils.h"
@@ -23,7 +24,7 @@ static Snapshot::Viewer::Holder g_ssvw1;
 static double g_windowPos = 0.f;
 static double g_windowSize = 300.f;
 static double g_windowFrames = 14.0f;
-static Vec2<int32_t> g_v2SsDisplaySize;
+static MatUtils::Size2i g_v2SsDisplaySize;
 static TextureManager::Holder g_txmgr;
 static string g_snapTxPoolName = "SnapshotGridTexturePool";
 const string c_imguiIniPath = "ms_test.ini";
@@ -148,10 +149,11 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
         int snapshotCnt = (int)ceil(g_windowFrames);
         for (int i = 0; i < snapshotCnt; i++)
         {
+            const auto v2DispSize = MatUtils::ToImVec2(g_v2SsDisplaySize);
             ImGui::BeginGroup();
             if (i >= snapshots.size())
             {
-                ImGui::Dummy(g_v2SsDisplaySize);
+                ImGui::Dummy(v2DispSize);
                 ImGui::TextUnformatted("No image");
             }
             else
@@ -162,13 +164,13 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
                 ImTextureID tid = hTx ? hTx->TextureID() : nullptr;
                 if (!tid)
                 {
-                    ImGui::Dummy(g_v2SsDisplaySize);
+                    ImGui::Dummy(v2DispSize);
                     tag += "(loading)";
                 }
                 else
                 {
                     auto roiRect = hTx->GetDisplayRoi();
-                    ImGui::Image(tid, g_v2SsDisplaySize, roiRect.lt, roiRect.rb);
+                    ImGui::Image(tid, v2DispSize, MatUtils::ToImVec2(roiRect.leftTop), MatUtils::ToImVec2(roiRect.rightBottom()));
                 }
                 ImGui::TextUnformatted(tag.c_str());
             }

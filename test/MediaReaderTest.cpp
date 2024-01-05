@@ -11,6 +11,7 @@
 #include <vector>
 #include <cmath>
 #include <chrono>
+#include <MatUtilsImVecHelper.h>
 #include "MediaReader.h"
 #include "AudioRender.h"
 #include "FFUtils.h"
@@ -47,7 +48,7 @@ static const pair<double, double> G_DurTable[] = {
     {  5, 1 },
     { 10, 2 },
 };
-static Vec2<int32_t> g_v2DisplayViewSize = { 800, 450 };
+static MatUtils::Size2i g_v2DisplayViewSize = { 800, 450 };
 // audio
 static MediaReader::Holder g_audrdr;
 static AudioRender* g_audrnd = nullptr;
@@ -451,8 +452,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                 {
                     if (!g_tx)
                     {
-                        Vec2<int32_t> txSize(vmat.w, vmat.h);
-                        // Vec2<int32_t> txSize(g_v2DisplayViewSize);
+                        MatUtils::Size2i txSize(vmat.w, vmat.h);
                         g_tx = g_txmgr->CreateManagedTextureFromMat(vmat, txSize);
                         if (!g_tx)
                             Log(Error) << "FAILED to create ManagedTexture from ImMat! Error is '" << g_txmgr->GetError() << "'." << endl;
@@ -472,7 +472,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         ImTextureID tid = g_tx ? g_tx->TextureID() : nullptr;
         if (tid)
         {
-            ImVec2 v2DisplaySize = g_v2DisplayViewSize;
+            ImVec2 v2DisplaySize = MatUtils::ToImVec2(g_v2DisplayViewSize);
             const auto v2TextureSize = g_tx->GetDisplaySize();
             if (fabs((float)v2TextureSize.x/v2TextureSize.y - v2DisplaySize.x/v2DisplaySize.y) > FLT_EPSILON)
             {
@@ -484,7 +484,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
             ImGui::Image(tid, v2DisplaySize);
         }
         else
-            ImGui::Dummy(g_v2DisplayViewSize);
+            ImGui::Dummy(MatUtils::ToImVec2(g_v2DisplayViewSize));
         // AddCheckPoint("ShowImage1");
         // LogCheckPointsTimeInfo();
         ImGui::TextUnformatted(imgTag.c_str());

@@ -18,6 +18,7 @@
 #include "imgui_helper.h"
 
 using namespace std;
+using namespace MatUtils;
 using namespace Logger;
 
 namespace RenderUtils
@@ -31,7 +32,8 @@ struct _TextureContainer
     virtual ManagedTexture::Holder GetFreeTexture() = 0;
     virtual void UpdateTextureState() = 0;
     virtual bool RequestTextureID(ManagedTexture* pMtx) = 0;
-    virtual void GetAttributes(Vec2<int32_t>& txSize, ImDataType& dtype) = 0;
+    virtual void GetAttributes(Size2i& txSize, ImDataType& dtype) = 0;
+    virtual void SetAttributes(const Size2i& txSize, ImDataType dtype) = 0;
     virtual bool HasTexture(ManagedTexture::Holder hTx) = 0;
 };
 
@@ -40,16 +42,21 @@ class TextureManager_Impl : public TextureManager
 private:
     struct ManagedTexture_Impl : public ManagedTexture
     {
-        ManagedTexture_Impl(TextureManager_Impl* owner, _TextureContainer* container, const Vec2<int32_t>& textureSize, const Vec2<int32_t>& roiSize, ImDataType dataType)
+        ManagedTexture_Impl(TextureManager_Impl* owner, _TextureContainer* container, const Size2i& textureSize, const Size2i& roiSize, ImDataType dataType)
             : m_owner(owner), m_container(container), m_textureSize(textureSize), m_roiSize(roiSize), m_roiRect({0,0}, textureSize), m_dataType(dataType)
         {}
         virtual ~ManagedTexture_Impl() {}
 
         ImTextureID TextureID() const override { return m_tid; }
 
-        Rect<float> GetDisplayRoi() const override { return (Rect<float>)m_roiRect/(Vec2<float>)m_textureSize; }
+        Rectf GetDisplayRoi() const override
+        {
+            Vec2<float> xRoi = m_textureSize.x > 0 ? Vec2<float>(m_roiRect.leftTop.x, m_roiRect.size.x)/(float)m_textureSize.x : Vec2<float>(0, 1);
+            Vec2<float> yRoi = m_textureSize.y > 0 ? Vec2<float>(m_roiRect.leftTop.y, m_roiRect.size.y)/(float)m_textureSize.y : Vec2<float>(0, 1);
+            return Rectf(xRoi.x, yRoi.x, xRoi.y, yRoi.y);
+        }
 
-        Vec2<int32_t> GetDisplaySize() const override { return m_roiSize; }
+        Size2i GetDisplaySize() const override { return m_roiSize; }
 
         bool IsValid() const override { return m_valid; }
 
@@ -115,7 +122,7 @@ private:
             ImGui::ImMat renderMat = vmat;
 #if IMGUI_VULKAN_SHADER
             const auto& roiSize = m_roiSize;
-            if (roiSize.x != vmat.w || roiSize.y != vmat.h || vmat.type != m_dataType)
+            if ((roiSize.x > 0 && roiSize.x != vmat.w) || (roiSize.y > 0 && roiSize.y != vmat.h) || vmat.type != m_dataType)
             {
                 ImGui::VkMat rszMat;
                 rszMat.type = m_dataType;
@@ -133,6 +140,8 @@ private:
                 renderMat = rszMat;
             }
 #endif
+            m_roiSize = {renderMat.w, renderMat.h};
+
             if (this_thread::get_id() != m_owner->m_uiThreadId)
             {
                 if (m_valid)
@@ -163,9 +172,9 @@ private:
                 if (m_tid)
                     ownTx = false;
             }
-            static const Vec2<int32_t> _ORIGIN_POIN(0, 0);
+            static const Size2i _ORIGIN_POIN(0, 0);
             const int w = m_renderMat.w, h = m_renderMat.h, c = m_renderMat.c;
-            if (m_roiRect.lt == _ORIGIN_POIN && m_roiRect.rb == m_textureSize)
+            if (m_roiRect.leftTop == _ORIGIN_POIN && m_roiRect.size == m_textureSize)
             {
                 ImGui::ImGenerateOrUpdateTexture(m_tid, w, h, c, reinterpret_cast<const unsigned char*>(&m_renderMat), true);
                 if (!m_tid)
@@ -192,7 +201,7 @@ private:
                     return false;
                 }
                 // render mat to the roi rectangle, in this case the actual texture is created somewhere else in previous
-                ImGui::ImCopyToTexture(m_tid, reinterpret_cast<unsigned char*>(&m_renderMat), w, h, c, m_roiRect.lt.x, m_roiRect.lt.y, true);
+                ImGui::ImCopyToTexture(m_tid, reinterpret_cast<unsigned char*>(&m_renderMat), w, h, c, m_roiRect.leftTop.x, m_roiRect.leftTop.y, true);
             }
             m_renderMat.release();
             if (createNewTx)
@@ -219,9 +228,9 @@ private:
         bool m_ownTx{false};
         bool m_valid{false};
         bool m_discarded{false};
-        Vec2<int32_t> m_textureSize;
-        Vec2<int32_t> m_roiSize;
-        Rect<int32_t> m_roiRect;
+        Size2i m_textureSize;
+        Size2i m_roiSize;
+        Recti m_roiRect;
         ImDataType m_dataType;
         ImGui::ImMat m_renderMat;
     };
@@ -288,7 +297,12 @@ private:
 
         bool RequestTextureID(ManagedTexture* pMtx) override { return true; }
 
-        void GetAttributes(Vec2<int32_t>& txSize, ImDataType& dtype) override {}
+        void GetAttributes(Size2i& txSize, ImDataType& dtype) override {}
+
+        void SetAttributes(const Size2i& txSize, ImDataType dtype) override
+        {
+            throw runtime_error("CANNOT change texture pool attribute!");
+        }
 
         bool HasTexture(ManagedTexture::Holder hTx) override { return m_hTx == hTx; }
 
@@ -304,7 +318,7 @@ private:
     // TexturePoolContainer
     struct TexturePoolContainer : public _TextureContainer
     {
-        TexturePoolContainer(TextureManager_Impl* owner, const string& name, const Vec2<int32_t>& textureSize, ImDataType dataType, uint32_t minPoolSize, uint32_t maxPoolSize)
+        TexturePoolContainer(TextureManager_Impl* owner, const string& name, const Size2i& textureSize, ImDataType dataType, uint32_t minPoolSize, uint32_t maxPoolSize)
             : m_owner(owner), m_name(name), m_textureSize(textureSize), m_dataType(dataType), m_minPoolSize(minPoolSize), m_maxPoolSize(maxPoolSize)
         {}
 
@@ -377,6 +391,7 @@ private:
                         else
                         {
                             pTx->Discard();
+                            iter++;
                             continue;
                         }
                     }
@@ -403,10 +418,16 @@ private:
 
         bool RequestTextureID(ManagedTexture* pMtx) override { return true; }
 
-        void GetAttributes(Vec2<int32_t>& txSize, ImDataType& dtype) override
+        void GetAttributes(Size2i& txSize, ImDataType& dtype) override
         {
             txSize = m_textureSize;
             dtype = m_dataType;
+        }
+
+        void SetAttributes(const Size2i& txSize, ImDataType dtype) override
+        {
+            m_textureSize = txSize;
+            m_dataType = dtype;
         }
 
         bool HasTexture(ManagedTexture::Holder hTx) override
@@ -419,7 +440,7 @@ private:
 
         TextureManager_Impl* m_owner;
         string m_name;
-        Vec2<int32_t> m_textureSize;
+        Size2i m_textureSize;
         ImDataType m_dataType;
         list<ManagedTexture::Holder> m_txPool;
         mutex m_txPoolLock;
@@ -433,7 +454,7 @@ private:
     {
         struct GridTexture
         {
-            GridTexture(const Vec2<int32_t>& textureSize, int32_t channel, int32_t bitDepth, int32_t gridCap)
+            GridTexture(const Size2i& textureSize, int32_t channel, int32_t bitDepth, int32_t gridCap)
             {
                 auto bytesPerPixel = channel*bitDepth/8;
                 size_t buffSize = textureSize.x*textureSize.y*bytesPerPixel;
@@ -463,7 +484,7 @@ private:
             vector<ManagedTexture::Holder> m_txs;
         };
 
-        GridTexturePoolContainer(TextureManager_Impl* owner, const string& name, const Vec2<int32_t>& textureSize, ImDataType dataType, const Vec2<int32_t>& gridSize, uint32_t minPoolSize, uint32_t maxPoolSize)
+        GridTexturePoolContainer(TextureManager_Impl* owner, const string& name, const Size2i& textureSize, ImDataType dataType, const Size2i& gridSize, uint32_t minPoolSize, uint32_t maxPoolSize)
             : m_owner(owner), m_name(name), m_textureSize(textureSize), m_dataType(dataType), m_gridSize(gridSize), m_minPoolSize(minPoolSize), m_maxPoolSize(maxPoolSize)
         {
             m_bitDepth = dataType==IM_DT_INT8 ? 8 : 32;  // either IM_DT_INT8 or IM_DT_FLOAT32
@@ -633,17 +654,22 @@ private:
             int32_t gridIndex = pNonFullGtx->m_txs.size();
             int32_t gridX = gridIndex%m_gridSize.x;
             int32_t gridY = gridIndex/m_gridSize.y;
-            pTx->m_roiRect.lt = { gridX*m_textureSize.x, gridY*m_textureSize.y };
-            pTx->m_roiRect.rb = pTx->m_roiRect.lt+m_textureSize;
+            pTx->m_roiRect.leftTop = { gridX*m_textureSize.x, gridY*m_textureSize.y };
+            pTx->m_roiRect.size = m_textureSize;
             pTx->m_tid = pNonFullGtx->m_tid;
             pNonFullGtx->m_txs.push_back(hTx);
             return true;
         }
 
-        void GetAttributes(Vec2<int32_t>& txSize, ImDataType& dtype) override
+        void GetAttributes(Size2i& txSize, ImDataType& dtype) override
         {
             txSize = m_textureSize;
             dtype = m_dataType;
+        }
+
+        void SetAttributes(const Size2i& txSize, ImDataType dtype) override
+        {
+            throw runtime_error("CANNOT change texture pool attribute!");
         }
 
         bool HasTexture(ManagedTexture::Holder hTx) override
@@ -656,12 +682,12 @@ private:
 
         TextureManager_Impl* m_owner;
         string m_name;
-        Vec2<int32_t> m_textureSize;
+        Size2i m_textureSize;
         ImDataType m_dataType;
         int32_t m_bitDepth;
-        Vec2<int32_t> m_gridSize;
+        Size2i m_gridSize;
         int32_t m_gridCap;
-        Vec2<int32_t> m_gridTxSize;
+        Size2i m_gridTxSize;
         list<ManagedTexture::Holder> m_txPool;
         mutex m_txPoolLock;
         list<GridTexture*> m_gridTxPool;
@@ -683,7 +709,7 @@ public:
         m_containers.clear();
     }
 
-    ManagedTexture::Holder CreateManagedTextureFromMat(const ImGui::ImMat& vmat, Vec2<int32_t>& textureSize, ImDataType dataType) override
+    ManagedTexture::Holder CreateManagedTextureFromMat(const ImGui::ImMat& vmat, Size2i& textureSize, ImDataType dataType) override
     {
         if (vmat.empty())
         {
@@ -718,16 +744,16 @@ public:
         return hTx;
     }
 
-    bool CreateTexturePool(const string& name, const Vec2<int32_t>& textureSize, ImDataType dataType, uint32_t minPoolSize, uint32_t maxPoolSize) override
+    bool CreateTexturePool(const string& name, const Size2i& textureSize, ImDataType dataType, uint32_t minPoolSize, uint32_t maxPoolSize) override
     {
         if (name.empty())
         {
             m_errMsg = "INVALID argument 'name', it can not be empty string!";
             return false;
         }
-        if (textureSize.x <= 0 || textureSize.y <= 0)
+        if (textureSize.x < 0 || textureSize.y < 0)
         {
-            m_errMsg = "INVALID argument 'textureSize', 'x' and 'y' CANNOT be non-positive value!";
+            m_errMsg = "INVALID argument 'textureSize', 'x' and 'y' CANNOT be negative value!";
             return false;
         }
         if (dataType != IM_DT_INT8 && dataType != IM_DT_FLOAT32)
@@ -770,7 +796,7 @@ public:
         return iter->second->GetFreeTexture();
     }
 
-    bool CreateGridTexturePool(const string& name, const Vec2<int32_t>& textureSize, ImDataType dataType, const Vec2<int32_t>& gridSize, uint32_t minPoolSize, uint32_t maxPoolSize) override
+    bool CreateGridTexturePool(const string& name, const Size2i& textureSize, ImDataType dataType, const Size2i& gridSize, uint32_t minPoolSize, uint32_t maxPoolSize) override
     {
         if (name.empty())
         {
@@ -849,7 +875,7 @@ public:
         return true;
     }
 
-    bool GetTexturePoolAttributes(const string& poolName, Vec2<int32_t>& textureSize, ImDataType& dataType) override
+    bool GetTexturePoolAttributes(const string& poolName, Size2i& textureSize, ImDataType& dataType) override
     {
         lock_guard<mutex> lk(m_containersLock);
         auto iter = m_containers.find(poolName);
@@ -861,6 +887,21 @@ public:
         }
         auto& hCont = iter->second;
         hCont->GetAttributes(textureSize, dataType);
+        return true;
+    }
+
+    bool SetTexturePoolAttributes(const string& poolName, const Size2i& textureSize, ImDataType dataType) override
+    {
+        lock_guard<mutex> lk(m_containersLock);
+        auto iter = m_containers.find(poolName);
+        if (iter == m_containers.end())
+        {
+            ostringstream oss; oss << "CANNOT find any grid texture pool with name '" << poolName << "'!";
+            m_errMsg = oss.str();
+            return false;
+        }
+        auto& hCont = iter->second;
+        hCont->SetAttributes(textureSize, dataType);
         return true;
     }
 
