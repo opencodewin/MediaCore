@@ -114,13 +114,13 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         if (ImGui::Button((string(ICON_IGFD_FOLDER_OPEN)+" Open file").c_str()))
         {
             const char *filters = "视频文件(*.mp4 *.mov *.mkv *.webm *.avi){.mp4,.mov,.mkv,.webm,.avi,.MP4,.MOV,.MKV,WEBM,.AVI},.*";
+            IGFD::FileDialogConfig config;
+			config.path = "/mnt/data2/video/hd/";
+            config.countSelectionMax = 1;
+			config.flags = ImGuiFileDialogFlags_ShowBookmark | ImGuiFileDialogFlags_Modal;
             ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", ICON_IGFD_FOLDER_OPEN " 打开视频文件", 
                                                     filters, 
-                                                    "/mnt/data2/video/hd/", 
-                                                    1, 
-                                                    nullptr, 
-                                                    ImGuiFileDialogFlags_ShowBookmark |
-                                                    ImGuiFileDialogFlags_Modal);
+                                                    config);
         }
 
         // control line #2
@@ -424,13 +424,13 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         if (ImGui::Button("Open subtitle file"))
         {
             const char *filters = "字幕文件(*.srt *.ass *.ssa){.srt,.ass,.ssa,.SRT,.ASS,.SSA},.*";
+            IGFD::FileDialogConfig config;
+			config.path = "/workspace/MediaFiles/";
+            config.countSelectionMax = 1;
+			config.flags = ImGuiFileDialogFlags_ShowBookmark | ImGuiFileDialogFlags_Modal;
             ImGuiFileDialog::Instance()->OpenDialog("ChooseSubtitleFileDlgKey", ICON_IGFD_FOLDER_OPEN " 打开字幕文件", 
                                                     filters, 
-                                                    "/workspace/MediaFiles/", 
-                                                    1, 
-                                                    nullptr, 
-                                                    ImGuiFileDialogFlags_ShowBookmark |
-                                                    ImGuiFileDialogFlags_Modal);
+                                                    config);
         }
 
         // video

@@ -389,13 +389,13 @@ static bool MultiTrackAudioReader_Frame(void * handle, bool app_will_quit)
         if (ImGui::Button((string(ICON_IGFD_FOLDER_OPEN)+" Open file").c_str()))
         {
             const char *filters = "视频文件(*.mp3 *.m4a *.wav *.mp4 *.mov *.mkv *.webm *.avi){.mp3,.m4a,.wav,.mp4,.mov,.mkv,.webm,.avi,.MP3,.M4A,.WAV.MP4,.MOV,.MKV,WEBM,.AVI},.*";
+            IGFD::FileDialogConfig config;
+			config.path = "/mnt/data2/video/hd/";
+            config.countSelectionMax = 1;
+			config.flags = ImGuiFileDialogFlags_ShowBookmark | ImGuiFileDialogFlags_Modal;
             ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", ICON_IGFD_FOLDER_OPEN " 打开音频文件", 
                                                     filters, 
-                                                    "/mnt/data2/video/hd/", 
-                                                    1, 
-                                                    nullptr, 
-                                                    ImGuiFileDialogFlags_ShowBookmark |
-                                                    ImGuiFileDialogFlags_Modal);
+                                                    config);
         }
 
         // control line #2

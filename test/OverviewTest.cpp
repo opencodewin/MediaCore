@@ -93,9 +93,13 @@ static bool MediaOverview_Frame(void * handle, bool app_will_quit)
         if (ImGui::Button((string(ICON_IGFD_FOLDER_OPEN)+" Open file").c_str()))
         {
             const char *filters = "视频文件(*.mp4 *.mov *.mkv *.webm *.avi *.mxf){.mp4,.mov,.mkv,.webm,.avi,.mxf,.MP4,.MOV,.MKV,.WEBM,.AVI,.MXF},.*";
+            IGFD::FileDialogConfig config;
+			config.path = "~/Videos/";
+            config.countSelectionMax = 1;
+			config.flags = ImGuiFileDialogFlags_ShowBookmark | ImGuiFileDialogFlags_Modal;
             ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", ICON_IGFD_FOLDER_OPEN " 打开视频文件", 
-                                                    filters, "~/Videos/", 1, nullptr, 
-                                                    ImGuiFileDialogFlags_ShowBookmark | ImGuiFileDialogFlags_Modal);
+                                                    filters,
+                                                    config);
         }
 
         ImGui::SameLine();
