@@ -378,13 +378,13 @@ static bool SubtitleReader_Frame(void * handle, bool app_will_quit)
         if (ImGui::Button((string(ICON_IGFD_FOLDER_OPEN)+" Open file").c_str()))
         {
             const char *filters = "字幕文件(*.srt *.txt *.ass){.srt,.txt,.ass,.SRT,.TXT,.ASS},.*";
+            IGFD::FileDialogConfig config;
+			config.path = "/workspace/MediaFiles/";
+            config.countSelectionMax = 1;
+			config.flags = ImGuiFileDialogFlags_ShowBookmark | ImGuiFileDialogFlags_Modal;
             ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", ICON_IGFD_FOLDER_OPEN " 打开字幕文件", 
                                                     filters, 
-                                                    "/workspace/MediaFiles/", 
-                                                    1, 
-                                                    nullptr, 
-                                                    ImGuiFileDialogFlags_ShowBookmark |
-                                                    ImGuiFileDialogFlags_Modal);
+                                                    config);
         }
         ImGui::SameLine(0, 20);
         if (ImGui::Button("New empty track"))
