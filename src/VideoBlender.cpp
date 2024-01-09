@@ -41,7 +41,7 @@ public:
 #endif
     }
 
-    ImGui::ImMat Blend(ImGui::ImMat& baseImage, ImGui::ImMat& overlayImage, int32_t x, int32_t y) override
+    ImGui::ImMat Blend(ImGui::ImMat& baseImage, ImGui::ImMat& overlayImage, int32_t x, int32_t y, float fOpacity) override
     {
         ImGui::ImMat res;
         if (m_useVulkan)
@@ -49,7 +49,11 @@ public:
 #if IMGUI_VULKAN_SHADER
             ImGui::VkMat vkmat;
             vkmat.type = baseImage.type;
-            m_vulkanBlender.blend(overlayImage, baseImage, vkmat, x, y);
+            if (fOpacity < 0.f)
+                fOpacity = 0.f;
+            else if (fOpacity > 1.f)
+                fOpacity = 1.f;
+            m_vulkanBlender.overlay(baseImage, overlayImage, vkmat, fOpacity, m_ovlyX, m_ovlyY);
             if (!vkmat.empty())
             {
                 res = vkmat;
@@ -71,7 +75,7 @@ public:
         return res;
     }
 
-    ImGui::ImMat Blend(ImGui::ImMat& baseImage, ImGui::ImMat& overlayImage) override
+    ImGui::ImMat Blend(ImGui::ImMat& baseImage, ImGui::ImMat& overlayImage, float fOpacity) override
     {
         ImGui::ImMat res;
         if (m_useVulkan)
@@ -79,7 +83,11 @@ public:
 #if IMGUI_VULKAN_SHADER
             ImGui::VkMat vkmat;
             vkmat.type = baseImage.type;
-            m_vulkanBlender.blend(overlayImage, baseImage, vkmat, m_ovlyX, m_ovlyY);
+            if (fOpacity < 0.f)
+                fOpacity = 0.f;
+            else if (fOpacity > 1.f)
+                fOpacity = 1.f;
+            m_vulkanBlender.overlay(baseImage, overlayImage, vkmat, fOpacity, m_ovlyX, m_ovlyY);
             if (!vkmat.empty())
             {
                 res = vkmat;

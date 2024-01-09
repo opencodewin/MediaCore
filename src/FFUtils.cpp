@@ -2398,21 +2398,11 @@ public:
         return false;
     }
 
-    int64_t Pos() const override
-    {
-        return m_pos;
-    }
-
-    int64_t Pts() const override
-    {
-        return m_hAvfrm ? m_hAvfrm->pts : INT64_MIN;
-    }
-
-    int64_t Dur() const override
-    {
-        return m_hAvfrm ? m_hAvfrm->duration : 0;
-    }
-
+    int64_t Pos() const override { return m_pos; }
+    int64_t Pts() const override { return m_hAvfrm ? m_hAvfrm->pts : INT64_MIN; }
+    int64_t Dur() const override { return m_hAvfrm ? m_hAvfrm->duration : 0; }
+    float Opacity() const override { return m_fOpacity; }
+    void SetOpacity(float opacity) override { m_fOpacity = opacity; }
     void SetAutoConvertToMat(bool enable) override {}
     bool IsReady() const override { return m_hAvfrm != nullptr; }
 
@@ -2424,6 +2414,7 @@ public:
 private:
     SelfFreeAVFramePtr m_hAvfrm;
     int64_t m_pos;
+    float m_fOpacity{1.f};
 };
 
 const auto _VIDEOFRAME_AVFRAMEIMPL_DELETER = [] (MediaCore::VideoFrame* p) {

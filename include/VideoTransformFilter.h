@@ -54,6 +54,7 @@ namespace MediaCore
         virtual bool SetScaleV(double scale) = 0;
         virtual bool SetKeyPoint(ImGui::KeyPointEditor &keypoint) = 0;
         virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) = 0;
+        virtual VideoFrame::Holder FilterImage(VideoFrame::Holder hVfrm, int64_t pos) = 0;
 
         virtual const std::string GetFilterName() const = 0;
         virtual std::string GetOutputFormat() const = 0;
@@ -89,6 +90,9 @@ namespace MediaCore
         virtual float GetCropMarginRScale() const = 0;
         virtual float GetCropMarginBScale() const = 0;
         // 
+
+        virtual bool SetOpacity(float opacity) = 0;
+        virtual float GetOpacity() const = 0;
 
         virtual std::string GetError() const = 0;
     };

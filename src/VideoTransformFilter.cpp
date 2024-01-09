@@ -81,6 +81,11 @@ namespace MediaCore
             return m_filter->FilterImage(vmat, pos);
         }
 
+        VideoFrame::Holder FilterImage(VideoFrame::Holder hVfrm, int64_t pos) override
+        {
+            return m_filter->FilterImage(hVfrm, pos);
+        }
+
         bool Initialize(SharedSettings::Holder hSettings) override
         {
             return m_filter->Initialize(hSettings);
@@ -307,7 +312,17 @@ namespace MediaCore
             return m_filter->GetCropMarginBScale();
         }
         //
-        
+
+        bool SetOpacity(float opacity) override
+        {
+            return m_filter->SetOpacity(opacity);
+        }
+
+        float GetOpacity() const override
+        {
+            return m_filter->GetOpacity();
+        }
+
         string GetError() const override
         {
             return m_filter->GetError();

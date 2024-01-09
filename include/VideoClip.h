@@ -40,6 +40,18 @@ struct VideoFilter
     virtual const MediaCore::VideoClip* GetVideoClip() const = 0;
     virtual void UpdateClipRange() = 0;
     virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) = 0;
+    virtual VideoFrame::Holder FilterImage(VideoFrame::Holder hVfrm, int64_t pos)
+    {
+        if (!hVfrm)
+            return nullptr;
+        ImGui::ImMat tImgMat;
+        if (!hVfrm->GetMat(tImgMat))
+            return nullptr;
+        auto tOutMat = FilterImage(tImgMat, pos);
+        if (tOutMat.empty())
+            return nullptr;
+        return VideoFrame::CreateMatInstance(tOutMat);
+    }
 };
 
 struct VideoClip
@@ -72,9 +84,9 @@ struct VideoClip
     virtual void ChangeStartOffset(int64_t startOffset) = 0;
     virtual void ChangeEndOffset(int64_t endOffset) = 0;
     virtual void SetDuration(int64_t duration) = 0;
-    virtual void ReadVideoFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, bool& eof) = 0;
+    virtual VideoFrame::Holder ReadVideoFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, bool& eof) = 0;
     virtual VideoFrame::Holder ReadSourceFrame(int64_t pos, bool& eof, bool wait) = 0;
-    virtual void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, VideoFrame::Holder hInVf) = 0;
+    virtual VideoFrame::Holder ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, VideoFrame::Holder hInVf) = 0;
     virtual void SeekTo(int64_t pos) = 0;
     virtual void NotifyReadPos(int64_t pos) = 0;
     virtual void SetDirection(bool forward) = 0;
@@ -98,6 +110,19 @@ struct VideoTransition
     virtual Holder Clone() = 0;
     virtual void ApplyTo(VideoOverlap* overlap) = 0;
     virtual ImGui::ImMat MixTwoImages(const ImGui::ImMat& vmat1, const ImGui::ImMat& vmat2, int64_t pos, int64_t dur) = 0;
+    virtual VideoFrame::Holder MixTwoImages(VideoFrame::Holder hVfrm1, VideoFrame::Holder hVfrm2, int64_t pos, int64_t dur)
+    {
+        ImGui::ImMat vmat1;
+        if (hVfrm1) hVfrm1->GetMat(vmat1);
+        ImGui::ImMat vmat2;
+        if (hVfrm2) hVfrm2->GetMat(vmat2);
+        if (vmat1.empty() || vmat2.empty())
+            return nullptr;
+        auto vout = MixTwoImages(vmat1, vmat2, pos, dur);
+        if (vout.empty())
+            return nullptr;
+        return VideoFrame::CreateMatInstance(vout);
+    }
 };
 
 struct VideoOverlap
@@ -114,9 +139,9 @@ struct VideoOverlap
     virtual VideoClip::Holder FrontClip() const = 0;
     virtual VideoClip::Holder RearClip() const = 0;
 
-    virtual void ReadVideoFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, bool& eof) = 0;
+    virtual VideoFrame::Holder ReadVideoFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, bool& eof) = 0;
     virtual void SetTransition(VideoTransition::Holder hTrans) = 0;
-    virtual void ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out, VideoFrame::Holder hInVf1, VideoFrame::Holder hInVf2) = 0;
+    virtual VideoFrame::Holder ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, VideoFrame::Holder hInVf1, VideoFrame::Holder hInVf2) = 0;
     virtual void SeekTo(int64_t pos) = 0;
     virtual void Update() = 0;
     virtual VideoTransition::Holder GetTransition() const = 0;

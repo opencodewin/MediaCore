@@ -21,6 +21,7 @@
 #include <atomic>
 #include <functional>
 #include <list>
+#include <algorithm>
 #include "MediaReader.h"
 #include "FFUtils.h"
 #include "ThreadUtils.h"
@@ -978,7 +979,8 @@ private:
         int64_t Pos() const override { return pos; }
         int64_t Pts() const override { return pts; }
         int64_t Dur() const override { return dur; }
-
+        float Opacity() const override { return m_fOpacity; }
+        void SetOpacity(float opacity) override { m_fOpacity = opacity; }
         void SetAutoConvertToMat(bool enable) override
         { bAutoCvtToMat = enable; }
 
@@ -1006,6 +1008,7 @@ private:
         int64_t pos;
         int64_t pts;
         int64_t dur{0};
+        float m_fOpacity{1.f};
         bool isHwfrm{false};
         bool isEofFrame{false};
         bool isStartFrame{false};

@@ -101,6 +101,8 @@ struct VideoFrame
     virtual int64_t Pos() const = 0;
     virtual int64_t Pts() const = 0;
     virtual int64_t Dur() const = 0;
+    virtual float Opacity() const = 0;
+    virtual void SetOpacity(float opacity) = 0;
     virtual void SetAutoConvertToMat(bool enable) = 0;
     virtual bool IsReady() const = 0;
 

@@ -315,6 +315,34 @@ namespace MediaCore
         float GetCropMarginBScale() const override
         { return m_fcropB; }
 
+        bool SetOpacity(float opacity) override
+        { m_fOpacity = opacity; return true; }
+
+        float GetOpacity() const override
+        { return m_fOpacity; }
+
+        virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) = 0;
+
+        VideoFrame::Holder FilterImage(VideoFrame::Holder hVfrm, int64_t pos) override
+        {
+            if (!hVfrm)
+            {
+                m_errMsg = "INVALID arguments! 'hVfrm' is null.";
+                return nullptr;
+            }
+            ImGui::ImMat vmat;
+            const auto bRet = hVfrm->GetMat(vmat);
+            if (!bRet || vmat.empty())
+            {
+                m_errMsg = "FAILED to get ImMat instance from 'hVfrm'!";
+                return nullptr;
+            }
+            vmat = this->FilterImage(vmat, pos);
+            if (vmat.empty())
+                return nullptr;
+            return VideoFrame::CreateMatInstance(vmat);
+        }
+
         std::string GetError() const override
         { return m_errMsg; }
 
@@ -338,6 +366,7 @@ namespace MediaCore
         bool m_needUpdateRotateParam{false};
         float m_fcropL{0}, m_fcropR{0}, m_fcropT{0}, m_fcropB{0};
         float m_fposOffsetH{0}, m_fposOffsetV{0};
+        float m_fOpacity{1.f};
         std::string m_errMsg;
     };
 }

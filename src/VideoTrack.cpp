@@ -87,12 +87,11 @@ public:
         m_outputReady = false;
     }
 
-    bool GetVideoFrame(std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out) override
+    VideoFrame::Holder GetVideoFrame(std::vector<CorrelativeFrame>& frames) override
     {
         for (auto& frm : m_outFrames)
             frames.push_back(frm);
-        out = m_outMat;
-        return true;
+        return m_hOutVfrm;
     }
 
     void SetDiscarded() override
@@ -199,17 +198,25 @@ public:
             m_outputReady = true;
             return;
         }
+        VideoFrame::Holder hOutVfrm;
         if (m_hasOvlp)
         {
             m_outFrames.clear();
-            m_hOvlp->ProcessSourceFrame(m_readPos-m_hOvlp->Start(), m_outFrames, m_outMat, m_srcVf1, m_srcVf2);
+            hOutVfrm = m_hOvlp->ProcessSourceFrame(m_readPos-m_hOvlp->Start(), m_outFrames, m_srcVf1, m_srcVf2);
         }
         else if (m_hClip1)
         {
             m_outFrames.clear();
-            m_hClip1->ProcessSourceFrame(m_readPos-m_hClip1->Start(), m_outFrames, m_outMat, m_srcVf1);
+            hOutVfrm = m_hClip1->ProcessSourceFrame(m_readPos-m_hClip1->Start(), m_outFrames, m_srcVf1);
         }
-        m_outMat.time_stamp = (double)m_readPos/1000;
+        if (!hOutVfrm)
+            return;
+        ImGui::ImMat tOutMat;
+        if (!hOutVfrm->GetMat(tOutMat))
+            return;
+        tOutMat.time_stamp = (double)m_readPos/1000;
+        m_hOutVfrm = VideoFrame::CreateMatInstance(tOutMat);
+        m_hOutVfrm->SetOpacity(hOutVfrm->Opacity());
         m_outputReady = true;
     }
 
@@ -239,7 +246,7 @@ private:
     bool m_src2Ready{false};
     VideoOverlap::Holder m_hOvlp;
     vector<CorrelativeFrame> m_outFrames;
-    ImGui::ImMat m_outMat;
+    VideoFrame::Holder m_hOutVfrm;
     bool m_outputReady{false};
     bool m_discarded{false};
     Callback* m_pCb{nullptr};

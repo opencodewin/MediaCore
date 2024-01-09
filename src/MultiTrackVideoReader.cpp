@@ -1409,25 +1409,33 @@ private:
                     vector<CorrelativeFrame> frames;
                     frames.push_back({CorrelativeFrame::PHASE_AFTER_MIXING, 0, 0, mixedFrame});
                     double timestamp = (double)mft->frameIndex*frameRate.den/frameRate.num;
-                    auto rftIter = mft->readFrameTaskTable.begin();
+                    auto rftIter = mft->readFrameTaskTable.rbegin();
                     int mixFrameCnt = 0;
-                    while (rftIter != mft->readFrameTaskTable.end())
+                    while (rftIter != mft->readFrameTaskTable.rend())
                     {
                         auto elem = *rftIter++;
                         auto& trk = elem.first;
                         auto& rft = elem.second;
-                        ImGui::ImMat vmat;
+                        VideoFrame::Holder hVfrm;
                         if (trk->IsVisible())
                         {
-                            rft->GetVideoFrame(frames, vmat);
+                            hVfrm = rft->GetVideoFrame(frames);
                             mixFrameCnt++;
                         }
+                        ImGui::ImMat vmat;
+                        if (hVfrm) hVfrm->GetMat(vmat);
                         if (!vmat.empty())
                         {
+                            const auto fOpacity = hVfrm->Opacity();
+                            if (mixedFrame.empty() && fOpacity >= 0.f)
+                            {
+                                mixedFrame.create_type(outWidth, outHeight, 4, matDtype);
+                                memset(mixedFrame.data, 0, mixedFrame.total()*mixedFrame.elemsize);
+                            }
                             if (mixedFrame.empty())
                                 mixedFrame = vmat;
                             else
-                                mixedFrame = m_hMixBlender->Blend(vmat, mixedFrame);
+                                mixedFrame = m_hMixBlender->Blend(mixedFrame, vmat, fOpacity);
                             if (abs(timestamp-vmat.time_stamp) > 0.001)
                                 m_logger->Log(WARN) << "'vmat' read from track #" << trk->Id() << " has WRONG TIMESTAMP! timestamp("
                                     << timestamp << ") != vmat(" << vmat.time_stamp << ")." << endl;
@@ -1526,7 +1534,7 @@ private:
 
         ImGui::ImMat res = vmat;
         bool cloned = false;
-        int64_t pos = (int64_t)(vmat.time_stamp*1000);
+        const auto pos = (int64_t)(vmat.time_stamp*1000);
         lock_guard<mutex> lk(m_subtrkLock);
         for (auto& hSubTrack : m_subtrks)
         {

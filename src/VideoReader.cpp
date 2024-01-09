@@ -1165,7 +1165,8 @@ private:
         int64_t Pos() const override { return pos; }
         int64_t Pts() const override { return pts; }
         int64_t Dur() const override { return dur; }
-
+        float Opacity() const override { return m_fOpacity; }
+        void SetOpacity(float opacity) override { m_fOpacity = opacity; }
         void SetAutoConvertToMat(bool enable) override {}
         bool IsReady() const override { return !vmat.empty(); }
 
@@ -1185,6 +1186,7 @@ private:
         int64_t pos;
         int64_t pts;
         int64_t dur{0};
+        float m_fOpacity{1.f};
         bool isHwfrm{false};
         bool isEofFrame{false};
         bool isStartFrame{false};

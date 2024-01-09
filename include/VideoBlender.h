@@ -28,8 +28,8 @@ struct VideoBlender
     using Holder = std::shared_ptr<VideoBlender>;
     static MEDIACORE_API Holder CreateInstance();
 
-    virtual ImGui::ImMat Blend(ImGui::ImMat& baseImage, ImGui::ImMat& overlayImage, int32_t x, int32_t y) = 0;
-    virtual ImGui::ImMat Blend(ImGui::ImMat& baseImage, ImGui::ImMat& overlayImage) = 0;
+    virtual ImGui::ImMat Blend(ImGui::ImMat& baseImage, ImGui::ImMat& overlayImage, int32_t x, int32_t y, float fOpacity = 1.f) = 0;
+    virtual ImGui::ImMat Blend(ImGui::ImMat& baseImage, ImGui::ImMat& overlayImage, float fOpacity = 1.f) = 0;
     virtual ImGui::ImMat Blend(const ImGui::ImMat& baseImage, const ImGui::ImMat& overlayImage, const ImGui::ImMat& alphaMat) = 0;
 
     virtual bool EnableUseVulkan(bool enable) = 0;

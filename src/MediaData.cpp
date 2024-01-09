@@ -64,21 +64,11 @@ public:
         return true;
     }
 
-    int64_t Pos() const override
-    {
-        return (int64_t)(m_vmat.time_stamp*1000);
-    }
-
-    int64_t Pts() const override
-    {
-        return 0;
-    }
-
-    int64_t Dur() const override
-    {
-        return 0;
-    }
-
+    int64_t Pos() const override { return (int64_t)(m_vmat.time_stamp*1000); }
+    int64_t Pts() const override { return 0; }
+    int64_t Dur() const override { return 0; }
+    float Opacity() const override { return m_fOpacity; }
+    void SetOpacity(float opacity) override { m_fOpacity = opacity; }
     void SetAutoConvertToMat(bool enable) override {}
     bool IsReady() const override { return !m_vmat.empty(); }
 
@@ -89,6 +79,7 @@ public:
 
 private:
     ImGui::ImMat m_vmat;
+    float m_fOpacity{1.f};
 };
 
 static const auto MEDIA_READER_VIDEO_FRAME_MATIMPL_HOLDER_DELETER = [] (VideoFrame* p) {
