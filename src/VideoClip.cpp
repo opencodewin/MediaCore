@@ -533,7 +533,7 @@ public:
         auto vidStm = hParser->GetBestVideoStream();
         if (!vidStm->isImage)
             throw invalid_argument("This video stream is NOT an IMAGE, it should be instantiated with a 'VideoClip_VideoImpl' instance!");
-        m_hReader = MediaReader::CreateInstance();
+        m_hReader = MediaReader::CreateVideoInstance();
         if (!m_hReader->Open(hParser))
             throw runtime_error(m_hReader->GetError());
         const auto outWidth = hSettings->VideoOutWidth();
@@ -708,10 +708,9 @@ public:
         }
         if (m_hVf)
             return m_hVf;
-        ImGui::ImMat out;
-        if (!m_hReader->ReadVideoFrame(0, out, eof, wait))
+        m_hVf = m_hReader->ReadVideoFrame(0, eof, wait);
+        if (!m_hVf)
             throw runtime_error(m_hReader->GetError());
-        m_hVf = VideoFrame::CreateMatInstance(out);
         return m_hVf;
     }
 

@@ -654,13 +654,11 @@ bool MapAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat, do
         int chHeight = height;
         if (!isRgb && i > 0)
         {
-            chLinesize >>= desc->log2_chroma_w;
             chWidth >>= desc->log2_chroma_w;
             chHeight >>= desc->log2_chroma_h;
         }
         if (ISNV12(avfrm->format) && i > 0)
         {
-            chLinesize <<= 1;
             chWidth <<= 1;
         }
         
