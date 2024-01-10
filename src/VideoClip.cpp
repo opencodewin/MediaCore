@@ -706,11 +706,8 @@ public:
             eof = true;
             return nullptr;
         }
-        if (m_hVf)
-            return m_hVf;
-        m_hVf = m_hReader->ReadVideoFrame(0, eof, wait);
         if (!m_hVf)
-            throw runtime_error(m_hReader->GetError());
+            m_hVf = m_hReader->ReadVideoFrame(0, eof, wait);
         return m_hVf;
     }
 
