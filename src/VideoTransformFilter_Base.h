@@ -321,7 +321,7 @@ namespace MediaCore
         float GetOpacity() const override
         { return m_fOpacity; }
 
-        virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) = 0;
+        virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) override = 0;
 
         VideoFrame::Holder FilterImage(VideoFrame::Holder hVfrm, int64_t pos) override
         {

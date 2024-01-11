@@ -14,6 +14,7 @@
 #include "TextureManager.h"
 #if IMGUI_VULKAN_SHADER
 #include "Resize_vulkan.h"
+#include "warpAffine_vulkan.h"
 #endif
 #include "imgui_helper.h"
 
@@ -32,8 +33,8 @@ struct _TextureContainer
     virtual ManagedTexture::Holder GetFreeTexture() = 0;
     virtual void UpdateTextureState() = 0;
     virtual bool RequestTextureID(ManagedTexture* pMtx) = 0;
-    virtual void GetAttributes(Size2i& txSize, ImDataType& dtype) = 0;
-    virtual void SetAttributes(const Size2i& txSize, ImDataType dtype) = 0;
+    virtual TextureManager::TexturePoolAttributes GetAttributes() const = 0;
+    virtual bool SetAttributes(const TextureManager::TexturePoolAttributes& tTxPoolAttrs) = 0;
     virtual bool HasTexture(ManagedTexture::Holder hTx) = 0;
 };
 
@@ -42,8 +43,8 @@ class TextureManager_Impl : public TextureManager
 private:
     struct ManagedTexture_Impl : public ManagedTexture
     {
-        ManagedTexture_Impl(TextureManager_Impl* owner, _TextureContainer* container, const Size2i& textureSize, const Size2i& roiSize, ImDataType dataType)
-            : m_owner(owner), m_container(container), m_textureSize(textureSize), m_roiSize(roiSize), m_roiRect({0,0}, textureSize), m_dataType(dataType)
+        ManagedTexture_Impl(TextureManager_Impl* owner, _TextureContainer* container, const Size2i& textureSize, const Size2i& roiSize, ImDataType dataType, bool bKeepAspectRatio)
+            : m_owner(owner), m_container(container), m_textureSize(textureSize), m_roiSize(roiSize), m_roiRect({0,0}, textureSize), m_dataType(dataType), m_bKeepAspectRatio(bKeepAspectRatio)
         {}
         virtual ~ManagedTexture_Impl() {}
 
@@ -124,20 +125,40 @@ private:
             const auto& roiSize = m_roiSize;
             if ((roiSize.x > 0 && roiSize.x != vmat.w) || (roiSize.y > 0 && roiSize.y != vmat.h) || vmat.type != m_dataType)
             {
-                ImGui::VkMat rszMat;
-                rszMat.type = m_dataType;
-                ImInterpolateMode interpMode = IM_INTERPOLATE_BICUBIC;
-                if (roiSize.x*roiSize.y < (int32_t)vmat.w*(int32_t)vmat.h)
-                    interpMode = IM_INTERPOLATE_AREA;
-                rszMat.w = roiSize.x; rszMat.h = roiSize.y;
-                m_owner->m_scaler.Resize(vmat, rszMat, 0, 0, interpMode);
-                if (rszMat.empty())
+                if (m_bKeepAspectRatio)
                 {
-                    ostringstream oss; oss << "FAILED to resize input 'vmat'(" << vmat.w << "x" << vmat.h << ") to texture size(" << roiSize.x << "," << roiSize.y << ")!";
-                    m_owner->m_errMsg = oss.str();
-                    return false;
+                    if (vmat.w != m_iPrevWarpInputW || vmat.h != m_iPrevWarpInputH)
+                    {
+                        m_bNeedWarpAffine = CalcWarpAffineMatrix({vmat.w, vmat.h}, roiSize, m_tWarpMatrix);
+                        m_iPrevWarpInputW = vmat.w;
+                        m_iPrevWarpInputH = vmat.h;
+                    }
+                    if (m_bNeedWarpAffine)
+                    {
+                        ImGui::ImMat tWarppedMat;
+                        tWarppedMat.type = m_dataType;
+                        tWarppedMat.w = roiSize.x; tWarppedMat.h = roiSize.y;
+                        m_owner->m_warpAffine.warp(vmat, tWarppedMat, m_tWarpMatrix, IM_INTERPOLATE_NEAREST, ImPixel(0.f, 0.f, 0.f, 1.f));
+                        renderMat = tWarppedMat;
+                    }
                 }
-                renderMat = rszMat;
+                else
+                {
+                    ImGui::ImMat rszMat;
+                    rszMat.type = m_dataType;
+                    ImInterpolateMode interpMode = IM_INTERPOLATE_BICUBIC;
+                    if (roiSize.x*roiSize.y < (int32_t)vmat.w*(int32_t)vmat.h)
+                        interpMode = IM_INTERPOLATE_AREA;
+                    rszMat.w = roiSize.x; rszMat.h = roiSize.y;
+                    m_owner->m_scaler.Resize(vmat, rszMat, 0, 0, interpMode);
+                    if (rszMat.empty())
+                    {
+                        ostringstream oss; oss << "FAILED to resize input 'vmat'(" << vmat.w << "x" << vmat.h << ") to texture size(" << roiSize.x << "," << roiSize.y << ")!";
+                        m_owner->m_errMsg = oss.str();
+                        return false;
+                    }
+                    renderMat = rszMat;
+                }
             }
 #endif
             m_roiSize = {renderMat.w, renderMat.h};
@@ -220,6 +241,49 @@ private:
             return true;
         }
 
+        bool CalcWarpAffineMatrix(const MatUtils::Size2i& tInputSize, const MatUtils::Size2i& tTxSize, ImGui::ImMat& tWarpMatrix)
+        {
+            if (tInputSize.x == tTxSize.x && tInputSize.y == tTxSize.y)
+                return false;
+
+            int renderWidth, renderHeight;
+            if (tTxSize.x*tInputSize.y > tTxSize.y*tInputSize.x)
+            {
+                renderWidth = tTxSize.y*tInputSize.x/tInputSize.y;
+                renderHeight = tTxSize.y;
+            }
+            else
+            {
+                renderWidth = tTxSize.x;
+                renderHeight = tTxSize.x*tInputSize.y/tInputSize.x;
+            }
+            const float fScaleH = (float)renderWidth/tInputSize.x;
+            const float fScaleV = (float)renderHeight/tInputSize.y;
+            const float _x_scale = 1.f / (fScaleH + FLT_EPSILON);
+            const float _y_scale = 1.f / (fScaleV + FLT_EPSILON);
+            const float _angle = 0.f;
+            const float alpha_00 = _x_scale;
+            const float alpha_11 = _y_scale;
+            const float beta_01 = 0.f;
+            const float beta_10 = 0.f;
+            const float x_diff = (float)tTxSize.x - (float)tInputSize.x;
+            const float y_diff = (float)tTxSize.y - (float)tInputSize.y;
+            const float _x_offset = x_diff / 2.f;
+            const float _y_offset = y_diff / 2.f;
+            const int center_x = tInputSize.x / 2.f + _x_offset;
+            const int center_y = tInputSize.y / 2.f + _y_offset;
+
+            tWarpMatrix.create_type(3, 2, IM_DT_FLOAT32);
+            memset(tWarpMatrix.data, 0, tWarpMatrix.elemsize*tWarpMatrix.total());
+            tWarpMatrix.at<float>(0, 0) =  alpha_00;
+            tWarpMatrix.at<float>(1, 0) = beta_01;
+            tWarpMatrix.at<float>(2, 0) = (1 - alpha_00) * center_x - beta_01 * center_y - _x_offset;
+            tWarpMatrix.at<float>(0, 1) = -beta_10;
+            tWarpMatrix.at<float>(1, 1) = alpha_11;
+            tWarpMatrix.at<float>(2, 1) = beta_10 * center_x + (1 - alpha_11) * center_y - _y_offset;
+            return true;
+        }
+
         string GetError() const override { return m_owner->GetError(); }
 
         TextureManager_Impl* m_owner;
@@ -232,6 +296,10 @@ private:
         Size2i m_roiSize;
         Recti m_roiRect;
         ImDataType m_dataType;
+        bool m_bKeepAspectRatio;
+        bool m_bNeedWarpAffine;
+        int m_iPrevWarpInputW{0}, m_iPrevWarpInputH{0};
+        ImGui::ImMat m_tWarpMatrix;
         ImGui::ImMat m_renderMat;
     };
     static const function<void(ManagedTexture*)> MANAGED_TEXTURE_DELETER;
@@ -296,14 +364,8 @@ private:
         }
 
         bool RequestTextureID(ManagedTexture* pMtx) override { return true; }
-
-        void GetAttributes(Size2i& txSize, ImDataType& dtype) override {}
-
-        void SetAttributes(const Size2i& txSize, ImDataType dtype) override
-        {
-            throw runtime_error("CANNOT change texture pool attribute!");
-        }
-
+        TexturePoolAttributes GetAttributes() const override { return { m_hTx->GetDisplaySize(), IM_DT_UNDEFINED, false }; }
+        bool SetAttributes(const TexturePoolAttributes& tTxPoolAttrs) override { return false; }
         bool HasTexture(ManagedTexture::Holder hTx) override { return m_hTx == hTx; }
 
         TextureManager_Impl* m_owner;
@@ -360,7 +422,7 @@ private:
             }
 
             // create new ManagedTexture
-            ManagedTexture_Impl* pTx = new ManagedTexture_Impl(m_owner, this, m_textureSize, m_textureSize, m_dataType);
+            ManagedTexture_Impl* pTx = new ManagedTexture_Impl(m_owner, this, m_textureSize, m_textureSize, m_dataType, m_bKeepAspectRatio);
             ManagedTexture::Holder hTx(pTx, MANAGED_TEXTURE_DELETER);
             m_txPool.push_back(hTx);
             return hTx;
@@ -417,17 +479,14 @@ private:
         }
 
         bool RequestTextureID(ManagedTexture* pMtx) override { return true; }
+        TexturePoolAttributes GetAttributes() const override { return { m_textureSize, m_dataType, m_bKeepAspectRatio }; }
 
-        void GetAttributes(Size2i& txSize, ImDataType& dtype) override
+        bool SetAttributes(const TexturePoolAttributes& tTxPoolAttrs) override
         {
-            txSize = m_textureSize;
-            dtype = m_dataType;
-        }
-
-        void SetAttributes(const Size2i& txSize, ImDataType dtype) override
-        {
-            m_textureSize = txSize;
-            m_dataType = dtype;
+            m_textureSize = tTxPoolAttrs.tTxSize;
+            m_dataType = tTxPoolAttrs.eTxDtype;
+            m_bKeepAspectRatio = tTxPoolAttrs.bKeepAspectRatio;
+            return true;
         }
 
         bool HasTexture(ManagedTexture::Holder hTx) override
@@ -442,6 +501,7 @@ private:
         string m_name;
         Size2i m_textureSize;
         ImDataType m_dataType;
+        bool m_bKeepAspectRatio{false};
         list<ManagedTexture::Holder> m_txPool;
         mutex m_txPoolLock;
         uint32_t m_minPoolSize, m_maxPoolSize;
@@ -543,7 +603,7 @@ private:
             }
 
             // create new ManagedTexture
-            ManagedTexture_Impl* pTx = new ManagedTexture_Impl(m_owner, this, m_gridTxSize, m_textureSize, m_dataType);
+            ManagedTexture_Impl* pTx = new ManagedTexture_Impl(m_owner, this, m_gridTxSize, m_textureSize, m_dataType, m_bKeepAspectRatio);
             ManagedTexture::Holder hTx(pTx, MANAGED_TEXTURE_DELETER);
             m_txPool.push_back(hTx);
             return hTx;
@@ -661,15 +721,14 @@ private:
             return true;
         }
 
-        void GetAttributes(Size2i& txSize, ImDataType& dtype) override
-        {
-            txSize = m_textureSize;
-            dtype = m_dataType;
-        }
+        TexturePoolAttributes GetAttributes() const override { return {m_textureSize, m_dataType, m_bKeepAspectRatio}; }
 
-        void SetAttributes(const Size2i& txSize, ImDataType dtype) override
+        bool SetAttributes(const TexturePoolAttributes& tTxPoolAttrs) override
         {
-            throw runtime_error("CANNOT change texture pool attribute!");
+            if (m_textureSize != tTxPoolAttrs.tTxSize || m_dataType != tTxPoolAttrs.eTxDtype)
+                return false;
+            m_bKeepAspectRatio = tTxPoolAttrs.bKeepAspectRatio;
+            return true;
         }
 
         bool HasTexture(ManagedTexture::Holder hTx) override
@@ -684,6 +743,7 @@ private:
         string m_name;
         Size2i m_textureSize;
         ImDataType m_dataType;
+        bool m_bKeepAspectRatio{false};
         int32_t m_bitDepth;
         Size2i m_gridSize;
         int32_t m_gridCap;
@@ -729,7 +789,7 @@ public:
         if (textureSize.x <= 0) textureSize.x = vmat.w;
         if (textureSize.y <= 0) textureSize.y = vmat.h;
 
-        ManagedTexture_Impl* pTx = new ManagedTexture_Impl(this, nullptr, textureSize, textureSize, dataType);
+        ManagedTexture_Impl* pTx = new ManagedTexture_Impl(this, nullptr, textureSize, textureSize, dataType, false);
         ManagedTexture::Holder hTx(pTx, MANAGED_TEXTURE_DELETER);
         SingleTextureContainer* pCont = new SingleTextureContainer(this, hTx);
         pTx->m_container = static_cast<_TextureContainer*>(pCont);
@@ -875,7 +935,7 @@ public:
         return true;
     }
 
-    bool GetTexturePoolAttributes(const string& poolName, Size2i& textureSize, ImDataType& dataType) override
+    bool GetTexturePoolAttributes(const string& poolName, TexturePoolAttributes& tTxPoolAttrs) override
     {
         lock_guard<mutex> lk(m_containersLock);
         auto iter = m_containers.find(poolName);
@@ -886,11 +946,11 @@ public:
             return false;
         }
         auto& hCont = iter->second;
-        hCont->GetAttributes(textureSize, dataType);
+        tTxPoolAttrs = hCont->GetAttributes();
         return true;
     }
 
-    bool SetTexturePoolAttributes(const string& poolName, const Size2i& textureSize, ImDataType dataType) override
+    bool SetTexturePoolAttributes(const string& poolName, const TexturePoolAttributes& tTxPoolAttrs) override
     {
         lock_guard<mutex> lk(m_containersLock);
         auto iter = m_containers.find(poolName);
@@ -901,7 +961,7 @@ public:
             return false;
         }
         auto& hCont = iter->second;
-        hCont->SetAttributes(textureSize, dataType);
+        return hCont->SetAttributes(tTxPoolAttrs);
         return true;
     }
 
@@ -992,6 +1052,7 @@ private:
     thread::id m_uiThreadId;
 #if IMGUI_VULKAN_SHADER
     ImGui::Resize_vulkan m_scaler;
+    ImGui::warpAffine_vulkan m_warpAffine;
 #endif
     string m_errMsg;
     ALogger* m_logger;

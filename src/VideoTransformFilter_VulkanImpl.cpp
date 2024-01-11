@@ -192,8 +192,8 @@ namespace MediaCore
             float _x_offset = x_offset * _x_diff + x_diff / 2;
             float y_offset = (float)m_posOffsetV / (float)m_outHeight;
             float _y_offset = y_offset * _y_diff + y_diff / 2;
-            int center_x = m_inWidth / 2 + _x_offset;
-            int center_y = m_inHeight / 2 + _y_offset;
+            int center_x = m_inWidth / 2.f + _x_offset;
+            int center_y = m_inHeight / 2.f + _y_offset;
             m_affineMat.at<float>(0, 0) =  alpha_00;
             m_affineMat.at<float>(1, 0) = beta_01;
             m_affineMat.at<float>(2, 0) = (1 - alpha_00) * center_x - beta_01 * center_y - _x_offset;

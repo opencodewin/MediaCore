@@ -60,6 +60,7 @@ struct Overview
 
     virtual bool SetSnapshotSize(uint32_t width, uint32_t height) = 0;
     virtual bool SetSnapshotResizeFactor(float widthFactor, float heightFactor) = 0;
+    virtual bool SetKeepAspectRatio(bool bEnable) = 0;
     virtual bool SetOutColorFormat(ImColorFormat clrfmt) = 0;
     virtual bool SetResizeInterpolateMode(ImInterpolateMode interp) = 0;
 
@@ -73,6 +74,8 @@ struct Overview
     virtual int64_t GetVideoFrameCount() const = 0;
     virtual uint32_t GetAudioChannel() const = 0;
     virtual uint32_t GetAudioSampleRate() const = 0;
+    virtual void GetSnapshotSize(uint32_t& width, uint32_t& height) const = 0;
+    virtual bool IsKeepAspectRatio() const = 0;
 
     virtual bool IsHwAccelEnabled() const = 0;
     virtual void EnableHwAccel(bool enable) = 0;

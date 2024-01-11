@@ -42,12 +42,19 @@ struct TextureManager
     virtual ManagedTexture::Holder GetGridTextureFromPool(const std::string& poolName) = 0;
     virtual bool ReleaseTexturePool(const std::string& name) = 0;
 
-    virtual bool GetTexturePoolAttributes(const std::string& poolName, MatUtils::Size2i& textureSize, ImDataType& dataType) = 0;
-    virtual bool SetTexturePoolAttributes(const std::string& poolName, const MatUtils::Size2i& textureSize, ImDataType dataType) = 0;
     virtual void SetUiThread(const std::thread::id& threadId) = 0;
     virtual bool UpdateTextureState() = 0;  // run this method in UI thread
     virtual void Release() = 0;
     virtual bool IsTextureFrom(const std::string& poolName, ManagedTexture::Holder hTx) = 0;
+
+    struct TexturePoolAttributes
+    {
+        MatUtils::Size2i tTxSize;
+        ImDataType eTxDtype;
+        bool bKeepAspectRatio;
+    };
+    virtual bool GetTexturePoolAttributes(const std::string& poolName, TexturePoolAttributes& tTxPoolAttrs) = 0;
+    virtual bool SetTexturePoolAttributes(const std::string& poolName, const TexturePoolAttributes& tTxPoolAttrs) = 0;
 
     virtual std::string GetError() const = 0;
     virtual void SetLogLevel(Logger::Level l) = 0;

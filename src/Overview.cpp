@@ -204,9 +204,15 @@ public:
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         m_useRszFactor = false;
-        if (m_frmCvt.GetOutWidth() == width && m_frmCvt.GetOutHeight() == height)
+        m_u32WantedOutWidth = width;
+        m_u32WantedOutHeight = height;
+        if (!m_opened)
             return true;
-        if (!m_frmCvt.SetOutSize(width, height))
+        uint32_t u32OutWidth, u32OutHeight;
+        CalcOutputSize(u32OutWidth, u32OutHeight);
+        if (m_frmCvt.GetOutWidth() == u32OutWidth && m_frmCvt.GetOutHeight() == u32OutHeight)
+            return true;
+        if (!m_frmCvt.SetOutSize(u32OutWidth, u32OutHeight))
         {
             m_errMsg = m_frmCvt.GetError();
             return false;
@@ -224,28 +230,42 @@ public:
             m_errMsg = "Resize factor must be a positive number!";
             return false;
         }
-        if (!m_ssSizeChanged && m_useRszFactor && m_ssWFacotr == widthFactor && m_ssHFacotr == heightFactor)
+        if (m_useRszFactor && m_ssWFacotr == widthFactor && m_ssHFacotr == heightFactor)
             return true;
-
         m_ssWFacotr = widthFactor;
         m_ssHFacotr = heightFactor;
         m_useRszFactor = true;
-        if (HasVideo())
+        if (!m_opened)
+            return true;
+        uint32_t u32OutWidth, u32OutHeight;
+        CalcOutputSize(u32OutWidth, u32OutHeight);
+        if (m_frmCvt.GetOutWidth() == u32OutWidth && m_frmCvt.GetOutHeight() == u32OutHeight)
+            return true;
+        if (!m_frmCvt.SetOutSize(u32OutWidth, u32OutHeight))
         {
-            if (widthFactor == 1.f && heightFactor == 1.f)
-                return SetSnapshotSize(0, 0);
-
-            uint32_t outWidth = (uint32_t)ceil(m_vidAvStm->codecpar->width*widthFactor);
-            if ((outWidth&0x1) == 1)
-                outWidth++;
-            uint32_t outHeight = (uint32_t)ceil(m_vidAvStm->codecpar->height*heightFactor);
-            if ((outHeight&0x1) == 1)
-                outHeight++;
-            if (!SetSnapshotSize(outWidth, outHeight))
-                return false;
-            m_useRszFactor = true;
+            m_errMsg = m_frmCvt.GetError();
+            return false;
         }
-        m_ssSizeChanged = false;
+        return true;
+    }
+
+    bool SetKeepAspectRatio(bool bEnable) override
+    {
+        if (m_bKeepAspectRatio == bEnable)
+            return true;
+        lock_guard<recursive_mutex> lk(m_apiLock);
+        m_bKeepAspectRatio = bEnable;
+        if (!m_opened)
+            return true;
+        uint32_t u32OutWidth, u32OutHeight;
+        CalcOutputSize(u32OutWidth, u32OutHeight);
+        if (m_frmCvt.GetOutWidth() == u32OutWidth && m_frmCvt.GetOutHeight() == u32OutHeight)
+            return true;
+        if (!m_frmCvt.SetOutSize(u32OutWidth, u32OutHeight))
+        {
+            m_errMsg = m_frmCvt.GetError();
+            return false;
+        }
         return true;
     }
 
@@ -346,6 +366,22 @@ public:
         return m_audAvStm->codecpar->sample_rate;
     }
 
+    void GetSnapshotSize(uint32_t& width, uint32_t& height) const override
+    {
+        width = m_frmCvt.GetOutWidth();
+        height = m_frmCvt.GetOutHeight();
+        if (!m_opened || (width > 0 && height > 0))
+            return;
+        const auto pVidstm = dynamic_cast<VideoStream*>(m_hMediaInfo->streams[m_vidStmIdx].get());
+        if (width == 0) width = pVidstm->width;
+        if (height == 0) height = pVidstm->height;
+    }
+
+    bool IsKeepAspectRatio() const override
+    {
+        return m_bKeepAspectRatio;
+    }
+
     bool IsHwAccelEnabled() const override
     {
         return m_vidPreferUseHw;
@@ -434,19 +470,13 @@ private:
 
             if (m_isImage)
                 m_frmCvt.SetUseVulkanConverter(false);
-            if (m_useRszFactor)
+
+            uint32_t u32OutWidth, u32OutHeight;
+            CalcOutputSize(u32OutWidth, u32OutHeight);
+            if (!m_frmCvt.SetOutSize(u32OutWidth, u32OutHeight))
             {
-                uint32_t outWidth = (uint32_t)ceil(vidStream->width*m_ssWFacotr);
-                if ((outWidth&0x1) == 1)
-                    outWidth++;
-                uint32_t outHeight = (uint32_t)ceil(vidStream->height*m_ssHFacotr);
-                if ((outHeight&0x1) == 1)
-                    outHeight++;
-                if (!m_frmCvt.SetOutSize(outWidth, outHeight))
-                {
-                    m_errMsg = m_frmCvt.GetError();
-                    return false;
-                }
+                m_errMsg = m_frmCvt.GetError();
+                return false;
             }
         }
 
@@ -481,6 +511,31 @@ private:
         }
 
         return true;
+    }
+
+    void CalcOutputSize(uint32_t& u32OutWidth, uint32_t& u32OutHeight)
+    {
+        if (!HasVideo())
+            return;
+        const auto pVidstm = dynamic_cast<VideoStream*>(m_hMediaInfo->streams[m_vidStmIdx].get());
+        u32OutWidth = 0; u32OutHeight = 0;
+        if (m_useRszFactor)
+        {
+            u32OutWidth = round(pVidstm->width*m_ssWFacotr);
+            u32OutHeight = round(pVidstm->height*m_ssHFacotr);
+        }
+        else
+        {
+            u32OutWidth = m_u32WantedOutWidth > 0 ? m_u32WantedOutWidth : pVidstm->width;
+            u32OutHeight = m_u32WantedOutHeight > 0 ? m_u32WantedOutHeight : pVidstm->height;
+        }
+        if (m_bKeepAspectRatio)
+        {
+            if (u32OutWidth*pVidstm->height > u32OutHeight*pVidstm->width)
+                u32OutWidth = round((float)u32OutHeight*pVidstm->width/pVidstm->height);
+            else
+                u32OutHeight = round((float)u32OutWidth*pVidstm->height/pVidstm->width);
+        }
     }
 
     bool Prepare()
@@ -1875,8 +1930,9 @@ private:
 
     // AVFrame -> ImMat
     bool m_useRszFactor{false};
-    bool m_ssSizeChanged{false};
     float m_ssWFacotr{1.f}, m_ssHFacotr{1.f};
+    uint32_t m_u32WantedOutWidth{0}, m_u32WantedOutHeight{0};
+    bool m_bKeepAspectRatio{true};
     AVFrameToImMatConverter m_frmCvt;
 };
 

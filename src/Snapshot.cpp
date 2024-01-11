@@ -389,7 +389,7 @@ public:
             m_errMsg = "Resize factor must be a positive number!";
             return false;
         }
-        if (!m_ssSizeChanged && m_useRszFactor && m_ssWFacotr == widthFactor && m_ssHFacotr == heightFactor)
+        if (m_useRszFactor && m_ssWFacotr == widthFactor && m_ssHFacotr == heightFactor)
             return true;
 
         m_ssWFacotr = widthFactor;
@@ -411,7 +411,6 @@ public:
                 return false;
             m_useRszFactor = true;
         }
-        m_ssSizeChanged = false;
         return true;
     }
 
@@ -2510,7 +2509,6 @@ private:
     int32_t m_maxImgsqDecNum{4};
 
     bool m_useRszFactor{false};
-    bool m_ssSizeChanged{false};
     float m_ssWFacotr{1.f}, m_ssHFacotr{1.f};
     AVFrameToImMatConverter m_frmCvt;
 
