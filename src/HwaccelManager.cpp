@@ -4,6 +4,7 @@
 #include <thread>
 #include <chrono>
 #include <algorithm>
+#include <cctype>
 #include <atomic>
 #include <functional>
 #include "HwaccelManager.h"
@@ -29,7 +30,7 @@ public:
 
     bool Init() override
     {
-        lock_guard<mutex> lk(m_apiLock);
+        lock_guard<recursive_mutex> lk(m_apiLock);
         list<CheckHwaccelThreadContext> checkTaskContexts;
         AVHWDeviceType hwDevType = AV_HWDEVICE_TYPE_NONE;
         do {
@@ -75,19 +76,35 @@ public:
         return true;
     }
 
-    vector<const DeviceInfo*> GetDevices() override
+    vector<const HwaccelTypeInfo*> GetHwaccelTypes() override
     {
-        lock_guard<mutex> lk(m_apiLock);
-        vector<const DeviceInfo*> result;
+        lock_guard<recursive_mutex> lk(m_apiLock);
+        vector<const HwaccelTypeInfo*> result;
         result.reserve(m_devices.size());
         for (auto& devinfo : m_devices)
             result.push_back(&devinfo.commInfo);
         return std::move(result);
     }
 
-    void IncreaseDecoderInstanceCount(const std::string& devType) override
+    vector<const HwaccelTypeInfo*> GetHwaccelTypesForCodec(const string& _codecName, uint32_t codecTypeFlag) override
     {
-        lock_guard<mutex> lk(m_apiLock);
+        lock_guard<recursive_mutex> lk(m_apiLock);
+        auto aHwTypes = GetHwaccelTypes();
+        string codecName(_codecName.size(), ' ');
+        transform(_codecName.begin(), _codecName.end(), codecName.begin(), [] (auto c) { return tolower(c); });
+        if (codecName == "mjpeg" && (codecTypeFlag&VIDEO) > 0 && (codecTypeFlag&DECODER) > 0)
+        {
+            // disable using 'vaapi' hardware mode to decode 'mjpeg', since the output uv planes are reversed
+            auto iter = find_if(aHwTypes.begin(), aHwTypes.end(), [] (auto& pInfo) { return pInfo->name == "vaapi"; });
+            if (iter != aHwTypes.end())
+                aHwTypes.erase(iter);
+        }
+        return aHwTypes;
+    }
+
+    void IncreaseDecoderInstanceCount(const string& devType) override
+    {
+        lock_guard<recursive_mutex> lk(m_apiLock);
         auto hwDevType = av_hwdevice_find_type_by_name(devType.c_str());
         if (hwDevType == AV_HWDEVICE_TYPE_NONE)
         {
@@ -109,7 +126,7 @@ public:
 
     void DecreaseDecoderInstanceCount(const std::string& devType) override
     {
-        lock_guard<mutex> lk(m_apiLock);
+        lock_guard<recursive_mutex> lk(m_apiLock);
         auto hwDevType = av_hwdevice_find_type_by_name(devType.c_str());
         if (hwDevType == AV_HWDEVICE_TYPE_NONE)
         {
@@ -143,7 +160,7 @@ public:
     struct CheckHwaccelThreadContext
     {
         AVHWDeviceType hwDevType;
-        DeviceInfo devInfo;
+        HwaccelTypeInfo devInfo;
         int basePriority;
         thread checkThread;
         bool done{false};
@@ -202,7 +219,7 @@ public:
 private:
     struct DeviceInfo_Internal
     {
-        DeviceInfo_Internal(AVHWDeviceType _hwDevType, DeviceInfo _commInfo, int _basePriority)
+        DeviceInfo_Internal(AVHWDeviceType _hwDevType, HwaccelTypeInfo _commInfo, int _basePriority)
             : hwDevType(_hwDevType), commInfo(_commInfo), basePriority(_basePriority)
         {
             UpdateDynamicPriority();
@@ -214,7 +231,7 @@ private:
         }
 
         AVHWDeviceType hwDevType;
-        DeviceInfo commInfo;
+        HwaccelTypeInfo commInfo;
         atomic_int32_t decoderCount{0};
         int basePriority;
         int dynamicPriority;
@@ -227,7 +244,7 @@ private:
     bool m_isVaapiUsable{false};
     bool m_isCudaUsable{false};
 
-    mutex m_apiLock;
+    recursive_mutex m_apiLock;
     ALogger* m_logger;
     string m_errMsg;
 };

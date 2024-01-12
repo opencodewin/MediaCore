@@ -16,6 +16,6 @@ int main(int argc, char* argv[])
         Log(Error) << "FAILED to init 'HwaccelManager' instance! Error is '" << hHwaMgr->GetError() << "'." << endl;
         return -1;
     }
-    auto devices = hHwaMgr->GetDevices();
+    auto devices = hHwaMgr->GetHwaccelTypes();
     return 0;
 }

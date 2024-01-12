@@ -32,6 +32,7 @@ extern "C"
     #include "libavutil/avutil.h"
     #include "libavutil/avstring.h"
     #include "libavutil/pixdesc.h"
+    #include "libavutil/display.h"
     #include "libavformat/avformat.h"
     #include "libavcodec/avcodec.h"
     #include "libavdevice/avdevice.h"
@@ -431,6 +432,38 @@ private:
         }
         m_bestVidStmIdx = av_find_best_stream(m_avfmtCtx, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
         m_bestAudStmIdx = av_find_best_stream(m_avfmtCtx, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
+
+        // pre-decode mjpeg and parse exif metadata
+        if (m_bestVidStmIdx >= 0 && m_avfmtCtx->streams[m_bestVidStmIdx]->codecpar->codec_id == AV_CODEC_ID_MJPEG)
+        {
+            FFUtils::OpenVideoDecoderOptions tVidDecOpenOpts;
+            FFUtils::OpenVideoDecoderResult tVidDecOpenRes;
+            if (FFUtils::OpenVideoDecoder(m_avfmtCtx, m_bestVidStmIdx, &tVidDecOpenOpts, &tVidDecOpenRes, true))
+            {
+                auto probeFrame = tVidDecOpenRes.probeFrame;
+                if (probeFrame)
+                {
+                    auto pSideData = av_frame_get_side_data(probeFrame.get(), AV_FRAME_DATA_DISPLAYMATRIX);
+                    if (pSideData && pSideData->data && pSideData->size >= 9*4)
+                    {
+                        auto pVidstm = dynamic_cast<VideoStream*>(m_hMediaInfo->streams[m_bestVidStmIdx].get());
+                        pVidstm->displayRotation = av_display_rotation_get((const int32_t*)pSideData->data);
+                        if (pVidstm->displayRotation != 0)
+                        {
+                            const double dTimesTo90 = pVidstm->displayRotation/90.0;
+                            double integ_;
+                            const double frac = modf(dTimesTo90, &integ_);
+                            const int integ = (int)integ_;
+                            if (frac == 0.0 && ((integ&0x1) == 1))
+                            {
+                                pVidstm->width = pVidstm->rawHeight;
+                                pVidstm->height = pVidstm->rawWidth;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         m_logger->Log(INFO) << "Parse general media info of media '" << m_url << "' done." << endl;
         return true;
     }

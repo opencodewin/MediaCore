@@ -1972,16 +1972,16 @@ static bool _OpenHwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codec
     AVCodecContext* hwDecCtx = nullptr;
     AVHWDeviceType hwDevType = AV_HWDEVICE_TYPE_NONE;
     AVHWDeviceType useHardwareType = options->useHardwareType;
-    vector<const MediaCore::HwaccelManager::DeviceInfo*> tryHwDevList;
-    vector<const MediaCore::HwaccelManager::DeviceInfo*>::iterator tryHwDevIter;
+    vector<const MediaCore::HwaccelManager::HwaccelTypeInfo*> tryHwDevList;
+    vector<const MediaCore::HwaccelManager::HwaccelTypeInfo*>::iterator tryHwDevIter;
     if (useHardwareType == AV_HWDEVICE_TYPE_NONE && options->hHwaMgr)
     {
-        tryHwDevList = options->hHwaMgr->GetDevices();
+        tryHwDevList = options->hHwaMgr->GetHwaccelTypesForCodec(string(avcodec_get_name(codecpar->codec_id)), MediaCore::HwaccelManager::VIDEO|MediaCore::HwaccelManager::DECODER);
         tryHwDevIter = find_if(tryHwDevList.begin(), tryHwDevList.end(), [] (auto& pDevInfo) {
             return pDevInfo->usable;
         });
         if (tryHwDevIter != tryHwDevList.end())
-            useHardwareType = av_hwdevice_find_type_by_name((*tryHwDevIter)->deviceType.c_str());
+            useHardwareType = av_hwdevice_find_type_by_name((*tryHwDevIter)->name.c_str());
     }
     do {
         bool openSuccess = false;
@@ -2037,7 +2037,7 @@ static bool _OpenHwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codec
             while (tryHwDevIter != tryHwDevList.end() && !(*tryHwDevIter)->usable)
                 tryHwDevIter++;
             if (tryHwDevIter != tryHwDevList.end())
-                useHardwareType = av_hwdevice_find_type_by_name((*tryHwDevIter)->deviceType.c_str());
+                useHardwareType = av_hwdevice_find_type_by_name((*tryHwDevIter)->name.c_str());
             else
                 break;
         }
