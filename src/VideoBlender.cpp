@@ -53,7 +53,7 @@ public:
                 fOpacity = 0.f;
             else if (fOpacity > 1.f)
                 fOpacity = 1.f;
-            m_vulkanBlender.overlay(baseImage, overlayImage, vkmat, fOpacity, m_ovlyX, m_ovlyY);
+            m_vulkanBlender.overlay(baseImage, overlayImage, vkmat, fOpacity, x, y);
             if (!vkmat.empty())
             {
                 res = vkmat;
@@ -104,7 +104,7 @@ public:
         }
         else
         {
-            res = m_ffBlender.Blend(baseImage, overlayImage);
+            res = m_ffBlender.Blend(baseImage, overlayImage, m_ovlyX, m_ovlyY);
         }
         return res;
     }
