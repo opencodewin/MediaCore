@@ -958,7 +958,8 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
             rgbMat.color_format = IM_CF_ABGR;
             rgbMat.w = m_outWidth;
             rgbMat.h = m_outHeight;
-            if (m_imgClrCvt->YUV2RGBA(inMats[0], inMats[1], inMats.size() > 2 ? inMats[2] : ImGui::ImMat(), rgbMat, m_resizeInterp) < 0.f)
+            bool scaling = (m_outWidth != inMats[0].w || m_outHeight != inMats[0].h);
+            if (m_imgClrCvt->YUV2RGBA(inMats[0], inMats[1], inMats.size() > 2 ? inMats[2] : ImGui::ImMat(), rgbMat, scaling ? m_resizeInterp : IM_INTERPOLATE_NONE) < 0.f)
             {
                 m_errMsg = m_imgClrCvt->GetError();
                 return false;
