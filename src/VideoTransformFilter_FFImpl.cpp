@@ -18,7 +18,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cmath>
-#include "VideoTransformFilter_FFImpl.h"
+#include "VideoTransformFilter_Base.h"
 #include "FFUtils.h"
 #include "Logger.h"
 extern "C"
@@ -34,8 +34,8 @@ extern "C"
 }
 
 using namespace std;
+using namespace MatUtils;
 using namespace Logger;
-
 
 static double CalcRadiansByXY(int32_t x, int32_t y)
 {
@@ -67,7 +67,10 @@ static double CalcRadiansByXY(int32_t x, int32_t y)
 
 namespace MediaCore
 {
-    VideoTransformFilter_FFImpl::~VideoTransformFilter_FFImpl()
+class VideoTransformFilter_FFImpl : public VideoTransformFilter_Base
+{
+public:
+    ~VideoTransformFilter_FFImpl()
     {
         if (m_scaleFg)
             avfilter_graph_free(&m_scaleFg);
@@ -75,23 +78,23 @@ namespace MediaCore
             avfilter_graph_free(&m_rotateFg);
     }
 
-    const std::string VideoTransformFilter_FFImpl::GetFilterName() const
+    const string GetFilterName() const override
     {
         return "VideoTransformFilter_FFImpl";
     }
 
-    bool VideoTransformFilter_FFImpl::Initialize(SharedSettings::Holder hSettings)
+    bool Initialize(SharedSettings::Holder hSettings) override
     {
         const auto outWidth = hSettings->VideoOutWidth();
         const auto outHeight = hSettings->VideoOutHeight();
-        lock_guard<recursive_mutex> lk(m_processLock);
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
         if (outWidth == 0 || outHeight == 0)
         {
-            m_errMsg = "INVALID argument! 'outWidth' and 'outHeight' must be positive value.";
+            m_strErrMsg = "INVALID argument! 'outWidth' and 'outHeight' must be positive value.";
             return false;
         }
-        m_outWidth = outWidth;
-        m_outHeight = outHeight;
+        m_u32OutWidth = outWidth;
+        m_u32OutHeight = outHeight;
         m_diagonalLen = (uint32_t)ceil(sqrt(outWidth*outWidth+outHeight*outHeight));
         if (m_diagonalLen%2 == 1) m_diagonalLen++;
 
@@ -100,19 +103,19 @@ namespace MediaCore
             return false;
         }
 
-        m_needUpdateScaleParam = true;
+        m_bNeedUpdateScaleParam = true;
         return true;
     }
 
-    bool VideoTransformFilter_FFImpl::SetOutputFormat(const string& outputFormat)
+    bool SetOutputFormat(const string& outputFormat) override
     {
-        lock_guard<recursive_mutex> lk(m_processLock);
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
         AVPixelFormat outputPixfmt = GetAVPixelFormatByName(outputFormat);
         if (outputPixfmt == AV_PIX_FMT_NONE)
         {
             ostringstream oss;
             oss << "CANNOT find corresponding 'AVPixelFormat' for argument '" << outputFormat << "'!";
-            m_errMsg = oss.str();
+            m_strErrMsg = oss.str();
             return false;
         }
         ImColorFormat imclrfmt = ConvertPixelFormatToColorFormat(outputPixfmt);
@@ -120,98 +123,99 @@ namespace MediaCore
         {
             ostringstream oss;
             oss << "CANNOT find corresponding 'ImColorFormat' for argument '" << outputFormat << "'!";
-            m_errMsg = oss.str();
+            m_strErrMsg = oss.str();
             return false;
         }
         m_unifiedOutputPixfmt = outputPixfmt;
         m_mat2frmCvt.SetOutPixelFormat(m_unifiedInputPixfmt);
         m_frm2matCvt.SetOutColorFormat(imclrfmt);
 
-        m_outputFormat = outputFormat;
+        m_strOutputFormat = outputFormat;
         return true;
     }
 
-    ImGui::ImMat VideoTransformFilter_FFImpl::FilterImage(const ImGui::ImMat& vmat, int64_t pos)
+    ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) override
     {
         ImGui::ImMat res;
         if (!_filterImage(vmat, res, pos))
         {
             res.release();
-            Log(Error) << "FilterImage() FAILED! " << m_errMsg << endl;
+            Log(Error) << "FilterImage() FAILED! " << m_strErrMsg << endl;
         }
         return res;
     }
 
-    bool VideoTransformFilter_FFImpl::SetRotationAngle(double angle)
+    bool SetRotation(float angle) override
     {
-        lock_guard<recursive_mutex> lk(m_processLock);
-        bool res = VideoTransformFilter_Base::SetRotationAngle(angle);
-        if (m_needUpdateRotateParam)
-            m_needUpdateScaleParam = true;
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        bool res = VideoTransformFilter_Base::SetRotation(angle);
+        if (m_bNeedUpdateRotateParam)
+            m_bNeedUpdateScaleParam = true;
         return res;
     }
 
-    bool VideoTransformFilter_FFImpl::SetPositionOffset(int32_t offsetH, int32_t offsetV)
+    bool SetPosOffset(int32_t i32PosOffX, int32_t i32PosOffY) override
     {
-        lock_guard<recursive_mutex> lk(m_processLock);
-        bool res = VideoTransformFilter_Base::SetPositionOffset(offsetH, offsetV);
-        if (m_needUpdatePositionParam)
-            m_needUpdateScaleParam = true;
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        bool res = VideoTransformFilter_Base::SetPosOffset(i32PosOffX, i32PosOffY);
+        if (m_bNeedUpdatePosOffsetParam)
+            m_bNeedUpdateScaleParam = true;
         return res;
     }
 
-    bool VideoTransformFilter_FFImpl::SetPositionOffsetH(int32_t value)
+    bool SetPosOffsetX(int32_t i32PosOffX) override
     {
-        lock_guard<recursive_mutex> lk(m_processLock);
-        bool res = VideoTransformFilter_Base::SetPositionOffsetH(value);
-        if (m_needUpdatePositionParam)
-            m_needUpdateScaleParam = true;
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        bool res = VideoTransformFilter_Base::SetPosOffsetX(i32PosOffX);
+        if (m_bNeedUpdatePosOffsetParam)
+            m_bNeedUpdateScaleParam = true;
         return res;
     }
 
-    bool VideoTransformFilter_FFImpl::SetPositionOffsetV(int32_t value)
+    bool SetPosOffsetY(int32_t i32PosOffY) override
     {
-        lock_guard<recursive_mutex> lk(m_processLock);
-        bool res = VideoTransformFilter_Base::SetPositionOffsetV(value);
-        if (m_needUpdatePositionParam)
-            m_needUpdateScaleParam = true;
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        bool res = VideoTransformFilter_Base::SetPosOffsetY(i32PosOffY);
+        if (m_bNeedUpdatePosOffsetParam)
+            m_bNeedUpdateScaleParam = true;
         return res;
     }
 
     // new API
-    bool VideoTransformFilter_FFImpl::SetPositionOffset(float offsetH, float offsetV)
+    bool SetPosOffsetRatio(float offsetH, float offsetV) override
     {
-        lock_guard<recursive_mutex> lk(m_processLock);
-        bool res = VideoTransformFilter_Base::SetPositionOffset(offsetH, offsetV);
-        if (m_needUpdatePositionParam)
-            m_needUpdateScaleParam = true;
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        bool res = VideoTransformFilter_Base::SetPosOffsetRatio(offsetH, offsetV);
+        if (m_bNeedUpdatePosOffsetParam)
+            m_bNeedUpdateScaleParam = true;
         return res;
     }
 
-    bool VideoTransformFilter_FFImpl::SetPositionOffsetH(float value)
+    bool SetPosOffsetRatioX(float value) override
     {
-        lock_guard<recursive_mutex> lk(m_processLock);
-        bool res = VideoTransformFilter_Base::SetPositionOffsetH(value);
-        if (m_needUpdatePositionParam)
-            m_needUpdateScaleParam = true;
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        bool res = VideoTransformFilter_Base::SetPosOffsetRatioX(value);
+        if (m_bNeedUpdatePosOffsetParam)
+            m_bNeedUpdateScaleParam = true;
         return res;
     }
 
-    bool VideoTransformFilter_FFImpl::SetPositionOffsetV(float value)
+    bool SetPosOffsetRatioY(float value) override
     {
-        lock_guard<recursive_mutex> lk(m_processLock);
-        bool res = VideoTransformFilter_Base::SetPositionOffsetV(value);
-        if (m_needUpdatePositionParam)
-            m_needUpdateScaleParam = true;
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        bool res = VideoTransformFilter_Base::SetPosOffsetRatioY(value);
+        if (m_bNeedUpdatePosOffsetParam)
+            m_bNeedUpdateScaleParam = true;
         return res;
     }
 
-    AVFilterGraph* VideoTransformFilter_FFImpl::CreateFilterGraph(const string& filterArgs, uint32_t w, uint32_t h, AVPixelFormat inputPixfmt, AVFilterContext** inputCtx, AVFilterContext** outputCtx)
+private:
+    AVFilterGraph* CreateFilterGraph(const string& filterArgs, uint32_t w, uint32_t h, AVPixelFormat inputPixfmt, AVFilterContext** inputCtx, AVFilterContext** outputCtx)
     {
         AVFilterGraph* avfg = avfilter_graph_alloc();
         if (!avfg)
         {
-            m_errMsg = "FAILED to allocate new 'AVFilterGraph' instance!";
+            m_strErrMsg = "FAILED to allocate new 'AVFilterGraph' instance!";
             return nullptr;
         }
         int fferr;
@@ -227,7 +231,7 @@ namespace MediaCore
         avfilter = avfilter_get_by_name("buffer");
         if (!avfilter)
         {
-            m_errMsg = "FAILED to find filter 'buffer'!";
+            m_strErrMsg = "FAILED to find filter 'buffer'!";
             avfilter_graph_free(&avfg);
             return nullptr;
         }
@@ -241,14 +245,14 @@ namespace MediaCore
         {
             ostringstream oss;
             oss << "FAILED to create 'buffer' filter instance with arguments '" << bufsrcArgs << "'! fferr=" << fferr << ".";
-            m_errMsg = oss.str();
+            m_strErrMsg = oss.str();
             avfilter_graph_free(&avfg);
             return nullptr;
         }
         avfilter = avfilter_get_by_name("buffersink");
         if (!avfilter)
         {
-            m_errMsg = "FAILED to find filter 'buffersink'!";
+            m_strErrMsg = "FAILED to find filter 'buffersink'!";
             avfilter_graph_free(&avfg);
             return nullptr;
         }
@@ -258,14 +262,14 @@ namespace MediaCore
         {
             ostringstream oss;
             oss << "FAILED to create 'buffersink' filter instance! fferr=" << fferr << ".";
-            m_errMsg = oss.str();
+            m_strErrMsg = oss.str();
             avfilter_graph_free(&avfg);
             return nullptr;
         }
         AVFilterInOut* outputs = avfilter_inout_alloc();
         if (!outputs)
         {
-            m_errMsg = "FAILED to allocate new 'AVFilterInOut' instance for 'outputs'!";
+            m_strErrMsg = "FAILED to allocate new 'AVFilterInOut' instance for 'outputs'!";
             avfilter_graph_free(&avfg);
             return nullptr;
         }
@@ -276,7 +280,7 @@ namespace MediaCore
         AVFilterInOut* inputs = avfilter_inout_alloc();
         if (!inputs)
         {
-            m_errMsg = "FAILED to allocate new 'AVFilterInOut' instance for 'inputs'!";
+            m_strErrMsg = "FAILED to allocate new 'AVFilterInOut' instance for 'inputs'!";
             avfilter_inout_free(&outputs);
             avfilter_graph_free(&avfg);
             return nullptr;
@@ -291,7 +295,7 @@ namespace MediaCore
         {
             ostringstream oss;
             oss << "FAILED to invoke 'avfilter_graph_parse_ptr()' with arguments '" << filterArgs << "'! fferr=" << fferr << ".";
-            m_errMsg = oss.str();
+            m_strErrMsg = oss.str();
             avfilter_inout_free(&inputs);
             avfilter_inout_free(&outputs);
             avfilter_graph_free(&avfg);
@@ -303,7 +307,7 @@ namespace MediaCore
         {
             ostringstream oss;
             oss << "FAILED to invoke 'avfilter_graph_config()' with arguments '" << filterArgs << "'! fferr=" << fferr << ".";
-            m_errMsg = oss.str();
+            m_strErrMsg = oss.str();
             avfilter_inout_free(&inputs);
             avfilter_inout_free(&outputs);
             avfilter_graph_free(&avfg);
@@ -317,34 +321,33 @@ namespace MediaCore
         return avfg;
     }
 
-    bool VideoTransformFilter_FFImpl::ConvertInMatToAVFrame(const ImGui::ImMat& inMat, SelfFreeAVFramePtr& avfrmPtr)
+    bool ConvertInMatToAVFrame(const ImGui::ImMat& inMat, SelfFreeAVFramePtr& avfrmPtr)
     {
         if (!m_mat2frmCvt.ConvertImage(inMat, avfrmPtr.get(), avfrmPtr->pts))
         {
             ostringstream oss;
             oss << "FAILED to convert 'ImMat' to 'AVFrame'! Error message is '" << m_mat2frmCvt.GetError() << "'.";
-            m_errMsg = oss.str();
+            m_strErrMsg = oss.str();
             return false;
         }
         return true;
     }
 
-    bool VideoTransformFilter_FFImpl::PerformCropStage(const ImGui::ImMat& inMat, SelfFreeAVFramePtr& avfrmPtr)
+    bool PerformCropStage(const ImGui::ImMat& inMat, SelfFreeAVFramePtr& avfrmPtr)
     {
-        if (m_needUpdateCropParamScale)
+        if (m_bNeedUpdateCropRatioParam)
         {
-            m_cropL = m_inWidth * m_fcropL;
-            m_cropR = m_inWidth * m_fcropR;
-            m_cropT = m_inHeight * m_fcropT;
-            m_cropB = m_inHeight * m_fcropB;
-            m_needUpdateCropParamScale = false;
-            m_needUpdateCropParam = true;
+            m_u32CropL = m_u32InWidth * m_fCropRatioL;
+            m_u32CropR = m_u32InWidth * m_fCropRatioR;
+            m_u32CropT = m_u32InHeight * m_fCropRatioT;
+            m_u32CropB = m_u32InHeight * m_fCropRatioB;
+            m_bNeedUpdateCropRatioParam = false;
+            m_bNeedUpdateCropParam = true;
         }
-        
-        if (m_needUpdateCropParam)
+        if (m_bNeedUpdateCropParam)
         {
-            uint32_t rectX = m_cropL<m_inWidth ? m_cropL : m_inWidth-1;
-            uint32_t rectX1 = m_cropR<m_inWidth ? m_inWidth-m_cropR : 0;
+            uint32_t rectX = m_u32CropL<m_u32InWidth ? m_u32CropL : m_u32InWidth-1;
+            uint32_t rectX1 = m_u32CropR<m_u32InWidth ? m_u32InWidth-m_u32CropR : 0;
             uint32_t rectW;
             if (rectX < rectX1)
                 rectW = rectX1-rectX;
@@ -353,8 +356,8 @@ namespace MediaCore
                 rectW = rectX-rectX1;
                 rectX = rectX1;
             }
-            uint32_t rectY = m_cropT<m_inHeight ? m_cropT : m_inHeight-1;
-            uint32_t rectY1 = m_cropB<m_inHeight ? m_inHeight-m_cropB : 0;
+            uint32_t rectY = m_u32CropT<m_u32InHeight ? m_u32CropT : m_u32InHeight-1;
+            uint32_t rectY1 = m_u32CropB<m_u32InHeight ? m_u32InHeight-m_u32CropB : 0;
             uint32_t rectH;
             if (rectY < rectY1)
                 rectH = rectY1-rectY;
@@ -366,7 +369,7 @@ namespace MediaCore
             m_cropRectX = rectX; m_cropRectY = rectY;
             m_cropRectW = rectW; m_cropRectH = rectH;
         }
-        if (m_cropL != 0 || m_cropR != 0 || m_cropT != 0 || m_cropB != 0)
+        if (m_u32CropL != 0 || m_u32CropR != 0 || m_u32CropT != 0 || m_u32CropB != 0)
         {
             if (!avfrmPtr->data[0])
             {
@@ -376,15 +379,15 @@ namespace MediaCore
 
             int fferr;
             SelfFreeAVFramePtr cropfrmPtr = AllocSelfFreeAVFramePtr();
-            cropfrmPtr->width = m_inWidth;
-            cropfrmPtr->height = m_inHeight;
+            cropfrmPtr->width = m_u32InWidth;
+            cropfrmPtr->height = m_u32InHeight;
             cropfrmPtr->format = avfrmPtr->format;
             fferr = av_frame_get_buffer(cropfrmPtr.get(), 0);
             if (fferr < 0)
             {
                 ostringstream oss;
                 oss << "FAILED to allocate buffer for crop output frame! fferr=" << fferr << ".";
-                m_errMsg = oss.str();
+                m_strErrMsg = oss.str();
                 return false;
             }
             int bufcnt = sizeof(cropfrmPtr->buf)/sizeof(cropfrmPtr->buf[0]);
@@ -414,55 +417,55 @@ namespace MediaCore
         return true;
     }
 
-    bool VideoTransformFilter_FFImpl::PerformScaleStage(const ImGui::ImMat& inMat, SelfFreeAVFramePtr& avfrmPtr)
+    bool PerformScaleStage(const ImGui::ImMat& inMat, SelfFreeAVFramePtr& avfrmPtr)
     {
-        if (m_needUpdateScaleParam)
+        if (m_bNeedUpdateScaleParam)
         {
-            uint32_t fitScaleWidth{m_inWidth}, fitScaleHeight{m_inHeight};
-            switch (m_scaleType)
+            uint32_t fitScaleWidth{m_u32InWidth}, fitScaleHeight{m_u32InHeight};
+            switch (m_eScaleType)
             {
                 case SCALE_TYPE__FIT:
-                if (m_inWidth*m_outHeight > m_inHeight*m_outWidth)
+                if (m_u32InWidth*m_u32OutHeight > m_u32InHeight*m_u32OutWidth)
                 {
-                    fitScaleWidth = m_outWidth;
-                    fitScaleHeight = (uint32_t)round((double)m_inHeight*m_outWidth/m_inWidth);
+                    fitScaleWidth = m_u32OutWidth;
+                    fitScaleHeight = (uint32_t)round((float)m_u32InHeight*m_u32OutWidth/m_u32InWidth);
                 }
                 else
                 {
-                    fitScaleHeight = m_outHeight;
-                    fitScaleWidth = (uint32_t)round((double)m_inWidth*m_outHeight/m_inHeight);
+                    fitScaleHeight = m_u32OutHeight;
+                    fitScaleWidth = (uint32_t)round((float)m_u32InWidth*m_u32OutHeight/m_u32InHeight);
                 }
                 break;
                 case SCALE_TYPE__CROP:
-                fitScaleWidth = m_inWidth;
-                fitScaleHeight = m_inHeight;
+                fitScaleWidth = m_u32InWidth;
+                fitScaleHeight = m_u32InHeight;
                 break;
                 case SCALE_TYPE__FILL:
-                if (m_inWidth*m_outHeight > m_inHeight*m_outWidth)
+                if (m_u32InWidth*m_u32OutHeight > m_u32InHeight*m_u32OutWidth)
                 {
-                    fitScaleHeight = m_outHeight;
-                    fitScaleWidth = (uint32_t)round((double)m_inWidth*m_outHeight/m_inHeight);
+                    fitScaleHeight = m_u32OutHeight;
+                    fitScaleWidth = (uint32_t)round((float)m_u32InWidth*m_u32OutHeight/m_u32InHeight);
                 }
                 else
                 {
-                    fitScaleWidth = m_outWidth;
-                    fitScaleHeight = (uint32_t)round((double)m_inHeight*m_outWidth/m_inWidth);
+                    fitScaleWidth = m_u32OutWidth;
+                    fitScaleHeight = (uint32_t)round((float)m_u32InHeight*m_u32OutWidth/m_u32InWidth);
                 }
                 break;
                 case SCALE_TYPE__STRETCH:
-                fitScaleWidth = m_outWidth;
-                fitScaleHeight = m_outHeight;
+                fitScaleWidth = m_u32OutWidth;
+                fitScaleHeight = m_u32OutHeight;
                 break;
             }
-            m_realScaleRatioH = (double)fitScaleWidth/m_inWidth*m_scaleRatioH;
-            m_realScaleRatioV = (double)fitScaleHeight/m_inHeight*m_scaleRatioV;
+            m_realScaleRatioH = (float)fitScaleWidth/m_u32InWidth*m_fScaleX;
+            m_realScaleRatioV = (float)fitScaleHeight/m_u32InHeight*(m_bKeepAspectRatio ? m_fScaleX : m_fScaleY);
 
             double posOffBrH{0}, posOffBrV{0};
             int32_t scaleInputPosOffH{0}, scaleInputPosOffV{0};
-            if (m_posOffsetH != 0 || m_posOffsetV != 0)
+            if (m_i32PosOffsetX != 0 || m_i32PosOffsetY != 0)
             {
-                int32_t viewOffsetH = -m_posOffsetH, viewOffsetV = -m_posOffsetV;
-                double offsetArc = CalcRadiansByXY(viewOffsetH, viewOffsetV)-m_rotateAngle*M_PI/180;
+                int32_t viewOffsetH = -m_i32PosOffsetX, viewOffsetV = -m_i32PosOffsetY;
+                double offsetArc = CalcRadiansByXY(viewOffsetH, viewOffsetV)-m_fRotateAngle*M_PI/180;
                 double r = sqrt(viewOffsetH*viewOffsetH+viewOffsetV*viewOffsetV);
                 posOffBrH = r*cos(offsetArc);
                 posOffBrV = r*sin(offsetArc);
@@ -512,10 +515,10 @@ namespace MediaCore
                         centerOffV -= m_scaleInputOffY+m_scaleInputH-inMat.h;
                         m_scaleInputOffY = inMat.h-m_scaleInputH;
                     }
-                    double scaledCenterOffH = m_realScaleRatioH*centerOffH;
-                    double scaledCenterOffV = m_realScaleRatioV*centerOffV;
-                    double scaledCenterDistanceR = sqrt(scaledCenterOffH*scaledCenterOffH+scaledCenterOffV*scaledCenterOffV);
-                    double arc = (double)m_rotateAngle*M_PI/180+CalcRadiansByXY(centerOffH, centerOffV);
+                    float scaledCenterOffH = m_realScaleRatioH*centerOffH;
+                    float scaledCenterOffV = m_realScaleRatioV*centerOffV;
+                    float scaledCenterDistanceR = sqrt(scaledCenterOffH*scaledCenterOffH+scaledCenterOffV*scaledCenterOffV);
+                    double arc = (double)m_fRotateAngle*M_PI/180+CalcRadiansByXY(centerOffH, centerOffV);
                     int32_t scaledAndRotatedCenterOffH = (int32_t)round(scaledCenterDistanceR*cos(arc));
                     int32_t scaledAndRotatedCenterOffV = (int32_t)round(scaledCenterDistanceR*sin(arc));
                     m_posOffCompH = scaledAndRotatedCenterOffH;
@@ -544,7 +547,7 @@ namespace MediaCore
             {
                 ostringstream oss;
                 oss << "FAILED to invoke 'av_frame_get_buffer()'! fferr=" << fferr << ".";
-                m_errMsg = oss.str();
+                m_strErrMsg = oss.str();
                 return false;
             }
             avfrmPtr->pts = pts;
@@ -566,7 +569,7 @@ namespace MediaCore
                 if (!m_scaleFg)
                     return false;
             }
-            else if (m_needUpdateScaleParam)
+            else if (m_bNeedUpdateScaleParam)
             {
                 char cmdArgs[32] = {0}, cmdRes[128] = {0};
                 snprintf(cmdArgs, sizeof(cmdArgs)-1, "%d", m_scaleOutputRoiW);
@@ -576,7 +579,7 @@ namespace MediaCore
                     ostringstream oss;
                     oss << "FAILED to invoke 'avfilter_graph_send_command()' to 'scale' on argument 'w' = " << m_scaleOutputRoiW
                         << "! fferr = " << fferr << ", response = '" << cmdRes <<"'.";
-                    m_errMsg = oss.str();
+                    m_strErrMsg = oss.str();
                     return false;
                 }
                 snprintf(cmdArgs, sizeof(cmdArgs)-1, "%d", m_scaleOutputRoiH);
@@ -586,7 +589,7 @@ namespace MediaCore
                     ostringstream oss;
                     oss << "FAILED to invoke 'avfilter_graph_send_command()' to 'scale' on argument 'h' = " << m_scaleOutputRoiH
                         << "! fferr = " << fferr << ", response = '" << cmdRes <<"'.";
-                    m_errMsg = oss.str();
+                    m_strErrMsg = oss.str();
                     return false;
                 }
             }
@@ -617,7 +620,7 @@ namespace MediaCore
             {
                 ostringstream oss;
                 oss << "FAILED to invoke 'av_buffersrc_add_frame_flags()' at 'scale' stage! fferr=" << fferr << ".";
-                m_errMsg = oss.str();
+                m_strErrMsg = oss.str();
                 return false;
             }
             SelfFreeAVFramePtr outfrmPtr = AllocSelfFreeAVFramePtr();
@@ -626,7 +629,7 @@ namespace MediaCore
             {
                 ostringstream oss;
                 oss << "FAILED to invoke 'av_buffersink_get_frame()' at 'scale' stage! fferr=" << fferr << ".";
-                m_errMsg = oss.str();
+                m_strErrMsg = oss.str();
                 return false;
             }
             avfrmPtr = outfrmPtr;
@@ -634,9 +637,9 @@ namespace MediaCore
         return true;
     }
 
-    bool VideoTransformFilter_FFImpl::PerformRotateStage(const ImGui::ImMat& inMat, SelfFreeAVFramePtr& avfrmPtr)
+    bool PerformRotateStage(const ImGui::ImMat& inMat, SelfFreeAVFramePtr& avfrmPtr)
     {
-        if (m_rotateAngle != 0)
+        if (m_fRotateAngle != 0)
         {
             if (!avfrmPtr->data[0])
             {
@@ -653,7 +656,7 @@ namespace MediaCore
                 if (rotw%2 == 1) rotw++;
                 uint32_t roth = rotw;
                 ostringstream argsOss;
-                argsOss << "rotate=a=" << m_rotateAngle*M_PI/180 << ":ow=" << rotw << ":oh=" << roth << ":c=0x00000000";
+                argsOss << "rotate=a=" << m_fRotateAngle*M_PI/180 << ":ow=" << rotw << ":oh=" << roth << ":c=0x00000000";
                 string filterArgs = argsOss.str();
                 m_rotateFg = CreateFilterGraph(filterArgs, avfrmPtr->width, avfrmPtr->height, (AVPixelFormat)avfrmPtr->format, &m_rotateInputCtx, &m_rotateOutputCtx);
                 if (!m_rotateFg)
@@ -661,9 +664,9 @@ namespace MediaCore
                 m_rotInW = avfrmPtr->width;
                 m_rotInH = avfrmPtr->height;
             }
-            else if (m_needUpdateRotateParam)
+            else if (m_bNeedUpdateRotateParam)
             {
-                double radians = m_rotateAngle*M_PI/180;
+                double radians = m_fRotateAngle*M_PI/180;
                 char cmdArgs[32] = {0}, cmdRes[128] = {0};
                 snprintf(cmdArgs, sizeof(cmdArgs)-1, "%.4lf", radians);
                 fferr = avfilter_graph_send_command(m_rotateFg, "rotate", "a", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
@@ -672,7 +675,7 @@ namespace MediaCore
                     ostringstream oss;
                     oss << "FAILED to invoke 'avfilter_graph_send_command()' to 'rotate' on argument 'a' = " << radians
                         << "! fferr = " << fferr << ", response = '" << cmdRes <<"'.";
-                    m_errMsg = oss.str();
+                    m_strErrMsg = oss.str();
                     return false;
                 }
             }
@@ -681,7 +684,7 @@ namespace MediaCore
             {
                 ostringstream oss;
                 oss << "FAILED to invoke 'av_buffersrc_write_frame()' at 'rotate' stage! fferr=" << fferr << ".";
-                m_errMsg = oss.str();
+                m_strErrMsg = oss.str();
                 return false;
             }
             av_frame_unref(avfrmPtr.get());
@@ -690,43 +693,43 @@ namespace MediaCore
             {
                 ostringstream oss;
                 oss << "FAILED to invoke 'av_buffersink_get_frame()' at 'rotate' stage! fferr=" << fferr << ".";
-                m_errMsg = oss.str();
+                m_strErrMsg = oss.str();
                 return false;
             }
         }
         return true;
     }
 
-    bool VideoTransformFilter_FFImpl::PerformPositionStage(const ImGui::ImMat& inMat, SelfFreeAVFramePtr& avfrmPtr)
+    bool PerformPositionStage(const ImGui::ImMat& inMat, SelfFreeAVFramePtr& avfrmPtr)
     {
-        if (m_needUpdatePositionParamScale)
+        if (m_bNeedUpdatePosOffsetRatioParam)
         {
-            m_posOffsetH = m_fposOffsetH * m_outWidth;
-            m_posOffsetV = m_fposOffsetV * m_outHeight;
-            m_needUpdatePositionParamScale = false;
+            m_i32PosOffsetX = m_fPosOffsetRatioX * m_u32OutWidth;
+            m_i32PosOffsetY = m_fPosOffsetRatioY * m_u32OutHeight;
+            m_bNeedUpdatePosOffsetRatioParam = false;
         }
-        const int32_t posOffH = m_posOffsetH+m_posOffCompH;
-        const int32_t posOffV = m_posOffsetV+m_posOffCompV;
-        if (!avfrmPtr->data[0] && (inMat.w != m_outWidth || inMat.h != m_outHeight || posOffH != 0 || posOffV != 0))
+        const int32_t posOffH = m_i32PosOffsetX+m_posOffCompH;
+        const int32_t posOffV = m_i32PosOffsetY+m_posOffCompV;
+        if (!avfrmPtr->data[0] && (inMat.w != m_u32OutWidth || inMat.h != m_u32OutHeight || posOffH != 0 || posOffV != 0))
         {
             if (!ConvertInMatToAVFrame(inMat, avfrmPtr))
                 return false;
         }
-        if (avfrmPtr->data[0] && (avfrmPtr->width != m_outWidth || avfrmPtr->height != m_outHeight || posOffH != 0 || posOffV != 0))
+        if (avfrmPtr->data[0] && (avfrmPtr->width != m_u32OutWidth || avfrmPtr->height != m_u32OutHeight || posOffH != 0 || posOffV != 0))
         {
             int fferr;
-            const int32_t ovlyX = ((int32_t)m_outWidth-avfrmPtr->width)/2+posOffH;
-            const int32_t ovlyY = ((int32_t)m_outHeight-avfrmPtr->height)/2+posOffV;
+            const int32_t ovlyX = ((int32_t)m_u32OutWidth-avfrmPtr->width)/2+posOffH;
+            const int32_t ovlyY = ((int32_t)m_u32OutHeight-avfrmPtr->height)/2+posOffV;
             SelfFreeAVFramePtr ovlyBaseImg = AllocSelfFreeAVFramePtr();
-            ovlyBaseImg->width = m_outWidth;
-            ovlyBaseImg->height = m_outHeight;
+            ovlyBaseImg->width = m_u32OutWidth;
+            ovlyBaseImg->height = m_u32OutHeight;
             ovlyBaseImg->format = (int)m_unifiedOutputPixfmt;
             fferr = av_frame_get_buffer(ovlyBaseImg.get(), 0);
             if (fferr < 0)
             {
                 ostringstream oss;
                 oss << "FAILED to invoke 'av_frame_get_buffer()' for overlay base image! fferr=" << fferr << ".";
-                m_errMsg = oss.str();
+                m_strErrMsg = oss.str();
                 return false;
             }
             int maxBufCnt = sizeof(ovlyBaseImg->buf)/sizeof(ovlyBaseImg->buf[0]);
@@ -766,11 +769,11 @@ namespace MediaCore
         return true;
     }
 
-    bool VideoTransformFilter_FFImpl::_filterImage(const ImGui::ImMat& inMat, ImGui::ImMat& outMat, int64_t pos)
+    bool _filterImage(const ImGui::ImMat& inMat, ImGui::ImMat& outMat, int64_t pos)
     {
-        lock_guard<recursive_mutex> lk(m_processLock);
-        m_inWidth = inMat.w;
-        m_inHeight = inMat.h;
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        m_u32InWidth = inMat.w;
+        m_u32InHeight = inMat.h;
 
         // check and update key points values
         for (int i = 0; i < m_keyPoints.GetCurveCount(); i++)
@@ -778,28 +781,28 @@ namespace MediaCore
             auto name = m_keyPoints.GetCurveName(i);
             auto value = m_keyPoints.GetValueByDim(i, pos, ImGui::ImCurveEdit::DIM_X);
             if (name == "CropMarginL")
-                SetCropMarginL(value);
+                SetCropRatioL(value);
             else if (name == "CropMarginT")
-                SetCropMarginT(value);
+                SetCropRatioT(value);
             else if (name == "CropMarginR")
-                SetCropMarginR(value);
+                SetCropRatioR(value);
             else if (name == "CropMarginB")
-                SetCropMarginB(value);
+                SetCropRatioB(value);
             else if (name == "Scale")
             {
-                SetScaleH(value);
-                SetScaleV(value);
+                SetScaleX(value);
+                SetScaleY(value);
             }
             else if (name == "ScaleH")
-                SetScaleH(value);
+                SetScaleX(value);
             else if (name == "ScaleV")
-                SetScaleV(value);
+                SetScaleY(value);
             else if (name == "RotateAngle")
-                SetRotationAngle(value);
+                SetRotation(value);
             else if (name == "PositionOffsetH")
-                SetPositionOffsetH(value);
+                SetPosOffsetRatioX(value);
             else if (name == "PositionOffsetV")
-                SetPositionOffsetV(value);
+                SetPosOffsetRatioY(value);
             else
                 Log(WARN) << "UNKNOWN curve name '" << name << "', value=" << value << "." << endl;
         }
@@ -816,12 +819,12 @@ namespace MediaCore
             return false;
         if (!PerformPositionStage(inMat, avfrmPtr))
             return false;
-        m_needUpdateCropParam = false;
-        m_needUpdateScaleParam = false;
-        m_needUpdateRotateParam = false;
-        m_needUpdatePositionParam = false;
-        m_needUpdateCropParamScale = false;
-        m_needUpdatePositionParamScale = false;
+        m_bNeedUpdatePosOffsetParam = false;
+        m_bNeedUpdatePosOffsetRatioParam = false;
+        m_bNeedUpdateCropParam = false;
+        m_bNeedUpdateCropRatioParam = false;
+        m_bNeedUpdateScaleParam = false;
+        m_bNeedUpdateRotateParam = false;
 
         if (avfrmPtr->data[0])
         {
@@ -830,7 +833,7 @@ namespace MediaCore
             {
                 ostringstream oss;
                 oss << "FAILED to convert 'AVFrame' to 'ImMat'! Error message is '" << m_frm2matCvt.GetError() << "'.";
-                m_errMsg = oss.str();
+                m_strErrMsg = oss.str();
                 return false;
             }
         }
@@ -840,4 +843,38 @@ namespace MediaCore
         }
         return true;
     }
+
+private:
+    uint32_t m_cropRectX{0}, m_cropRectY{0}, m_cropRectW{0}, m_cropRectH{0};
+    uint32_t m_diagonalLen{0}, m_scaleSafePadding{2};
+    AVPixelFormat m_unifiedInputPixfmt{AV_PIX_FMT_RGBA};
+    AVPixelFormat m_unifiedOutputPixfmt{AV_PIX_FMT_NONE};
+    AVRational m_inputFrameRate{25, 1};
+    int32_t m_inputCount{0};
+
+    ImMatToAVFrameConverter m_mat2frmCvt;
+    AVFrameToImMatConverter m_frm2matCvt;
+
+    AVFilterGraph* m_scaleFg{nullptr};
+    AVFilterContext* m_scaleInputCtx{nullptr};
+    AVFilterContext* m_scaleOutputCtx{nullptr};
+    float m_realScaleRatioH{1}, m_realScaleRatioV{1};
+    uint32_t m_scaleOutputRoiW{0}, m_scaleOutputRoiH{0};
+    uint32_t m_scaleInputW{0}, m_scaleInputH{0};
+    int32_t m_scaleInputOffX{0}, m_scaleInputOffY{0};
+    int32_t m_posOffCompH{0}, m_posOffCompV{0};
+
+    AVFilterGraph* m_rotateFg{nullptr};
+    AVFilterContext* m_rotateInputCtx{nullptr};
+    AVFilterContext* m_rotateOutputCtx{nullptr};
+    uint32_t m_rotInW{0}, m_rotInH{0};
+};
+
+VideoTransformFilter::Holder CreateVideoTransformFilterInstance_FFImpl()
+{
+    return VideoTransformFilter::Holder(new VideoTransformFilter_FFImpl(), [] (auto p) {
+        VideoTransformFilter_FFImpl* ptr = dynamic_cast<VideoTransformFilter_FFImpl*>(p);
+        delete ptr;
+    });
+}
 }

@@ -154,6 +154,7 @@ public:
         m_hWarpFilter = VideoTransformFilter::CreateInstance();
         if (!m_hWarpFilter->Initialize(hSettings))
             throw runtime_error(m_hWarpFilter->GetError());
+        m_hWarpFilter->SetTimeRange({0, Duration()});
     }
 
     ~VideoClip_VideoImpl()
@@ -248,6 +249,7 @@ public:
         m_startOffset = startOffset;
         if (m_hFilter)
             m_hFilter->UpdateClipRange();
+        m_hWarpFilter->SetTimeRange({0, Duration()});
     }
 
     void ChangeEndOffset(int64_t endOffset) override
@@ -261,6 +263,7 @@ public:
         m_endOffset = endOffset;
         if (m_hFilter)
             m_hFilter->UpdateClipRange();
+        m_hWarpFilter->SetTimeRange({0, Duration()});
     }
 
     void SetDuration(int64_t duration) override
@@ -567,6 +570,7 @@ public:
         m_hWarpFilter = VideoTransformFilter::CreateInstance();
         if (!m_hWarpFilter->Initialize(hSettings))
             throw runtime_error(m_hWarpFilter->GetError());
+        m_hWarpFilter->SetTimeRange({0, Duration()});
     }
 
     ~VideoClip_ImageImpl()
@@ -661,6 +665,7 @@ public:
         if (duration <= 0)
             throw invalid_argument("Argument 'duration' must be a positive integer!");
         m_srcDuration = duration;
+        m_hWarpFilter->SetTimeRange({0, Duration()});
     }
 
     VideoFrame::Holder ReadVideoFrame(int64_t pos, vector<CorrelativeFrame>& frames, bool& eof) override
@@ -880,6 +885,13 @@ public:
 #else
         return pos < m_overlapPtr->Duration()/2 ? vmat1 : vmat2;
 #endif
+    }
+
+    imgui_json::value SaveAsJson() const override
+    {
+        imgui_json::value j;
+        j["name"] = "DefaultVideoTransition";
+        return std::move(j);
     }
 
 private:

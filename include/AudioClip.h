@@ -20,6 +20,7 @@
 #include <atomic>
 #include <string>
 #include <ostream>
+#include <imgui_json.h>
 #include "MediaCore.h"
 #include "SharedSettings.h"
 #include "MediaReader.h"
@@ -30,13 +31,13 @@ struct AudioClip;
 struct AudioFilter
 {
     using Holder = std::shared_ptr<AudioFilter>;
-    virtual ~AudioFilter() {}
 
     virtual const std::string GetFilterName() const = 0;
     virtual Holder Clone() = 0;
     virtual void ApplyTo(AudioClip* clip) = 0;
     virtual const MediaCore::AudioClip* GetAudioClip() const = 0;
     virtual ImGui::ImMat FilterPcm(const ImGui::ImMat& amat, int64_t pos, int64_t dur) = 0;
+    virtual imgui_json::value SaveAsJson() const = 0;
 };
 
 struct AudioClip
@@ -80,7 +81,6 @@ struct AudioOverlap;
 struct AudioTransition
 {
     using Holder = std::shared_ptr<AudioTransition>;
-    virtual ~AudioTransition() {}
 
     virtual void ApplyTo(AudioOverlap* overlap) = 0;
     virtual ImGui::ImMat MixTwoAudioMats(const ImGui::ImMat& amat1, const ImGui::ImMat& amat2, int64_t pos) = 0;

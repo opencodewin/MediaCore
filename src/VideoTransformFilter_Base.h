@@ -16,357 +16,567 @@
 */
 
 #pragma once
+#include <MatUtilsImVecHelper.h>
 #include "VideoTransformFilter.h"
-#include <mutex>
 
 namespace MediaCore
 {
-    class VideoTransformFilter_Base : public VideoTransformFilter
+class VideoTransformFilter_Base : public VideoTransformFilter
+{
+public:
+    VideoTransformFilter_Base()
     {
-    public:
-        virtual ~VideoTransformFilter_Base() {}
+        m_hPosOffsetCurve = ImGui::ImNewCurve::Curve::CreateInstance("PosOffsetCurve", ImGui::ImNewCurve::Linear, {0,0,0,0}, {1,1,1,0}, {0,0,0,0});
+    }
 
-        uint32_t GetInWidth() const override
-        { return m_inWidth; }
+    virtual ~VideoTransformFilter_Base() {}
 
-        uint32_t GetInHeight() const override
-        { return m_inHeight; }
+    Holder Clone(SharedSettings::Holder hSettings) override
+    {
+        VideoTransformFilter::Holder newInstance = VideoTransformFilter::CreateInstance();
+        if (!newInstance->Initialize(hSettings))
+            return nullptr;
+        newInstance->SetScaleType(GetScaleType());
+        newInstance->SetScaleX(GetScaleX());
+        newInstance->SetScaleY(GetScaleY());
+        newInstance->SetPosOffsetX(GetPosOffsetX());
+        newInstance->SetPosOffsetY(GetPosOffsetY());
+        newInstance->SetRotation(GetRotation());
+        newInstance->SetCropL(GetCropL());
+        newInstance->SetCropT(GetCropT());
+        newInstance->SetCropR(GetCropR());
+        newInstance->SetCropB(GetCropB());
+        newInstance->SetPosOffsetRatioX(GetPosOffsetRatioX());
+        newInstance->SetPosOffsetRatioY(GetPosOffsetRatioY());
+        newInstance->SetCropRatioL(GetCropRatioL());
+        newInstance->SetCropRatioT(GetCropRatioT());
+        newInstance->SetCropRatioR(GetCropRatioR());
+        newInstance->SetCropRatioB(GetCropRatioB());
+        newInstance->SetKeyPoint(*GetKeyPoint());
+        return newInstance;
+    }
 
-        uint32_t GetOutWidth() const override
-        { return m_outWidth; }
+    uint32_t GetInWidth() const override
+    { return m_u32InWidth; }
 
-        uint32_t GetOutHeight() const override
-        { return m_outHeight; }
+    uint32_t GetInHeight() const override
+    { return m_u32InHeight; }
 
-        std::string GetOutputFormat() const override
-        { return m_outputFormat; }
+    uint32_t GetOutWidth() const override
+    { return m_u32OutWidth; }
 
-        ScaleType GetScaleType() const override
-        { return m_scaleType; }
+    uint32_t GetOutHeight() const override
+    { return m_u32OutHeight; }
 
-        int32_t GetPositionOffsetH() const override
-        { return m_posOffsetH; }
+    std::string GetOutputFormat() const override
+    { return m_strOutputFormat; }
 
-        int32_t GetPositionOffsetV() const override
-        { return m_posOffsetV; }
-
-        uint32_t GetCropMarginL() const override
-        { return m_cropL; }
-
-        uint32_t GetCropMarginT() const override
-        { return m_cropT; }
-
-        uint32_t GetCropMarginR() const override
-        { return m_cropR; }
-
-        uint32_t GetCropMarginB() const override
-        { return m_cropB; }
-
-        double GetRotationAngle() const override
-        { return m_rotateAngle; }
-
-        double GetScaleH() const override
-        { return m_scaleRatioH; }
-
-        double GetScaleV() const override
-        { return m_scaleRatioV; }
-
-        ImGui::KeyPointEditor* GetKeyPoint() override
-        { return &m_keyPoints; }
-
-        bool SetScaleType(ScaleType type) override
+    bool SetScaleType(ScaleType type) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (type < SCALE_TYPE__FIT || type > SCALE_TYPE__STRETCH)
         {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (type < SCALE_TYPE__FIT || type > SCALE_TYPE__STRETCH)
+            m_strErrMsg = "INVALID argument 'type'!";
+            return false;
+        }
+        if (m_eScaleType == type)
+            return true;
+        m_eScaleType = type;
+        m_bNeedUpdateScaleParam = true;
+        return true;
+    }
+
+    ScaleType GetScaleType() const override
+    { return m_eScaleType; }
+
+    bool SetTimeRange(const MatUtils::Vec2<int64_t>& tTimeRange) override
+    {
+        const auto v2TimeRange = MatUtils::ToImVec2(tTimeRange);
+        m_hPosOffsetCurve->SetTimeRange(v2TimeRange, true);
+        m_tTimeRange = tTimeRange;
+        return true;
+    }
+
+    MatUtils::Vec2<int64_t> GetTimeRange() const override
+    {
+        return m_tTimeRange;
+    }
+
+    virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) override = 0;
+
+    VideoFrame::Holder FilterImage(VideoFrame::Holder hVfrm, int64_t pos) override
+    {
+        if (!hVfrm)
+        {
+            m_strErrMsg = "INVALID arguments! 'hVfrm' is null.";
+            return nullptr;
+        }
+        ImGui::ImMat vmat;
+        const auto bRet = hVfrm->GetMat(vmat);
+        if (!bRet || vmat.empty())
+        {
+            m_strErrMsg = "FAILED to get ImMat instance from 'hVfrm'!";
+            return nullptr;
+        }
+        vmat = this->FilterImage(vmat, pos);
+        if (vmat.empty())
+            return nullptr;
+        return VideoFrame::CreateMatInstance(vmat);
+    }
+
+    // Position
+    bool SetPosOffset(int32_t i32PosOffX, int32_t i32PosOffY) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (m_i32PosOffsetX == i32PosOffX && m_i32PosOffsetY == i32PosOffY)
+            return true;
+        if (m_u32OutWidth == 0 || m_u32OutHeight == 0)
+        {
+            m_strErrMsg = "Output size is NOT initialized, can not set position offset by pixel coordinates!";
+            return false;
+        }
+        const auto fPosOffRatioX = (float)i32PosOffX/(float)m_u32OutWidth;
+        const auto fPosOffRatioY = (float)i32PosOffY/(float)m_u32OutHeight;
+        return SetPosOffsetRatio(fPosOffRatioX, fPosOffRatioY);
+    }
+
+    bool SetPosOffsetX(int32_t i32PosOffX) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (m_i32PosOffsetX == i32PosOffX)
+            return true;
+        if (m_u32OutWidth == 0 || m_u32OutHeight == 0)
+        {
+            m_strErrMsg = "Output size is NOT initialized, can not set position offset by pixel coordinates!";
+            return false;
+        }
+        const auto fPosOffRatioX = (float)i32PosOffX/(float)m_u32OutWidth;
+        return SetPosOffsetRatioX(fPosOffRatioX);
+    }
+
+    int32_t GetPosOffsetX() const override
+    { return m_i32PosOffsetX; }
+
+    bool SetPosOffsetY(int32_t i32PosOffY) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (m_i32PosOffsetY == i32PosOffY)
+            return true;
+        if (m_u32OutWidth == 0 || m_u32OutHeight == 0)
+        {
+            m_strErrMsg = "Output size is NOT initialized, can not set position offset by pixel coordinates!";
+            return false;
+        }
+        const auto fPosOffRatioY = (float)i32PosOffY/(float)m_u32OutHeight;
+        return SetPosOffsetRatioX(fPosOffRatioY);
+    }
+
+    int32_t GetPosOffsetY() const override
+    { return m_i32PosOffsetY; }
+
+    bool SetPosOffsetRatio(float fPosOffRatioX, float fPosOffRatioY) override
+    { return SetPosOffsetRatio(m_tTimeRange.x, fPosOffRatioX, fPosOffRatioY); }
+
+    bool SetPosOffsetRatioX(float fPosOffRatioX) override
+    { return SetPosOffsetRatioX(m_tTimeRange.x, fPosOffRatioX); }
+
+    float GetPosOffsetRatioX() const override
+    { return m_fPosOffsetRatioX; }
+
+    bool SetPosOffsetRatioY(float fPosOffRatioY) override
+    { return SetPosOffsetRatioY(m_tTimeRange.x, fPosOffRatioY); }
+
+    float GetPosOffsetRatioY() const override
+    { return m_fPosOffsetRatioY; }
+
+    bool SetPosOffsetRatio(int64_t i64Tick, float fPosOffRatioX, float fPosOffRatioY) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (i64Tick < m_tTimeRange.x || i64Tick > m_tTimeRange.y)
+        {
+            std::ostringstream oss; oss << "INVALID argument 'i64Tick'! Argument value " << i64Tick << " is out of the time range [" << m_tTimeRange.x << ", " << m_tTimeRange.y << "]!";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (!m_bEnablePosOffsetKeyFrames)
+            i64Tick = m_tTimeRange.x;
+        const ImGui::ImNewCurve::KeyPoint::ValType tKpVal(fPosOffRatioX, fPosOffRatioY, 0.f, (float)i64Tick);
+        auto hNewKp = ImGui::ImNewCurve::KeyPoint::CreateInstance(tKpVal, m_hPosOffsetCurve->GetCurveType());
+        const auto iRet = m_hPosOffsetCurve->AddPoint(hNewKp, false);
+        if (iRet < 0)
+        {
+            std::ostringstream oss; oss << "FAILED to invoke 'ImNewCurve::AddPoint()' to set position offset ratio as (" << tKpVal.x << ", " << tKpVal.y
+                    << ") at time tick " << i64Tick << " !";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        return true;
+    }
+
+    bool SetPosOffsetRatioX(int64_t i64Tick, float fPosOffRatioX) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (i64Tick < m_tTimeRange.x || i64Tick > m_tTimeRange.y)
+        {
+            std::ostringstream oss; oss << "INVALID argument 'i64Tick'! Argument value " << i64Tick << " is out of the time range [" << m_tTimeRange.x << ", " << m_tTimeRange.y << "]!";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (!m_bEnablePosOffsetKeyFrames)
+            i64Tick = m_tTimeRange.x;
+        auto tKpVal = m_hPosOffsetCurve->CalcPointVal((float)i64Tick, false, true);
+        tKpVal.x = fPosOffRatioX;
+        auto hNewKp = ImGui::ImNewCurve::KeyPoint::CreateInstance(tKpVal, m_hPosOffsetCurve->GetCurveType());
+        const auto iRet = m_hPosOffsetCurve->AddPoint(hNewKp, false);
+        if (iRet < 0)
+        {
+            std::ostringstream oss; oss << "FAILED to invoke 'ImNewCurve::AddPoint()' to set position offset ratio as (" << tKpVal.x << ", " << tKpVal.y
+                    << ") at time tick " << i64Tick << " !";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        return true;
+    }
+
+    float GetPosOffsetRatioX(int64_t i64Tick) const override
+    { return m_fPosOffsetRatioX; }
+
+    bool SetPosOffsetRatioY(int64_t i64Tick, float fPosOffRatioY) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (i64Tick < m_tTimeRange.x || i64Tick > m_tTimeRange.y)
+        {
+            std::ostringstream oss; oss << "INVALID argument 'i64Tick'! Argument value " << i64Tick << " is out of the time range [" << m_tTimeRange.x << ", " << m_tTimeRange.y << "]!";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (!m_bEnablePosOffsetKeyFrames)
+            i64Tick = m_tTimeRange.x;
+        auto tKpVal = m_hPosOffsetCurve->CalcPointVal((float)i64Tick, false, true);
+        tKpVal.y = fPosOffRatioY;
+        auto hNewKp = ImGui::ImNewCurve::KeyPoint::CreateInstance(tKpVal, m_hPosOffsetCurve->GetCurveType());
+        const auto iRet = m_hPosOffsetCurve->AddPoint(hNewKp, false);
+        if (iRet < 0)
+        {
+            std::ostringstream oss; oss << "FAILED to invoke 'ImNewCurve::AddPoint()' to set position offset ratio as (" << tKpVal.x << ", " << tKpVal.y
+                    << ") at time tick " << i64Tick << " !";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        return true;
+    }
+
+    float GetPosOffsetRatioY(int64_t i64Tick) const override
+    { return m_fPosOffsetRatioY; }
+
+    void EnablePosOffsetKeyFrames(bool bEnable) override
+    {
+        if (m_bEnablePosOffsetKeyFrames != bEnable)
+        {
+            if (!bEnable)
             {
-                m_errMsg = "INVALID argument 'type'!";
+                const auto tHeadKpVal = m_hPosOffsetCurve->CalcPointVal(m_tTimeRange.x, false, true);
+                m_hPosOffsetCurve->ClearAll();
+                m_hPosOffsetCurve->AddPoint(ImGui::ImNewCurve::KeyPoint::CreateInstance(tHeadKpVal, m_hPosOffsetCurve->GetCurveType()), false);
+            }
+            m_bEnablePosOffsetKeyFrames = bEnable;
+        }
+    }
+
+    bool IsPosOffsetKeyFramesEnabled() const override
+    { return m_bEnablePosOffsetKeyFrames; }
+
+    // Crop
+    bool SetCrop(uint32_t u32CropL, uint32_t u32CropT, uint32_t u32CropR, uint32_t u32CropB) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (m_u32CropL == u32CropL && m_u32CropT == u32CropT && m_u32CropR == u32CropR && m_u32CropB == u32CropB)
+            return true;
+        m_u32CropL = u32CropL;
+        m_u32CropT = u32CropT;
+        m_u32CropR = u32CropR;
+        m_u32CropB = u32CropB;
+        m_bNeedUpdateCropParam = true;
+        return true;
+    }
+
+    bool SetCropL(uint32_t u32CropL) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (m_u32CropL == u32CropL)
+            return true;
+        m_u32CropL = u32CropL;
+        m_bNeedUpdateCropParam = true;
+        return true;
+    }
+
+    uint32_t GetCropL() const override
+    { return m_u32CropL; }
+
+    bool SetCropT(uint32_t u32CropT) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (m_u32CropT == u32CropT)
+            return true;
+        m_u32CropT = u32CropT;
+        m_bNeedUpdateCropParam = true;
+        return true;
+    }
+
+    uint32_t GetCropT() const override
+    { return m_u32CropT; }
+
+    bool SetCropR(uint32_t u32CropR) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (m_u32CropR == u32CropR)
+            return true;
+        m_u32CropR = u32CropR;
+        m_bNeedUpdateCropParam = true;
+        return true;
+    }
+
+    uint32_t GetCropR() const override
+    { return m_u32CropR; }
+
+    bool SetCropB(uint32_t u32CropB) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (m_u32CropB == u32CropB)
+            return true;
+        m_u32CropB = u32CropB;
+        m_bNeedUpdateCropParam = true;
+        return true;
+    }
+
+    uint32_t GetCropB() const override
+    { return m_u32CropB; }
+
+    bool SetCropRatio(float fCropRatioL, float fCropRatioT, float fCropRatioR, float fCropRatioB) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (m_fCropRatioL == fCropRatioL && m_fCropRatioT == fCropRatioT && m_fCropRatioR == fCropRatioR && m_fCropRatioB == fCropRatioB)
+            return true;
+        m_fCropRatioL = fCropRatioL;
+        m_fCropRatioT = fCropRatioT;
+        m_fCropRatioR = fCropRatioR;
+        m_fCropRatioB = fCropRatioB;
+        m_bNeedUpdateCropRatioParam = true;
+        return true;
+    }
+
+    bool SetCropRatioL(float fCropRatioL) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (m_fCropRatioL == fCropRatioL)
+            return true;
+        m_fCropRatioL = fCropRatioL;
+        m_bNeedUpdateCropRatioParam = true;
+        return true;
+    }
+
+    float GetCropRatioL() const override
+    { return m_fCropRatioL; }
+
+    bool SetCropRatioT(float fCropRatioT) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (m_fCropRatioT == fCropRatioT)
+            return true;
+        m_fCropRatioT = fCropRatioT;
+        m_bNeedUpdateCropRatioParam = true;
+        return true;
+    }
+
+    float GetCropRatioT() const override
+    { return m_fCropRatioT; }
+
+    bool SetCropRatioR(float fCropRatioR) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (m_fCropRatioR == fCropRatioR)
+            return true;
+        m_fCropRatioR = fCropRatioR;
+        m_bNeedUpdateCropRatioParam = true;
+        return true;
+    }
+
+    float GetCropRatioR() const override
+    { return m_fCropRatioR; }
+
+    bool SetCropRatioB(float fCropRatioB) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (m_fCropRatioB == fCropRatioB)
+            return true;
+        m_fCropRatioB = fCropRatioB;
+        m_bNeedUpdateCropRatioParam = true;
+        return true;
+    }
+
+    float GetCropRatioB() const override
+    { return m_fCropRatioB; }
+
+    // Scale
+    bool SetScaleX(float fScaleX) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (m_fScaleX == fScaleX)
+            return true;
+        m_fScaleX = fScaleX;
+        m_bNeedUpdateScaleParam = true;
+        return true;
+    }
+
+    float GetScaleX() const override
+    { return m_fScaleX; }
+
+    bool SetScaleY(float fScaleY) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (m_fScaleY == fScaleY)
+            return true;
+        m_fScaleY = fScaleY;
+        m_bNeedUpdateScaleParam = true;
+        return true;
+    }
+
+    float GetScaleY() const override
+    { return m_fScaleY; }
+
+    void SetKeepAspectRatio(bool bEnable) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        if (m_bKeepAspectRatio != bEnable)
+        {
+            if (m_fScaleX != m_fScaleY)
+                m_bNeedUpdateScaleParam = true;
+            m_bKeepAspectRatio = bEnable;
+        }
+    }
+
+    bool IsKeepAspectRatio() const override
+    { return m_bKeepAspectRatio; }
+
+    // Rotation
+    bool SetRotation(float fAngle) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        int32_t n = (int32_t)trunc(fAngle/360);
+        fAngle -= n*360;
+        if (m_fRotateAngle == fAngle)
+            return true;
+        m_fRotateAngle = fAngle;
+        m_bNeedUpdateRotateParam = true;
+        return true;
+    }
+
+    float GetRotation() const override
+    { return m_fRotateAngle; }
+
+    // Opacity
+    bool SetOpacity(float opacity) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        m_fOpacity = opacity;
+        return true;
+    }
+
+    float GetOpacity() const override
+    { return m_fOpacity; }
+
+    imgui_json::value SaveAsJson() const override
+    {
+        imgui_json::value j;
+        j["output_format"] = imgui_json::string(m_strOutputFormat);
+        j["scale_type"] = imgui_json::number((int)m_eScaleType);
+        j["pos_offset_curve"] = m_hPosOffsetCurve->SaveAsJson();
+        j["pos_offset_keyframes_enabled"] = m_bEnablePosOffsetKeyFrames;
+        return std::move(j);
+    }
+
+    bool LoadFromJson(const imgui_json::value& j) override
+    {
+        std::string strAttrName;
+        strAttrName = "output_format";
+        if (j.contains(strAttrName) && j[strAttrName].is_string())
+        {
+            if (!SetOutputFormat(j[strAttrName].get<imgui_json::string>()))
                 return false;
-            }
-            if (m_scaleType == type)
-                return true;
-            m_scaleType = type;
-            m_needUpdateScaleParam = true;
-            return true;
         }
-
-        bool SetPositionOffset(int32_t offsetH, int32_t offsetV) override
+        strAttrName = "scale_type";
+        if (j.contains(strAttrName) && j[strAttrName].is_number())
         {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_posOffsetH == offsetH && m_posOffsetV == offsetV)
-                return true;
-            m_posOffsetH = offsetH;
-            m_posOffsetV = offsetV;
-            m_needUpdatePositionParam = true;
-            return true;
+            if (!SetScaleType((ScaleType)j[strAttrName].get<imgui_json::number>()))
+                return false;
         }
-
-        bool SetPositionOffsetH(int32_t value) override
+        strAttrName = "pos_offset_curve";
+        if (j.contains(strAttrName) && j[strAttrName].is_object())
         {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_posOffsetH == value)
-                return true;
-            m_posOffsetH = value;
-            m_needUpdatePositionParam = true;
-            return true;
+            m_hPosOffsetCurve->LoadFromJson(j[strAttrName]);
         }
+        strAttrName = "pos_offset_keyframes_enabled";
+        if (j.contains(strAttrName) && j[strAttrName].is_boolean())
+            m_bEnablePosOffsetKeyFrames = j[strAttrName].get<imgui_json::boolean>();
+        return true;
+    }
 
-        bool SetPositionOffsetV(int32_t value) override
+    std::string GetError() const override
+    { return m_strErrMsg; }
+
+    bool SetKeyPoint(ImGui::KeyPointEditor &keypoint) override
+    {
+        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        m_keyPoints = keypoint;
+        return true;
+    }
+
+    ImGui::KeyPointEditor* GetKeyPoint() override
+    { return &m_keyPoints; }
+
+protected:
+    bool UpdateParamsByKeyFrames(int64_t i64Tick)
+    {
+        ImGui::ImNewCurve::KeyPoint::ValType tKpVal;
+        tKpVal = m_hPosOffsetCurve->CalcPointVal((float)(m_bEnablePosOffsetKeyFrames ? i64Tick : m_tTimeRange.x), false, true);
+        const auto i32PosOffX = (int32_t)round((float)m_u32InWidth*tKpVal.x);
+        const auto i32PosOffY = (int32_t)round((float)m_u32InHeight*tKpVal.y);
+        if (i32PosOffX != m_i32PosOffsetX || i32PosOffY != m_i32PosOffsetY)
         {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_posOffsetV == value)
-                return true;
-            m_posOffsetV = value;
-            m_needUpdatePositionParam = true;
-            return true;
+            m_i32PosOffsetX = i32PosOffX;
+            m_i32PosOffsetY = i32PosOffY;
+            m_fPosOffsetRatioX = tKpVal.x;
+            m_fPosOffsetRatioY = tKpVal.y;
+            m_bNeedUpdatePosOffsetParam = true;
         }
 
-        bool SetCropMargin(uint32_t left, uint32_t top, uint32_t right, uint32_t bottom) override
-        {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_cropL == left && m_cropT == top && m_cropR == right && m_cropB == bottom)
-                return true;
-            m_cropL = left;
-            m_cropT = top;
-            m_cropR = right;
-            m_cropB = bottom;
-            m_needUpdateCropParam = true;
-            return true;
-        }
+        return true;
+    }
 
-        bool SetCropMarginL(uint32_t value) override
-        {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_cropL == value)
-                return true;
-            m_cropL = value;
-            m_needUpdateCropParam = true;
-            return true;
-        }
-
-        bool SetCropMarginT(uint32_t value) override
-        {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_cropT == value)
-                return true;
-            m_cropT = value;
-            m_needUpdateCropParam = true;
-            return true;
-        }
-
-        bool SetCropMarginR(uint32_t value) override
-        {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_cropR == value)
-                return true;
-            m_cropR = value;
-            m_needUpdateCropParam = true;
-            return true;
-        }
-
-        bool SetCropMarginB(uint32_t value) override
-        {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_cropB == value)
-                return true;
-            m_cropB = value;
-            m_needUpdateCropParam = true;
-            return true;
-        }
-
-        bool SetRotationAngle(double angle) override
-        {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            int32_t n = (int32_t)trunc(angle/360);
-            angle -= n*360;
-            if (m_rotateAngle == angle)
-                return true;
-            m_rotateAngle = angle;
-            m_needUpdateRotateParam = true;
-            return true;
-        }
-
-        bool SetScaleH(double scale) override
-        {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_scaleRatioH == scale)
-                return true;
-            m_scaleRatioH = scale;
-            m_needUpdateScaleParam = true;
-            return true;
-        }
-
-        bool SetScaleV(double scale) override
-        {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_scaleRatioV == scale)
-                return true;
-            m_scaleRatioV = scale;
-            m_needUpdateScaleParam = true;
-            return true;
-        }
-
-        bool SetKeyPoint(ImGui::KeyPointEditor &keypoint) override
-        {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            m_keyPoints = keypoint;
-            return true;
-        }
-
-        // new API
-        bool SetPositionOffset(float offsetH, float offsetV) override
-        {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_fposOffsetH == offsetH && m_fposOffsetV == offsetV)
-                return true;
-            m_fposOffsetH = offsetH;
-            m_fposOffsetV = offsetV;
-            m_needUpdatePositionParamScale = true;
-            return true;
-        }
-
-        bool SetPositionOffsetH(float value) override
-        {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_fposOffsetH == value)
-                return true;
-            m_fposOffsetH = value;
-            m_needUpdatePositionParamScale = true;
-            return true;
-        }
-
-        bool SetPositionOffsetV(float value) override
-        {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_fposOffsetV == value)
-                return true;
-            m_fposOffsetV = value;
-            m_needUpdatePositionParamScale = true;
-            return true;
-        }
-
-        bool SetCropMargin(float left, float top, float right, float bottom) override
-        {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_fcropL == left && m_fcropT == top && m_fcropR == right && m_fcropB == bottom)
-                return true;
-            m_fcropL = left;
-            m_fcropT = top;
-            m_fcropR = right;
-            m_fcropB = bottom;
-            m_needUpdateCropParamScale = true;
-            return true;
-        }
-
-        bool SetCropMarginL(float value) override
-        {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_fcropL == value)
-                return true;
-            m_fcropL = value;
-            m_needUpdateCropParamScale = true;
-            return true;
-        }
-
-        bool SetCropMarginT(float value) override
-        {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_fcropT == value)
-                return true;
-            m_fcropT = value;
-            m_needUpdateCropParamScale = true;
-            return true;
-        }
-
-        bool SetCropMarginR(float value) override
-        {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_fcropR == value)
-                return true;
-            m_fcropR = value;
-            m_needUpdateCropParamScale = true;
-            return true;
-        }
-
-        bool SetCropMarginB(float value) override
-        {
-            std::lock_guard<std::recursive_mutex> lk(m_processLock);
-            if (m_fcropB == value)
-                return true;
-            m_fcropB = value;
-            m_needUpdateCropParamScale = true;
-            return true;
-        }
-
-        float GetPositionOffsetHScale() const override
-        { return m_fposOffsetH; }
-
-        float GetPositionOffsetVScale() const override
-        { return m_fposOffsetV; }
-
-        float GetCropMarginLScale() const override
-        { return m_fcropL; }
-
-        float GetCropMarginTScale() const override
-        { return m_fcropT; }
-
-        float GetCropMarginRScale() const override
-        { return m_fcropR; }
-
-        float GetCropMarginBScale() const override
-        { return m_fcropB; }
-
-        bool SetOpacity(float opacity) override
-        { m_fOpacity = opacity; return true; }
-
-        float GetOpacity() const override
-        { return m_fOpacity; }
-
-        virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) override = 0;
-
-        VideoFrame::Holder FilterImage(VideoFrame::Holder hVfrm, int64_t pos) override
-        {
-            if (!hVfrm)
-            {
-                m_errMsg = "INVALID arguments! 'hVfrm' is null.";
-                return nullptr;
-            }
-            ImGui::ImMat vmat;
-            const auto bRet = hVfrm->GetMat(vmat);
-            if (!bRet || vmat.empty())
-            {
-                m_errMsg = "FAILED to get ImMat instance from 'hVfrm'!";
-                return nullptr;
-            }
-            vmat = this->FilterImage(vmat, pos);
-            if (vmat.empty())
-                return nullptr;
-            return VideoFrame::CreateMatInstance(vmat);
-        }
-
-        std::string GetError() const override
-        { return m_errMsg; }
-
-    protected:
-        uint32_t m_inWidth{0}, m_inHeight{0};
-        uint32_t m_outWidth{0}, m_outHeight{0};
-        std::string m_outputFormat;
-        ScaleType m_scaleType{SCALE_TYPE__FIT};
-        uint32_t m_cropL{0}, m_cropR{0}, m_cropT{0}, m_cropB{0};
-        uint32_t m_cropRectX{0}, m_cropRectY{0}, m_cropRectW{0}, m_cropRectH{0};
-        double m_scaleRatioH{1}, m_scaleRatioV{1};
-        double m_rotateAngle{0};
-        int32_t m_posOffsetH{0}, m_posOffsetV{0};
-        ImGui::KeyPointEditor m_keyPoints;
-        std::recursive_mutex m_processLock;
-        bool m_needUpdateScaleParam{true};
-        bool m_needUpdatePositionParam{false};
-        bool m_needUpdateCropParam{false};
-        bool m_needUpdateCropParamScale{false};
-        bool m_needUpdatePositionParamScale{false};
-        bool m_needUpdateRotateParam{false};
-        float m_fcropL{0}, m_fcropR{0}, m_fcropT{0}, m_fcropB{0};
-        float m_fposOffsetH{0}, m_fposOffsetV{0};
-        float m_fOpacity{1.f};
-        std::string m_errMsg;
-    };
+protected:
+    std::recursive_mutex m_mtxProcessLock;
+    uint32_t m_u32InWidth{0}, m_u32InHeight{0};
+    uint32_t m_u32OutWidth{0}, m_u32OutHeight{0};
+    std::string m_strOutputFormat;
+    ScaleType m_eScaleType{SCALE_TYPE__FIT};
+    MatUtils::Vec2<int64_t> m_tTimeRange;
+    int32_t m_i32PosOffsetX{0}, m_i32PosOffsetY{0};
+    float m_fPosOffsetRatioX{0}, m_fPosOffsetRatioY{0};
+    uint32_t m_u32CropL{0}, m_u32CropR{0}, m_u32CropT{0}, m_u32CropB{0};
+    float m_fCropRatioL{0}, m_fCropRatioR{0}, m_fCropRatioT{0}, m_fCropRatioB{0};
+    float m_fScaleX{1}, m_fScaleY{1};
+    bool m_bKeepAspectRatio{false};
+    float m_fRotateAngle{0};
+    float m_fOpacity{1.f};
+    bool m_bNeedUpdatePosOffsetParam{false};
+    bool m_bNeedUpdatePosOffsetRatioParam{false};
+    bool m_bNeedUpdateCropParam{false};
+    bool m_bNeedUpdateCropRatioParam{false};
+    bool m_bNeedUpdateRotateParam{false};
+    bool m_bNeedUpdateScaleParam{true};
+    ImGui::ImNewCurve::Curve::Holder m_hPosOffsetCurve;
+    bool m_bEnablePosOffsetKeyFrames{false};
+    std::string m_strErrMsg;
+    ImGui::KeyPointEditor m_keyPoints;
+};
 }

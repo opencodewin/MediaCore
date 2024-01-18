@@ -69,8 +69,8 @@ add_definitions(-DMEDIACORE_SHARED)
 endif(MEDIACORE_STATIC)
 
 set(MEDIACORE_VERSION_MAJOR 1)
-set(MEDIACORE_VERSION_MINOR 11)
-set(MEDIACORE_VERSION_PATCH 8)
+set(MEDIACORE_VERSION_MINOR 12)
+set(MEDIACORE_VERSION_PATCH 0)
 string(TIMESTAMP MEDIACORE_VERSION_BUILD "%y%m%d")
 set(MEDIACORE_VERSION_STRING ${MEDIACORE_VERSION_MAJOR}.${MEDIACORE_VERSION_MINOR}.${MEDIACORE_VERSION_PATCH})
 add_definitions(-DMEDIACORE_VERSION_MAJOR=${MEDIACORE_VERSION_MAJOR})
@@ -109,7 +109,7 @@ add_library(MediaCore ${LIBRARY}
     ${LIB_SRC_DIR}/VideoReader.cpp
     ${LIB_SRC_DIR}/VideoTrack.cpp
     ${LIB_SRC_DIR}/VideoTransformFilter_FFImpl.cpp
-    ${LIB_SRC_DIR}/VideoTransformFilter_VulkanImpl.cpp
+    ${LIB_SRC_DIR}/VideoTransformFilter_VkImpl.cpp
     ${LIB_SRC_DIR}/VideoTransformFilter.cpp
 )
 

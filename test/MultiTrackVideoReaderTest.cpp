@@ -283,7 +283,7 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         }
         ImGui::SameLine(0, 20);
         sldintMaxValue = selectedClip ? selectedClip->OutWidth() : 0;
-        int32_t sldintValue = fftransFilter ? fftransFilter->GetPositionOffsetH() : 0;
+        int32_t sldintValue = fftransFilter ? fftransFilter->GetPosOffsetX() : 0;
         if (ImGui::SliderInt("OffsetH", (int*)&sldintValue, -sldintMaxValue, sldintMaxValue))
         {
             fftransFilter->SetPositionOffsetH(sldintValue);
@@ -291,10 +291,10 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         }
         ImGui::SameLine(0, 10);
         sldintMaxValue = selectedClip ? selectedClip->OutHeight() : 0;
-        sldintValue = fftransFilter ? fftransFilter->GetPositionOffsetV() : 0;
+        sldintValue = fftransFilter ? fftransFilter->GetPosOffsetY() : 0;
         if (ImGui::SliderInt("OffsetV", (int*)&sldintValue, -sldintMaxValue, sldintMaxValue))
         {
-            fftransFilter->SetPositionOffsetV(sldintValue);
+            fftransFilter->SetPosOffsetY(sldintValue);
             g_mtVidReader->Refresh();
         }
         ImGui::SameLine(0, 20);

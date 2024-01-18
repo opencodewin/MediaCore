@@ -21,6 +21,7 @@
 #include <functional>
 #include <vector>
 #include <list>
+#include <imgui_json.h>
 #include "MediaCore.h"
 #include "SharedSettings.h"
 #include "MediaReader.h"
@@ -32,7 +33,6 @@ struct VideoClip;
 struct VideoFilter
 {
     using Holder = std::shared_ptr<VideoFilter>;
-    virtual ~VideoFilter() {}
 
     virtual const std::string GetFilterName() const = 0;
     virtual Holder Clone(SharedSettings::Holder hSettings) = 0;
@@ -40,6 +40,8 @@ struct VideoFilter
     virtual const MediaCore::VideoClip* GetVideoClip() const = 0;
     virtual void UpdateClipRange() = 0;
     virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) = 0;
+    virtual imgui_json::value SaveAsJson() const = 0;
+
     virtual VideoFrame::Holder FilterImage(VideoFrame::Holder hVfrm, int64_t pos)
     {
         if (!hVfrm)
@@ -105,11 +107,12 @@ struct VideoOverlap;
 struct VideoTransition
 {
     using Holder = std::shared_ptr<VideoTransition>;
-    virtual ~VideoTransition() {}
 
     virtual Holder Clone() = 0;
     virtual void ApplyTo(VideoOverlap* overlap) = 0;
     virtual ImGui::ImMat MixTwoImages(const ImGui::ImMat& vmat1, const ImGui::ImMat& vmat2, int64_t pos, int64_t dur) = 0;
+    virtual imgui_json::value SaveAsJson() const = 0;
+
     virtual VideoFrame::Holder MixTwoImages(VideoFrame::Holder hVfrm1, VideoFrame::Holder hVfrm2, int64_t pos, int64_t dur)
     {
         ImGui::ImMat vmat1;

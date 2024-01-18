@@ -18,8 +18,10 @@
 #pragma once
 #include <string>
 #include <memory>
-#include "imgui_extra_widget.h"
-#include "imgui_curve.h"
+#include <MatUtilsVecTypeDef.h>
+#include <ImNewCurve.h>
+#include <imgui_curve.h>
+#include <imgui_json.h>
 #include "SharedSettings.h"
 
 namespace MediaCore
@@ -39,61 +41,79 @@ namespace MediaCore
 
         virtual bool Initialize(SharedSettings::Holder hSettings) = 0;
         virtual Holder Clone(SharedSettings::Holder hSettings) = 0;
-        virtual bool SetOutputFormat(const std::string& outputFormat) = 0;
-        virtual bool SetScaleType(ScaleType type) = 0;
-        virtual bool SetPositionOffset(int32_t offsetH, int32_t offsetV) = 0;
-        virtual bool SetPositionOffsetH(int32_t value) = 0;
-        virtual bool SetPositionOffsetV(int32_t value) = 0;
-        virtual bool SetCropMargin(uint32_t left, uint32_t top, uint32_t right, uint32_t bottom) = 0;
-        virtual bool SetCropMarginL(uint32_t value) = 0;
-        virtual bool SetCropMarginT(uint32_t value) = 0;
-        virtual bool SetCropMarginR(uint32_t value) = 0;
-        virtual bool SetCropMarginB(uint32_t value) = 0;
-        virtual bool SetRotationAngle(double angle) = 0;
-        virtual bool SetScaleH(double scale) = 0;
-        virtual bool SetScaleV(double scale) = 0;
-        virtual bool SetKeyPoint(ImGui::KeyPointEditor &keypoint) = 0;
-        virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) = 0;
-        virtual VideoFrame::Holder FilterImage(VideoFrame::Holder hVfrm, int64_t pos) = 0;
 
         virtual const std::string GetFilterName() const = 0;
-        virtual std::string GetOutputFormat() const = 0;
         virtual uint32_t GetInWidth() const = 0;
         virtual uint32_t GetInHeight() const = 0;
         virtual uint32_t GetOutWidth() const = 0;
         virtual uint32_t GetOutHeight() const = 0;
+
+        virtual bool SetOutputFormat(const std::string& outputFormat) = 0;
+        virtual std::string GetOutputFormat() const = 0;
+        virtual bool SetScaleType(ScaleType type) = 0;
         virtual ScaleType GetScaleType() const = 0;
-        virtual int32_t GetPositionOffsetH() const = 0;
-        virtual int32_t GetPositionOffsetV() const = 0;
-        virtual uint32_t GetCropMarginL() const = 0;
-        virtual uint32_t GetCropMarginT() const = 0;
-        virtual uint32_t GetCropMarginR() const = 0;
-        virtual uint32_t GetCropMarginB() const = 0;
-        virtual double GetRotationAngle() const = 0;
-        virtual double GetScaleH() const = 0;
-        virtual double GetScaleV() const = 0;
-        virtual ImGui::KeyPointEditor* GetKeyPoint() = 0;
+        virtual bool SetTimeRange(const MatUtils::Vec2<int64_t>& tTimeRange) = 0;
+        virtual MatUtils::Vec2<int64_t> GetTimeRange() const = 0;
 
-        // new API for scaler value
-        virtual bool SetPositionOffset(float offsetH, float offsetV) = 0;
-        virtual bool SetPositionOffsetH(float value) = 0;
-        virtual bool SetPositionOffsetV(float value) = 0;
-        virtual bool SetCropMargin(float left, float top, float right, float bottom) = 0;
-        virtual bool SetCropMarginL(float value) = 0;
-        virtual bool SetCropMarginT(float value) = 0;
-        virtual bool SetCropMarginR(float value) = 0;
-        virtual bool SetCropMarginB(float value) = 0;
-        virtual float GetPositionOffsetHScale() const = 0;
-        virtual float GetPositionOffsetVScale() const = 0;
-        virtual float GetCropMarginLScale() const = 0;
-        virtual float GetCropMarginTScale() const = 0;
-        virtual float GetCropMarginRScale() const = 0;
-        virtual float GetCropMarginBScale() const = 0;
-        // 
+        virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) = 0;
+        virtual VideoFrame::Holder FilterImage(VideoFrame::Holder hVfrm, int64_t pos) = 0;
 
-        virtual bool SetOpacity(float opacity) = 0;
+        // Position
+        virtual bool SetPosOffset(int32_t i32PosOffX, int32_t i32PosOffY) = 0;
+        virtual bool SetPosOffsetX(int32_t i32PosOffX) = 0;
+        virtual int32_t GetPosOffsetX() const = 0;
+        virtual bool SetPosOffsetY(int32_t i32PosOffY) = 0;
+        virtual int32_t GetPosOffsetY() const = 0;
+        virtual bool SetPosOffsetRatio(float fPosOffRatioX, float fPosOffRatioY) = 0;
+        virtual bool SetPosOffsetRatioX(float fPosOffRatioX) = 0;
+        virtual float GetPosOffsetRatioX() const = 0;
+        virtual bool SetPosOffsetRatioY(float fPosOffRatioY) = 0;
+        virtual float GetPosOffsetRatioY() const = 0;
+        virtual bool SetPosOffsetRatio(int64_t i64Tick, float fPosOffRatioX, float fPosOffRatioY) = 0;
+        virtual bool SetPosOffsetRatioX(int64_t i64Tick, float fPosOffRatioX) = 0;
+        virtual float GetPosOffsetRatioX(int64_t i64Tick) const = 0;
+        virtual bool SetPosOffsetRatioY(int64_t i64Tick, float fPosOffRatioY) = 0;
+        virtual float GetPosOffsetRatioY(int64_t i64Tick) const = 0;
+        virtual void EnablePosOffsetKeyFrames(bool bEnable) = 0;
+        virtual bool IsPosOffsetKeyFramesEnabled() const = 0;
+        // Crop
+        virtual bool SetCrop(uint32_t u32CropL, uint32_t u32CropT, uint32_t u32CropR, uint32_t u32CropB) = 0;
+        virtual bool SetCropL(uint32_t u32CropL) = 0;
+        virtual uint32_t GetCropL() const = 0;
+        virtual bool SetCropT(uint32_t u32CropT) = 0;
+        virtual uint32_t GetCropT() const = 0;
+        virtual bool SetCropR(uint32_t u32CropR) = 0;
+        virtual uint32_t GetCropR() const = 0;
+        virtual bool SetCropB(uint32_t u32CropB) = 0;
+        virtual uint32_t GetCropB() const = 0;
+        virtual bool SetCropRatio(float fCropRatioL, float fCropRatioT, float fCropRatioR, float fCropRatioB) = 0;
+        virtual bool SetCropRatioL(float fCropRatioL) = 0;
+        virtual float GetCropRatioL() const = 0;
+        virtual bool SetCropRatioT(float fCropRatioT) = 0;
+        virtual float GetCropRatioT() const = 0;
+        virtual bool SetCropRatioR(float fCropRatioR) = 0;
+        virtual float GetCropRatioR() const = 0;
+        virtual bool SetCropRatioB(float fCropRatioB) = 0;
+        virtual float GetCropRatioB() const = 0;
+        // Scale
+        virtual bool SetScaleX(float fScaleX) = 0;
+        virtual float GetScaleX() const = 0;
+        virtual bool SetScaleY(float fScaleY) = 0;
+        virtual float GetScaleY() const = 0;
+        virtual void SetKeepAspectRatio(bool bEnable) = 0;
+        virtual bool IsKeepAspectRatio() const = 0;
+        // Rotation
+        virtual bool SetRotation(float fAngle) = 0;
+        virtual float GetRotation() const = 0;
+        // Opacity
+        virtual bool SetOpacity(float fOpacity) = 0;
         virtual float GetOpacity() const = 0;
 
+        virtual imgui_json::value SaveAsJson() const = 0;
+        virtual bool LoadFromJson(const imgui_json::value& j) = 0;
         virtual std::string GetError() const = 0;
+
+        virtual bool SetKeyPoint(ImGui::KeyPointEditor &keypoint) = 0;
+        virtual ImGui::KeyPointEditor* GetKeyPoint() = 0;
     };
 }
