@@ -286,6 +286,9 @@ public:
     bool IsPosOffsetKeyFramesEnabled() const override
     { return m_bEnablePosOffsetKeyFrames; }
 
+    ImGui::ImNewCurve::Curve::Holder GetPosOffsetCurve() const override
+    { return m_hPosOffsetCurve; }
+
     // Crop
     bool SetCrop(uint32_t u32CropL, uint32_t u32CropT, uint32_t u32CropR, uint32_t u32CropB) override
     {

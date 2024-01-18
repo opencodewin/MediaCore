@@ -76,6 +76,7 @@ namespace MediaCore
         virtual float GetPosOffsetRatioY(int64_t i64Tick) const = 0;
         virtual void EnablePosOffsetKeyFrames(bool bEnable) = 0;
         virtual bool IsPosOffsetKeyFramesEnabled() const = 0;
+        virtual ImGui::ImNewCurve::Curve::Holder GetPosOffsetCurve() const = 0;
         // Crop
         virtual bool SetCrop(uint32_t u32CropL, uint32_t u32CropT, uint32_t u32CropR, uint32_t u32CropB) = 0;
         virtual bool SetCropL(uint32_t u32CropL) = 0;
