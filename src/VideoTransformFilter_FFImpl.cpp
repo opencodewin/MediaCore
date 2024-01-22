@@ -149,7 +149,7 @@ public:
     {
         lock_guard<recursive_mutex> lk(m_mtxProcessLock);
         bool res = VideoTransformFilter_Base::SetRotation(angle);
-        if (m_bNeedUpdateRotateParam)
+        if (m_bNeedUpdateRotationParam)
             m_bNeedUpdateScaleParam = true;
         return res;
     }
@@ -422,9 +422,9 @@ private:
         if (m_bNeedUpdateScaleParam)
         {
             uint32_t fitScaleWidth{m_u32InWidth}, fitScaleHeight{m_u32InHeight};
-            switch (m_eScaleType)
+            switch (m_eAspectFitType)
             {
-                case SCALE_TYPE__FIT:
+                case ASPECT_FIT_TYPE__FIT:
                 if (m_u32InWidth*m_u32OutHeight > m_u32InHeight*m_u32OutWidth)
                 {
                     fitScaleWidth = m_u32OutWidth;
@@ -436,11 +436,11 @@ private:
                     fitScaleWidth = (uint32_t)round((float)m_u32InWidth*m_u32OutHeight/m_u32InHeight);
                 }
                 break;
-                case SCALE_TYPE__CROP:
+                case ASPECT_FIT_TYPE__CROP:
                 fitScaleWidth = m_u32InWidth;
                 fitScaleHeight = m_u32InHeight;
                 break;
-                case SCALE_TYPE__FILL:
+                case ASPECT_FIT_TYPE__FILL:
                 if (m_u32InWidth*m_u32OutHeight > m_u32InHeight*m_u32OutWidth)
                 {
                     fitScaleHeight = m_u32OutHeight;
@@ -452,7 +452,7 @@ private:
                     fitScaleHeight = (uint32_t)round((float)m_u32InHeight*m_u32OutWidth/m_u32InWidth);
                 }
                 break;
-                case SCALE_TYPE__STRETCH:
+                case ASPECT_FIT_TYPE__STRETCH:
                 fitScaleWidth = m_u32OutWidth;
                 fitScaleHeight = m_u32OutHeight;
                 break;
@@ -664,7 +664,7 @@ private:
                 m_rotInW = avfrmPtr->width;
                 m_rotInH = avfrmPtr->height;
             }
-            else if (m_bNeedUpdateRotateParam)
+            else if (m_bNeedUpdateRotationParam)
             {
                 double radians = m_fRotateAngle*M_PI/180;
                 char cmdArgs[32] = {0}, cmdRes[128] = {0};
@@ -702,12 +702,6 @@ private:
 
     bool PerformPositionStage(const ImGui::ImMat& inMat, SelfFreeAVFramePtr& avfrmPtr)
     {
-        if (m_bNeedUpdatePosOffsetRatioParam)
-        {
-            m_i32PosOffsetX = m_fPosOffsetRatioX * m_u32OutWidth;
-            m_i32PosOffsetY = m_fPosOffsetRatioY * m_u32OutHeight;
-            m_bNeedUpdatePosOffsetRatioParam = false;
-        }
         const int32_t posOffH = m_i32PosOffsetX+m_posOffCompH;
         const int32_t posOffV = m_i32PosOffsetY+m_posOffCompV;
         if (!avfrmPtr->data[0] && (inMat.w != m_u32OutWidth || inMat.h != m_u32OutHeight || posOffH != 0 || posOffV != 0))
@@ -771,40 +765,11 @@ private:
 
     bool _filterImage(const ImGui::ImMat& inMat, ImGui::ImMat& outMat, int64_t pos)
     {
-        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
-        m_u32InWidth = inMat.w;
-        m_u32InHeight = inMat.h;
-
-        // check and update key points values
-        for (int i = 0; i < m_keyPoints.GetCurveCount(); i++)
+        m_u32InWidth = inMat.w; m_u32InHeight = inMat.h;
+        if (!UpdateParamsByKeyFrames(pos))
         {
-            auto name = m_keyPoints.GetCurveName(i);
-            auto value = m_keyPoints.GetValueByDim(i, pos, ImGui::ImCurveEdit::DIM_X);
-            if (name == "CropMarginL")
-                SetCropRatioL(value);
-            else if (name == "CropMarginT")
-                SetCropRatioT(value);
-            else if (name == "CropMarginR")
-                SetCropRatioR(value);
-            else if (name == "CropMarginB")
-                SetCropRatioB(value);
-            else if (name == "Scale")
-            {
-                SetScaleX(value);
-                SetScaleY(value);
-            }
-            else if (name == "ScaleH")
-                SetScaleX(value);
-            else if (name == "ScaleV")
-                SetScaleY(value);
-            else if (name == "RotateAngle")
-                SetRotation(value);
-            else if (name == "PositionOffsetH")
-                SetPosOffsetRatioX(value);
-            else if (name == "PositionOffsetV")
-                SetPosOffsetRatioY(value);
-            else
-                Log(WARN) << "UNKNOWN curve name '" << name << "', value=" << value << "." << endl;
+            Log(Error) << "[VideoTransformFilter_FFImpl::_filterImage] 'UpdateParamsByKeyFrames()' at pos " << pos << " FAILED!" << endl;
+            return false;
         }
 
         // allocate intermediate AVFrame
@@ -820,11 +785,10 @@ private:
         if (!PerformPositionStage(inMat, avfrmPtr))
             return false;
         m_bNeedUpdatePosOffsetParam = false;
-        m_bNeedUpdatePosOffsetRatioParam = false;
         m_bNeedUpdateCropParam = false;
         m_bNeedUpdateCropRatioParam = false;
         m_bNeedUpdateScaleParam = false;
-        m_bNeedUpdateRotateParam = false;
+        m_bNeedUpdateRotationParam = false;
 
         if (avfrmPtr->data[0])
         {

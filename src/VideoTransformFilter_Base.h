@@ -19,6 +19,9 @@
 #include <MatUtilsImVecHelper.h>
 #include "VideoTransformFilter.h"
 
+using namespace std;
+namespace LibCurve = ImGui::ImNewCurve;
+
 namespace MediaCore
 {
 class VideoTransformFilter_Base : public VideoTransformFilter
@@ -26,34 +29,38 @@ class VideoTransformFilter_Base : public VideoTransformFilter
 public:
     VideoTransformFilter_Base()
     {
-        m_hPosOffsetCurve = ImGui::ImNewCurve::Curve::CreateInstance("PosOffsetCurve", ImGui::ImNewCurve::Linear, {0,0,0,0}, {1,1,1,0}, {0,0,0,0});
+        m_hPosOffsetCurve = LibCurve::Curve::CreateInstance("PosOffsetCurve", LibCurve::Linear, {-1,-1,0,0}, {1,1,0,0}, {0,0,0,0}, true);
+        m_aCropCurves.resize(2);
+        m_aCropCurves[0] = LibCurve::Curve::CreateInstance("CropCurveLT", LibCurve::Linear, {0,0,0,0}, {1,1,0,0}, {0,0,0,0}, true);
+        m_aCropCurves[1] = LibCurve::Curve::CreateInstance("CropCurveRB", LibCurve::Linear, {0,0,0,0}, {1,1,0,0}, {0,0,0,0}, true);
+        m_hScaleCurve = LibCurve::Curve::CreateInstance("ScaleCurve", LibCurve::Linear, {0,0,0,0}, {32,32,0,0}, {1,1,0,0}, true);
+        m_hRotationCurve = LibCurve::Curve::CreateInstance("RotationCurve", LibCurve::Linear, {-360,-360,0,0}, {360,360,0,0}, {0,0,0,0}, true);
+        m_hOpacityCurve = LibCurve::Curve::CreateInstance("OpacityCurve", LibCurve::Linear, {0,0,0,0}, {1,1,0,0}, {1,1,0,0}, true);
     }
 
     virtual ~VideoTransformFilter_Base() {}
 
     Holder Clone(SharedSettings::Holder hSettings) override
     {
-        VideoTransformFilter::Holder newInstance = VideoTransformFilter::CreateInstance();
-        if (!newInstance->Initialize(hSettings))
+        VideoTransformFilter::Holder hNewInst = VideoTransformFilter::CreateInstance();
+        if (!hNewInst->Initialize(hSettings))
             return nullptr;
-        newInstance->SetScaleType(GetScaleType());
-        newInstance->SetScaleX(GetScaleX());
-        newInstance->SetScaleY(GetScaleY());
-        newInstance->SetPosOffsetX(GetPosOffsetX());
-        newInstance->SetPosOffsetY(GetPosOffsetY());
-        newInstance->SetRotation(GetRotation());
-        newInstance->SetCropL(GetCropL());
-        newInstance->SetCropT(GetCropT());
-        newInstance->SetCropR(GetCropR());
-        newInstance->SetCropB(GetCropB());
-        newInstance->SetPosOffsetRatioX(GetPosOffsetRatioX());
-        newInstance->SetPosOffsetRatioY(GetPosOffsetRatioY());
-        newInstance->SetCropRatioL(GetCropRatioL());
-        newInstance->SetCropRatioT(GetCropRatioT());
-        newInstance->SetCropRatioR(GetCropRatioR());
-        newInstance->SetCropRatioB(GetCropRatioB());
-        newInstance->SetKeyPoint(*GetKeyPoint());
-        return newInstance;
+        VideoTransformFilter_Base* pBaseFilter = dynamic_cast<VideoTransformFilter_Base*>(hNewInst.get());
+        pBaseFilter->m_tTimeRange = m_tTimeRange;
+        pBaseFilter->m_eAspectFitType = m_eAspectFitType;
+        pBaseFilter->m_hPosOffsetCurve = m_hPosOffsetCurve->Clone();
+        pBaseFilter->m_bEnableKeyFramesOnPosOffset = m_bEnableKeyFramesOnPosOffset;
+        pBaseFilter->m_aCropCurves[0] = m_aCropCurves[0]->Clone();
+        pBaseFilter->m_aCropCurves[1] = m_aCropCurves[1]->Clone();
+        pBaseFilter->m_bEnableKeyFramesOnCrop = m_bEnableKeyFramesOnCrop;
+        pBaseFilter->m_bKeepAspectRatio = m_bKeepAspectRatio;
+        pBaseFilter->m_hScaleCurve = m_hScaleCurve->Clone();
+        pBaseFilter->m_bEnableKeyFramesOnScale = m_bEnableKeyFramesOnScale;
+        pBaseFilter->m_hRotationCurve = m_hRotationCurve->Clone();
+        pBaseFilter->m_bEnableKeyFramesOnRotation = m_bEnableKeyFramesOnRotation;
+        pBaseFilter->m_hOpacityCurve = m_hOpacityCurve->Clone();
+        pBaseFilter->m_bEnableKeyFramesOnOpacity = m_bEnableKeyFramesOnOpacity;
+        return hNewInst;
     }
 
     uint32_t GetInWidth() const override
@@ -68,26 +75,26 @@ public:
     uint32_t GetOutHeight() const override
     { return m_u32OutHeight; }
 
-    std::string GetOutputFormat() const override
+    string GetOutputFormat() const override
     { return m_strOutputFormat; }
 
-    bool SetScaleType(ScaleType type) override
+    bool SetAspectFitType(AspectFitType type) override
     {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
-        if (type < SCALE_TYPE__FIT || type > SCALE_TYPE__STRETCH)
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        if (type < ASPECT_FIT_TYPE__FIT || type > ASPECT_FIT_TYPE__STRETCH)
         {
             m_strErrMsg = "INVALID argument 'type'!";
             return false;
         }
-        if (m_eScaleType == type)
+        if (m_eAspectFitType == type)
             return true;
-        m_eScaleType = type;
+        m_eAspectFitType = type;
         m_bNeedUpdateScaleParam = true;
         return true;
     }
 
-    ScaleType GetScaleType() const override
-    { return m_eScaleType; }
+    AspectFitType GetAspectFitType() const override
+    { return m_eAspectFitType; }
 
     bool SetTimeRange(const MatUtils::Vec2<int64_t>& tTimeRange) override
     {
@@ -127,12 +134,24 @@ public:
     // Position
     bool SetPosOffset(int32_t i32PosOffX, int32_t i32PosOffY) override
     {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
         if (m_i32PosOffsetX == i32PosOffX && m_i32PosOffsetY == i32PosOffY)
             return true;
         if (m_u32OutWidth == 0 || m_u32OutHeight == 0)
         {
             m_strErrMsg = "Output size is NOT initialized, can not set position offset by pixel coordinates!";
+            return false;
+        }
+        if (i32PosOffX > (int32_t)m_u32OutWidth || i32PosOffX < -(int32_t)m_u32OutWidth)
+        {
+            ostringstream oss; oss << "INVALID argument value PosOffX(" << i32PosOffX << ")! Valid range is [" << -(int32_t)m_u32OutWidth << ", " << m_u32OutWidth << "].";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (i32PosOffY > (int32_t)m_u32OutHeight || i32PosOffY < -(int32_t)m_u32OutHeight)
+        {
+            ostringstream oss; oss << "INVALID argument value PosOffY(" << i32PosOffY << ")! Valid range is [" << -(int32_t)m_u32OutHeight << ", " << m_u32OutHeight << "].";
+            m_strErrMsg = oss.str();
             return false;
         }
         const auto fPosOffRatioX = (float)i32PosOffX/(float)m_u32OutWidth;
@@ -142,12 +161,18 @@ public:
 
     bool SetPosOffsetX(int32_t i32PosOffX) override
     {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
         if (m_i32PosOffsetX == i32PosOffX)
             return true;
         if (m_u32OutWidth == 0 || m_u32OutHeight == 0)
         {
             m_strErrMsg = "Output size is NOT initialized, can not set position offset by pixel coordinates!";
+            return false;
+        }
+        if (i32PosOffX > (int32_t)m_u32OutWidth || i32PosOffX < -(int32_t)m_u32OutWidth)
+        {
+            ostringstream oss; oss << "INVALID argument value PosOffX(" << i32PosOffX << ")! Valid range is [" << -(int32_t)m_u32OutWidth << ", " << m_u32OutWidth << "].";
+            m_strErrMsg = oss.str();
             return false;
         }
         const auto fPosOffRatioX = (float)i32PosOffX/(float)m_u32OutWidth;
@@ -159,12 +184,18 @@ public:
 
     bool SetPosOffsetY(int32_t i32PosOffY) override
     {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
         if (m_i32PosOffsetY == i32PosOffY)
             return true;
         if (m_u32OutWidth == 0 || m_u32OutHeight == 0)
         {
             m_strErrMsg = "Output size is NOT initialized, can not set position offset by pixel coordinates!";
+            return false;
+        }
+        if (i32PosOffY > (int32_t)m_u32OutHeight || i32PosOffY < -(int32_t)m_u32OutHeight)
+        {
+            ostringstream oss; oss << "INVALID argument value PosOffY(" << i32PosOffY << ")! Valid range is [" << -(int32_t)m_u32OutHeight << ", " << m_u32OutHeight << "].";
+            m_strErrMsg = oss.str();
             return false;
         }
         const auto fPosOffRatioY = (float)i32PosOffY/(float)m_u32OutHeight;
@@ -191,21 +222,34 @@ public:
 
     bool SetPosOffsetRatio(int64_t i64Tick, float fPosOffRatioX, float fPosOffRatioY) override
     {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
         if (i64Tick < m_tTimeRange.x || i64Tick > m_tTimeRange.y)
         {
-            std::ostringstream oss; oss << "INVALID argument 'i64Tick'! Argument value " << i64Tick << " is out of the time range [" << m_tTimeRange.x << ", " << m_tTimeRange.y << "]!";
+            ostringstream oss; oss << "INVALID argument 'i64Tick'! Argument value " << i64Tick << " is out of the time range [" << m_tTimeRange.x << ", " << m_tTimeRange.y << "]!";
             m_strErrMsg = oss.str();
             return false;
         }
-        if (!m_bEnablePosOffsetKeyFrames)
+        const auto tMinVal = m_hPosOffsetCurve->GetMinVal();
+        const auto tMaxVal = m_hPosOffsetCurve->GetMaxVal();
+        if (fPosOffRatioX < tMinVal.x || fPosOffRatioX > tMaxVal.x)
+        {
+            ostringstream oss; oss << "INVALID argument value PosOffRatioX(" << fPosOffRatioX << ")! Valid range is [" << tMinVal.x << ", " << tMaxVal.x << "].";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (fPosOffRatioY < tMinVal.y || fPosOffRatioY > tMaxVal.y)
+        {
+            ostringstream oss; oss << "INVALID argument value PosOffRatioY(" << fPosOffRatioY << ")! Valid range is [" << tMinVal.y << ", " << tMaxVal.y << "].";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (!m_bEnableKeyFramesOnPosOffset)
             i64Tick = m_tTimeRange.x;
-        const ImGui::ImNewCurve::KeyPoint::ValType tKpVal(fPosOffRatioX, fPosOffRatioY, 0.f, (float)i64Tick);
-        auto hNewKp = ImGui::ImNewCurve::KeyPoint::CreateInstance(tKpVal, m_hPosOffsetCurve->GetCurveType());
-        const auto iRet = m_hPosOffsetCurve->AddPoint(hNewKp, false);
+        const LibCurve::KeyPoint::ValType tKpVal(fPosOffRatioX, fPosOffRatioY, 0.f, (float)i64Tick);
+        const auto iRet = m_hPosOffsetCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
         if (iRet < 0)
         {
-            std::ostringstream oss; oss << "FAILED to invoke 'ImNewCurve::AddPoint()' to set position offset ratio as (" << tKpVal.x << ", " << tKpVal.y
+            ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set position offset ratio as (" << tKpVal.x << ", " << tKpVal.y
                     << ") at time tick " << i64Tick << " !";
             m_strErrMsg = oss.str();
             return false;
@@ -215,22 +259,29 @@ public:
 
     bool SetPosOffsetRatioX(int64_t i64Tick, float fPosOffRatioX) override
     {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
         if (i64Tick < m_tTimeRange.x || i64Tick > m_tTimeRange.y)
         {
-            std::ostringstream oss; oss << "INVALID argument 'i64Tick'! Argument value " << i64Tick << " is out of the time range [" << m_tTimeRange.x << ", " << m_tTimeRange.y << "]!";
+            ostringstream oss; oss << "INVALID argument 'i64Tick'! Argument value " << i64Tick << " is out of the time range [" << m_tTimeRange.x << ", " << m_tTimeRange.y << "]!";
             m_strErrMsg = oss.str();
             return false;
         }
-        if (!m_bEnablePosOffsetKeyFrames)
+        const auto tMinVal = m_hPosOffsetCurve->GetMinVal();
+        const auto tMaxVal = m_hPosOffsetCurve->GetMaxVal();
+        if (fPosOffRatioX < tMinVal.x || fPosOffRatioX > tMaxVal.x)
+        {
+            ostringstream oss; oss << "INVALID argument value PosOffRatioX(" << fPosOffRatioX << ")! Valid range is [" << tMinVal.x << ", " << tMaxVal.x << "].";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (!m_bEnableKeyFramesOnPosOffset)
             i64Tick = m_tTimeRange.x;
         auto tKpVal = m_hPosOffsetCurve->CalcPointVal((float)i64Tick, false, true);
         tKpVal.x = fPosOffRatioX;
-        auto hNewKp = ImGui::ImNewCurve::KeyPoint::CreateInstance(tKpVal, m_hPosOffsetCurve->GetCurveType());
-        const auto iRet = m_hPosOffsetCurve->AddPoint(hNewKp, false);
+        const auto iRet = m_hPosOffsetCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
         if (iRet < 0)
         {
-            std::ostringstream oss; oss << "FAILED to invoke 'ImNewCurve::AddPoint()' to set position offset ratio as (" << tKpVal.x << ", " << tKpVal.y
+            ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set position offset ratio as (" << tKpVal.x << ", " << tKpVal.y
                     << ") at time tick " << i64Tick << " !";
             m_strErrMsg = oss.str();
             return false;
@@ -239,26 +290,36 @@ public:
     }
 
     float GetPosOffsetRatioX(int64_t i64Tick) const override
-    { return m_fPosOffsetRatioX; }
+    {
+        const auto tKpVal = m_hPosOffsetCurve->CalcPointVal((float)i64Tick, false, true);
+        return tKpVal.x;
+    }
 
     bool SetPosOffsetRatioY(int64_t i64Tick, float fPosOffRatioY) override
     {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
         if (i64Tick < m_tTimeRange.x || i64Tick > m_tTimeRange.y)
         {
-            std::ostringstream oss; oss << "INVALID argument 'i64Tick'! Argument value " << i64Tick << " is out of the time range [" << m_tTimeRange.x << ", " << m_tTimeRange.y << "]!";
+            ostringstream oss; oss << "INVALID argument 'i64Tick'! Argument value " << i64Tick << " is out of the time range [" << m_tTimeRange.x << ", " << m_tTimeRange.y << "]!";
             m_strErrMsg = oss.str();
             return false;
         }
-        if (!m_bEnablePosOffsetKeyFrames)
+        const auto tMinVal = m_hPosOffsetCurve->GetMinVal();
+        const auto tMaxVal = m_hPosOffsetCurve->GetMaxVal();
+        if (fPosOffRatioY < tMinVal.y || fPosOffRatioY > tMaxVal.y)
+        {
+            ostringstream oss; oss << "INVALID argument value PosOffRatioY(" << fPosOffRatioY << ")! Valid range is [" << tMinVal.y << ", " << tMaxVal.y << "].";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (!m_bEnableKeyFramesOnPosOffset)
             i64Tick = m_tTimeRange.x;
         auto tKpVal = m_hPosOffsetCurve->CalcPointVal((float)i64Tick, false, true);
         tKpVal.y = fPosOffRatioY;
-        auto hNewKp = ImGui::ImNewCurve::KeyPoint::CreateInstance(tKpVal, m_hPosOffsetCurve->GetCurveType());
-        const auto iRet = m_hPosOffsetCurve->AddPoint(hNewKp, false);
+        const auto iRet = m_hPosOffsetCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
         if (iRet < 0)
         {
-            std::ostringstream oss; oss << "FAILED to invoke 'ImNewCurve::AddPoint()' to set position offset ratio as (" << tKpVal.x << ", " << tKpVal.y
+            ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set position offset ratio as (" << tKpVal.x << ", " << tKpVal.y
                     << ") at time tick " << i64Tick << " !";
             m_strErrMsg = oss.str();
             return false;
@@ -267,49 +328,70 @@ public:
     }
 
     float GetPosOffsetRatioY(int64_t i64Tick) const override
-    { return m_fPosOffsetRatioY; }
-
-    void EnablePosOffsetKeyFrames(bool bEnable) override
     {
-        if (m_bEnablePosOffsetKeyFrames != bEnable)
+        const auto tKpVal = m_hPosOffsetCurve->CalcPointVal((float)i64Tick, false, true);
+        return tKpVal.y;
+    }
+
+    void EnableKeyFramesOnPosOffset(bool bEnable) override
+    {
+        if (m_bEnableKeyFramesOnPosOffset != bEnable)
         {
             if (!bEnable)
             {
                 const auto tHeadKpVal = m_hPosOffsetCurve->CalcPointVal(m_tTimeRange.x, false, true);
                 m_hPosOffsetCurve->ClearAll();
-                m_hPosOffsetCurve->AddPoint(ImGui::ImNewCurve::KeyPoint::CreateInstance(tHeadKpVal, m_hPosOffsetCurve->GetCurveType()), false);
+                m_hPosOffsetCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal), false);
             }
-            m_bEnablePosOffsetKeyFrames = bEnable;
+            m_bEnableKeyFramesOnPosOffset = bEnable;
         }
     }
 
-    bool IsPosOffsetKeyFramesEnabled() const override
-    { return m_bEnablePosOffsetKeyFrames; }
+    bool IsKeyFramesEnabledOnPosOffset() const override
+    { return m_bEnableKeyFramesOnPosOffset; }
 
-    ImGui::ImNewCurve::Curve::Holder GetPosOffsetCurve() const override
+    LibCurve::Curve::Holder GetKeyFramesCurveOnPosOffset() const override
     { return m_hPosOffsetCurve; }
 
     // Crop
     bool SetCrop(uint32_t u32CropL, uint32_t u32CropT, uint32_t u32CropR, uint32_t u32CropB) override
     {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
         if (m_u32CropL == u32CropL && m_u32CropT == u32CropT && m_u32CropR == u32CropR && m_u32CropB == u32CropB)
             return true;
+        if (m_u32InWidth > 0 && u32CropL+u32CropR > m_u32InWidth)
+        {
+            ostringstream oss; oss << "INVALID argument! CropL(" << u32CropL << ") + CropR(" << u32CropR << ") > InWidth(" << m_u32InWidth << ").";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (m_u32InHeight > 0 && u32CropT+u32CropB > m_u32InHeight)
+        {
+            ostringstream oss; oss << "INVALID argument! CropT(" << u32CropT << ") + CropB(" << u32CropB << ") > InHeight(" << m_u32InHeight << ").";
+            m_strErrMsg = oss.str();
+            return false;
+        }
         m_u32CropL = u32CropL;
         m_u32CropT = u32CropT;
         m_u32CropR = u32CropR;
         m_u32CropB = u32CropB;
-        m_bNeedUpdateCropParam = true;
+        m_bNeedUpdateCropRatioParam = true;
         return true;
     }
 
     bool SetCropL(uint32_t u32CropL) override
     {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
         if (m_u32CropL == u32CropL)
             return true;
+        if (m_u32InWidth > 0 && u32CropL+m_u32CropR > m_u32InWidth)
+        {
+            ostringstream oss; oss << "INVALID argument! CropL(" << u32CropL << ") + CropR(" << m_u32CropR << ") > InWidth(" << m_u32InWidth << ").";
+            m_strErrMsg = oss.str();
+            return false;
+        }
         m_u32CropL = u32CropL;
-        m_bNeedUpdateCropParam = true;
+        m_bNeedUpdateCropRatioParam = true;
         return true;
     }
 
@@ -318,11 +400,17 @@ public:
 
     bool SetCropT(uint32_t u32CropT) override
     {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
         if (m_u32CropT == u32CropT)
             return true;
+        if (m_u32InHeight > 0 && u32CropT+m_u32CropB > m_u32InHeight)
+        {
+            ostringstream oss; oss << "INVALID argument! CropT(" << u32CropT << ") + CropB(" << m_u32CropB << ") > InHeight(" << m_u32InHeight << ").";
+            m_strErrMsg = oss.str();
+            return false;
+        }
         m_u32CropT = u32CropT;
-        m_bNeedUpdateCropParam = true;
+        m_bNeedUpdateCropRatioParam = true;
         return true;
     }
 
@@ -331,11 +419,17 @@ public:
 
     bool SetCropR(uint32_t u32CropR) override
     {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
         if (m_u32CropR == u32CropR)
             return true;
+        if (m_u32InWidth > 0 && m_u32CropL+u32CropR > m_u32InWidth)
+        {
+            ostringstream oss; oss << "INVALID argument! CropL(" << m_u32CropL << ") + CropR(" << u32CropR << ") > InWidth(" << m_u32InWidth << ").";
+            m_strErrMsg = oss.str();
+            return false;
+        }
         m_u32CropR = u32CropR;
-        m_bNeedUpdateCropParam = true;
+        m_bNeedUpdateCropRatioParam = true;
         return true;
     }
 
@@ -344,11 +438,17 @@ public:
 
     bool SetCropB(uint32_t u32CropB) override
     {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
         if (m_u32CropB == u32CropB)
             return true;
+        if (m_u32InHeight > 0 && m_u32CropT+u32CropB > m_u32InHeight)
+        {
+            ostringstream oss; oss << "INVALID argument! CropT(" << m_u32CropT << ") + CropB(" << u32CropB << ") > InHeight(" << m_u32InHeight << ").";
+            m_strErrMsg = oss.str();
+            return false;
+        }
         m_u32CropB = u32CropB;
-        m_bNeedUpdateCropParam = true;
+        m_bNeedUpdateCropRatioParam = true;
         return true;
     }
 
@@ -356,100 +456,385 @@ public:
     { return m_u32CropB; }
 
     bool SetCropRatio(float fCropRatioL, float fCropRatioT, float fCropRatioR, float fCropRatioB) override
-    {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
-        if (m_fCropRatioL == fCropRatioL && m_fCropRatioT == fCropRatioT && m_fCropRatioR == fCropRatioR && m_fCropRatioB == fCropRatioB)
-            return true;
-        m_fCropRatioL = fCropRatioL;
-        m_fCropRatioT = fCropRatioT;
-        m_fCropRatioR = fCropRatioR;
-        m_fCropRatioB = fCropRatioB;
-        m_bNeedUpdateCropRatioParam = true;
-        return true;
-    }
+    { return SetCropRatio(m_tTimeRange.x, fCropRatioL, fCropRatioT, fCropRatioR, fCropRatioB); }
 
     bool SetCropRatioL(float fCropRatioL) override
-    {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
-        if (m_fCropRatioL == fCropRatioL)
-            return true;
-        m_fCropRatioL = fCropRatioL;
-        m_bNeedUpdateCropRatioParam = true;
-        return true;
-    }
+    { return SetCropRatioL(m_tTimeRange.x, fCropRatioL); }
 
     float GetCropRatioL() const override
     { return m_fCropRatioL; }
 
     bool SetCropRatioT(float fCropRatioT) override
-    {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
-        if (m_fCropRatioT == fCropRatioT)
-            return true;
-        m_fCropRatioT = fCropRatioT;
-        m_bNeedUpdateCropRatioParam = true;
-        return true;
-    }
+    { return SetCropRatioT(m_tTimeRange.x, fCropRatioT); }
 
     float GetCropRatioT() const override
     { return m_fCropRatioT; }
 
     bool SetCropRatioR(float fCropRatioR) override
-    {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
-        if (m_fCropRatioR == fCropRatioR)
-            return true;
-        m_fCropRatioR = fCropRatioR;
-        m_bNeedUpdateCropRatioParam = true;
-        return true;
-    }
+    { return SetCropRatioR(m_tTimeRange.x, fCropRatioR); }
 
     float GetCropRatioR() const override
     { return m_fCropRatioR; }
 
     bool SetCropRatioB(float fCropRatioB) override
-    {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
-        if (m_fCropRatioB == fCropRatioB)
-            return true;
-        m_fCropRatioB = fCropRatioB;
-        m_bNeedUpdateCropRatioParam = true;
-        return true;
-    }
+    { return SetCropRatioB(m_tTimeRange.x, fCropRatioB); }
 
     float GetCropRatioB() const override
     { return m_fCropRatioB; }
 
-    // Scale
-    bool SetScaleX(float fScaleX) override
+    bool SetCropRatio(int64_t i64Tick, float fCropRatioL, float fCropRatioT, float fCropRatioR, float fCropRatioB) override
     {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
-        if (m_fScaleX == fScaleX)
-            return true;
-        m_fScaleX = fScaleX;
-        m_bNeedUpdateScaleParam = true;
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        if (i64Tick < m_tTimeRange.x || i64Tick > m_tTimeRange.y)
+        {
+            ostringstream oss; oss << "INVALID argument 'i64Tick'! Argument value " << i64Tick << " is out of the time range [" << m_tTimeRange.x << ", " << m_tTimeRange.y << "]!";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (fCropRatioL < 0 || fCropRatioT < 0 || fCropRatioR < 0 || fCropRatioB < 0)
+        {
+            ostringstream oss; oss << "INVALID argument! CropRatio parameter can NOT be NEGATIVE. CropRatioL(" << fCropRatioL << "), CropRatioT(" << fCropRatioT
+                    << "), CropRatioR(" << fCropRatioR << "), CropRatioB(" << fCropRatioB << ").";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (fCropRatioL+fCropRatioR > 1.f)
+        {
+            ostringstream oss; oss << "INVALID argument! CropRatioL(" << fCropRatioL << ") + CropRatioR(" << fCropRatioR << ") > 1.";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (fCropRatioT+fCropRatioB > 1.f)
+        {
+            ostringstream oss; oss << "INVALID argument! CropRatioT(" << fCropRatioT << ") + CropRatioB(" << fCropRatioB << ") > 1.";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (!m_bEnableKeyFramesOnCrop)
+            i64Tick = m_tTimeRange.x;
+        const LibCurve::KeyPoint::ValType tKpVal0(fCropRatioL, fCropRatioT, 0.f, (float)i64Tick);
+        auto iRet = m_aCropCurves[0]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal0), false);
+        if (iRet < 0)
+        {
+            ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set crop ratio (LT) as (" << tKpVal0.x << ", " << tKpVal0.y << ") at time tick " << i64Tick << " !";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        const LibCurve::KeyPoint::ValType tKpVal1(fCropRatioR, fCropRatioB, 0.f, (float)i64Tick);
+        iRet = m_aCropCurves[1]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal1), false);
+        if (iRet < 0)
+        {
+            ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set crop ratio (RB) as (" << tKpVal1.x << ", " << tKpVal1.y << ") at time tick " << i64Tick << " !";
+            m_strErrMsg = oss.str();
+            return false;
+        }
         return true;
     }
+
+    bool SetCropRatioL(int64_t i64Tick, float fCropRatioL) override
+    {
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        if (i64Tick < m_tTimeRange.x || i64Tick > m_tTimeRange.y)
+        {
+            ostringstream oss; oss << "INVALID argument 'i64Tick'! Argument value " << i64Tick << " is out of the time range [" << m_tTimeRange.x << ", " << m_tTimeRange.y << "]!";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (fCropRatioL < 0)
+        {
+            ostringstream oss; oss << "INVALID argument vaule CropRatioL(" << fCropRatioL << ")! CropRatio parameter can NOT be NEGATIVE.";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (fCropRatioL+m_fCropRatioR > 1.f)
+        {
+            ostringstream oss; oss << "INVALID argument! CropRatioL(" << fCropRatioL << ") + CropRatioR(" << m_fCropRatioR << ") > 1.";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (!m_bEnableKeyFramesOnCrop)
+            i64Tick = m_tTimeRange.x;
+        auto tKpVal = m_aCropCurves[0]->CalcPointVal((float)i64Tick, false, true);
+        tKpVal.x = fCropRatioL;
+        const auto iRet = m_aCropCurves[0]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        if (iRet < 0)
+        {
+            ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set crop ratio (LT) as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        return true;
+    }
+
+    float GetCropRatioL(int64_t i64Tick) const override
+    {
+        const auto tKpVal = m_aCropCurves[0]->CalcPointVal((float)i64Tick, false, true);
+        return tKpVal.x;
+    }
+
+    bool SetCropRatioT(int64_t i64Tick, float fCropRatioT) override
+    {
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        if (i64Tick < m_tTimeRange.x || i64Tick > m_tTimeRange.y)
+        {
+            ostringstream oss; oss << "INVALID argument 'i64Tick'! Argument value " << i64Tick << " is out of the time range [" << m_tTimeRange.x << ", " << m_tTimeRange.y << "]!";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (fCropRatioT < 0)
+        {
+            ostringstream oss; oss << "INVALID argument vaule CropRatioT(" << fCropRatioT << ")! CropRatio parameter can NOT be NEGATIVE.";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (fCropRatioT+m_fCropRatioB > 1.f)
+        {
+            ostringstream oss; oss << "INVALID argument! CropRatioT(" << fCropRatioT << ") + CropRatioB(" << m_fCropRatioB << ") > 1.";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (!m_bEnableKeyFramesOnCrop)
+            i64Tick = m_tTimeRange.x;
+        auto tKpVal = m_aCropCurves[0]->CalcPointVal((float)i64Tick, false, true);
+        tKpVal.y = fCropRatioT;
+        const auto iRet = m_aCropCurves[0]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        if (iRet < 0)
+        {
+            ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set crop ratio (LT) as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        return true;
+    }
+
+    float GetCropRatioT(int64_t i64Tick) const override
+    {
+        const auto tKpVal = m_aCropCurves[0]->CalcPointVal((float)i64Tick, false, true);
+        return tKpVal.y;
+    }
+
+    bool SetCropRatioR(int64_t i64Tick, float fCropRatioR) override
+    {
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        if (i64Tick < m_tTimeRange.x || i64Tick > m_tTimeRange.y)
+        {
+            ostringstream oss; oss << "INVALID argument 'i64Tick'! Argument value " << i64Tick << " is out of the time range [" << m_tTimeRange.x << ", " << m_tTimeRange.y << "]!";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (fCropRatioR < 0)
+        {
+            ostringstream oss; oss << "INVALID argument vaule CropRatioR(" << fCropRatioR << ")! CropRatio parameter can NOT be NEGATIVE.";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (m_fCropRatioL+fCropRatioR > 1.f)
+        {
+            ostringstream oss; oss << "INVALID argument! CropRatioL(" << m_fCropRatioL << ") + CropRatioR(" << fCropRatioR << ") > 1.";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (!m_bEnableKeyFramesOnCrop)
+            i64Tick = m_tTimeRange.x;
+        auto tKpVal = m_aCropCurves[1]->CalcPointVal((float)i64Tick, false, true);
+        tKpVal.x = fCropRatioR;
+        const auto iRet = m_aCropCurves[1]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        if (iRet < 0)
+        {
+            ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set crop ratio (RB) as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        return true;
+    }
+
+    float GetCropRatioR(int64_t i64Tick) const override
+    {
+        const auto tKpVal = m_aCropCurves[1]->CalcPointVal((float)i64Tick, false, true);
+        return tKpVal.x;
+    }
+
+    bool SetCropRatioB(int64_t i64Tick, float fCropRatioB) override
+    {
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        if (i64Tick < m_tTimeRange.x || i64Tick > m_tTimeRange.y)
+        {
+            ostringstream oss; oss << "INVALID argument 'i64Tick'! Argument value " << i64Tick << " is out of the time range [" << m_tTimeRange.x << ", " << m_tTimeRange.y << "]!";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (fCropRatioB < 0)
+        {
+            ostringstream oss; oss << "INVALID argument vaule CropRatioB(" << fCropRatioB << ")! CropRatio parameter can NOT be NEGATIVE.";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (m_fCropRatioT+fCropRatioB > 1.f)
+        {
+            ostringstream oss; oss << "INVALID argument! CropRatioT(" << m_fCropRatioT << ") + CropRatioB(" << fCropRatioB << ") > 1.";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (!m_bEnableKeyFramesOnCrop)
+            i64Tick = m_tTimeRange.x;
+        auto tKpVal = m_aCropCurves[1]->CalcPointVal((float)i64Tick, false, true);
+        tKpVal.y = fCropRatioB;
+        const auto iRet = m_aCropCurves[1]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        if (iRet < 0)
+        {
+            ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set crop ratio (RB) as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        return true;
+    }
+
+    float GetCropRatioB(int64_t i64Tick) const override
+    {
+        const auto tKpVal = m_aCropCurves[1]->CalcPointVal((float)i64Tick, false, true);
+        return tKpVal.y;
+    }
+
+    void EnableKeyFramesOnCrop(bool bEnable) override
+    {
+        if (m_bEnableKeyFramesOnCrop != bEnable)
+        {
+            if (!bEnable)
+            {
+                const auto tHeadKpVal0 = m_aCropCurves[0]->CalcPointVal(m_tTimeRange.x, false, true);
+                m_aCropCurves[0]->ClearAll();
+                m_aCropCurves[0]->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal0), false);
+                const auto tHeadKpVal1 = m_aCropCurves[1]->CalcPointVal(m_tTimeRange.x, false, true);
+                m_aCropCurves[1]->ClearAll();
+                m_aCropCurves[1]->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal1), false);
+            }
+            m_bEnableKeyFramesOnCrop = bEnable;
+        }
+    }
+
+    bool IsKeyFramesEnabledOnCrop() const override
+    { return m_bEnableKeyFramesOnCrop; }
+
+    vector<LibCurve::Curve::Holder> GetKeyFramesCurveOnCrop() const override
+    { return m_aCropCurves; }
+
+    // Scale
+    bool SetScale(float fScaleX, float fScaleY) override
+    { return SetScale(m_tTimeRange.x, fScaleX, fScaleY); }
+
+    bool SetScaleX(float fScaleX) override
+    { return SetScaleX(m_tTimeRange.x, fScaleX); }
 
     float GetScaleX() const override
     { return m_fScaleX; }
 
     bool SetScaleY(float fScaleY) override
-    {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
-        if (m_fScaleY == fScaleY)
-            return true;
-        m_fScaleY = fScaleY;
-        m_bNeedUpdateScaleParam = true;
-        return true;
-    }
+    { return SetScaleY(m_tTimeRange.x, fScaleY); }
 
     float GetScaleY() const override
     { return m_fScaleY; }
 
+    bool SetScale(int64_t i64Tick, float fScaleX, float fScaleY) override
+    {
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        if (m_fScaleX == fScaleX && m_fScaleY == fScaleY)
+            return true;
+        const auto tMinVal = m_hScaleCurve->GetMinVal();
+        const auto tMaxVal = m_hScaleCurve->GetMaxVal();
+        if (fScaleX < tMinVal.x || fScaleX > tMaxVal.x)
+        {
+            ostringstream oss; oss << "INVALID argument value ScaleX(" << fScaleX << ")! Valid range is [" << tMinVal.x << ", " << tMaxVal.x << "].";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (fScaleY < tMinVal.x || fScaleY > tMaxVal.x)
+        {
+            ostringstream oss; oss << "INVALID argument value ScaleY(" << fScaleY << ")! Valid range is [" << tMinVal.y << ", " << tMaxVal.y << "].";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (!m_bEnableKeyFramesOnScale)
+            i64Tick = m_tTimeRange.x;
+        const LibCurve::KeyPoint::ValType tKpVal(fScaleX, fScaleY, 0.f, (float)i64Tick);
+        auto iRet = m_hScaleCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        if (iRet < 0)
+        {
+            ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set scale as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        return true;
+    }
+
+    bool SetScaleX(int64_t i64Tick, float fScaleX) override
+    {
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        if (m_fScaleX == fScaleX)
+            return true;
+        const auto tMinVal = m_hScaleCurve->GetMinVal();
+        const auto tMaxVal = m_hScaleCurve->GetMaxVal();
+        if (fScaleX < tMinVal.x || fScaleX > tMaxVal.x)
+        {
+            ostringstream oss; oss << "INVALID argument value ScaleX(" << fScaleX << ")! Valid range is [" << tMinVal.x << ", " << tMaxVal.x << "].";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (!m_bEnableKeyFramesOnScale)
+            i64Tick = m_tTimeRange.x;
+        auto tKpVal = m_hScaleCurve->CalcPointVal((float)i64Tick, false, true);
+        tKpVal.x = fScaleX;
+        auto iRet = m_hScaleCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        if (iRet < 0)
+        {
+            ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set scale as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        return true;
+    }
+
+    float GetScaleX(int64_t i64Tick) const override
+    {
+        const auto tKpVal = m_hScaleCurve->CalcPointVal((float)i64Tick, false, true);
+        return tKpVal.x;
+    }
+
+    bool SetScaleY(int64_t i64Tick, float fScaleY) override
+    {
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        if (m_fScaleY == fScaleY)
+            return true;
+        const auto tMinVal = m_hScaleCurve->GetMinVal();
+        const auto tMaxVal = m_hScaleCurve->GetMaxVal();
+        if (fScaleY < tMinVal.y || fScaleY > tMaxVal.y)
+        {
+            ostringstream oss; oss << "INVALID argument value ScaleY(" << fScaleY << ")! Valid range is [" << tMinVal.y << ", " << tMaxVal.y << "].";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (!m_bEnableKeyFramesOnScale)
+            i64Tick = m_tTimeRange.x;
+        auto tKpVal = m_hScaleCurve->CalcPointVal((float)i64Tick, false, true);
+        tKpVal.y = fScaleY;
+        auto iRet = m_hScaleCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        if (iRet < 0)
+        {
+            ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set scale as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        return true;
+    }
+
+    float GetScaleY(int64_t i64Tick) const override
+    {
+        const auto tKpVal = m_hScaleCurve->CalcPointVal((float)i64Tick, false, true);
+        return tKpVal.y;
+    }
+
     void SetKeepAspectRatio(bool bEnable) override
     {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
         if (m_bKeepAspectRatio != bEnable)
         {
             if (m_fScaleX != m_fScaleY)
@@ -461,26 +846,91 @@ public:
     bool IsKeepAspectRatio() const override
     { return m_bKeepAspectRatio; }
 
+    void EnableKeyFramesOnScale(bool bEnable) override
+    {
+        if (m_bEnableKeyFramesOnScale != bEnable)
+        {
+            if (!bEnable)
+            {
+                const auto tHeadKpVal = m_hScaleCurve->CalcPointVal(m_tTimeRange.x, false, true);
+                m_hScaleCurve->ClearAll();
+                m_hScaleCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal), false);
+            }
+            m_bEnableKeyFramesOnScale = bEnable;
+        }
+    }
+
+    bool IsKeyFramesEnabledOnScale() const override
+    { return m_bEnableKeyFramesOnScale; }
+
+    LibCurve::Curve::Holder GetKeyFramesCurveOnScale() const override
+    { return m_hScaleCurve; }
+
     // Rotation
     bool SetRotation(float fAngle) override
-    {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
-        int32_t n = (int32_t)trunc(fAngle/360);
-        fAngle -= n*360;
-        if (m_fRotateAngle == fAngle)
-            return true;
-        m_fRotateAngle = fAngle;
-        m_bNeedUpdateRotateParam = true;
-        return true;
-    }
+    { return SetRotation(m_tTimeRange.x, fAngle); }
 
     float GetRotation() const override
     { return m_fRotateAngle; }
 
+    bool SetRotation(int64_t i64Tick, float fAngle) override
+    {
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        int32_t n = (int32_t)trunc(fAngle/360);
+        fAngle -= n*360;
+        if (m_fRotateAngle == fAngle)
+            return true;
+        const auto tMinVal = m_hRotationCurve->GetMinVal();
+        const auto tMaxVal = m_hRotationCurve->GetMaxVal();
+        if (fAngle < tMinVal.x || fAngle > tMaxVal.x)
+        {
+            ostringstream oss; oss << "INVALID argument value Rotation(" << fAngle << ")! Valid range is [" << tMinVal.y << ", " << tMaxVal.y << "].";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (!m_bEnableKeyFramesOnRotation)
+            i64Tick = m_tTimeRange.x;
+        const LibCurve::KeyPoint::ValType tKpVal(fAngle, 0.f, 0.f, (float)i64Tick);
+        auto iRet = m_hRotationCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        if (iRet < 0)
+        {
+            ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set rotation as (" << tKpVal.x << ") at time tick " << i64Tick << " !";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        return true;
+    }
+
+    float GetRotation(int64_t i64Tick) const override
+    {
+        const auto tKpVal = m_hRotationCurve->CalcPointVal((float)i64Tick, false, true);
+        return tKpVal.x;
+    }
+
+    void EnableKeyFramesOnRotation(bool bEnable) override
+    {
+        if (m_bEnableKeyFramesOnRotation != bEnable)
+        {
+            if (!bEnable)
+            {
+                const auto tHeadKpVal = m_hRotationCurve->CalcPointVal(m_tTimeRange.x, false, true);
+                m_hRotationCurve->ClearAll();
+                m_hRotationCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal), false);
+            }
+            m_bEnableKeyFramesOnRotation = bEnable;
+        }
+    }
+
+    bool IsKeyFramesEnabledOnRotation() const override
+    { return m_bEnableKeyFramesOnRotation; }
+
+    LibCurve::Curve::Holder GetKeyFramesCurveOnRotation() const override
+    { return m_hRotationCurve; }
+
     // Opacity
     bool SetOpacity(float opacity) override
     {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
         m_fOpacity = opacity;
         return true;
     }
@@ -488,62 +938,146 @@ public:
     float GetOpacity() const override
     { return m_fOpacity; }
 
+    bool SetOpacity(int64_t i64Tick, float fOpacity) override
+    {
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        if (m_fOpacity == fOpacity)
+            return true;
+        const auto tMinVal = m_hOpacityCurve->GetMinVal();
+        const auto tMaxVal = m_hOpacityCurve->GetMaxVal();
+        if (fOpacity < tMinVal.x || fOpacity > tMaxVal.x)
+        {
+            ostringstream oss; oss << "INVALID argument value Opacity(" << fOpacity << ")! Valid range is [" << tMinVal.y << ", " << tMaxVal.y << "].";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        if (!m_bEnableKeyFramesOnOpacity)
+            i64Tick = m_tTimeRange.x;
+        const LibCurve::KeyPoint::ValType tKpVal(fOpacity, 0.f, 0.f, (float)i64Tick);
+        auto iRet = m_hOpacityCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        if (iRet < 0)
+        {
+            ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set opacity as (" << tKpVal.x << ") at time tick " << i64Tick << " !";
+            m_strErrMsg = oss.str();
+            return false;
+        }
+        return true;
+    }
+
+    float GetOpacity(int64_t i64Tick) const override
+    {
+        const auto tKpVal = m_hOpacityCurve->CalcPointVal((float)i64Tick, false, true);
+        return tKpVal.x;
+    }
+
+    void EnableKeyFramesOnOpacity(bool bEnable) override
+    {
+        if (m_bEnableKeyFramesOnOpacity != bEnable)
+        {
+            if (!bEnable)
+            {
+                const auto tHeadKpVal = m_hOpacityCurve->CalcPointVal(m_tTimeRange.x, false, true);
+                m_hOpacityCurve->ClearAll();
+                m_hOpacityCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal), false);
+            }
+            m_bEnableKeyFramesOnOpacity = bEnable;
+        }
+    }
+
+    bool IsKeyFramesEnabledOnOpacity() const override
+    { return m_bEnableKeyFramesOnOpacity; }
+
+    LibCurve::Curve::Holder GetKeyFramesCurveOnOpacity() const override
+    { return m_hOpacityCurve; }
+
     imgui_json::value SaveAsJson() const override
     {
         imgui_json::value j;
         j["output_format"] = imgui_json::string(m_strOutputFormat);
-        j["scale_type"] = imgui_json::number((int)m_eScaleType);
+        j["aspect_fit_type"] = imgui_json::number((int)m_eAspectFitType);
         j["pos_offset_curve"] = m_hPosOffsetCurve->SaveAsJson();
-        j["pos_offset_keyframes_enabled"] = m_bEnablePosOffsetKeyFrames;
-        return std::move(j);
+        j["pos_offset_keyframes_enabled"] = m_bEnableKeyFramesOnPosOffset;
+        j["crop_lt_curve"] = m_aCropCurves[0]->SaveAsJson();
+        j["crop_rb_curve"] = m_aCropCurves[1]->SaveAsJson();
+        j["crop_keyframes_enabled"] = m_bEnableKeyFramesOnCrop;
+        j["scale_curve"] = m_hScaleCurve->SaveAsJson();
+        j["keep_aspect_ratio"] = m_bKeepAspectRatio;
+        j["scale_keyframes_enabled"] = m_bEnableKeyFramesOnScale;
+        j["rotation_curve"] = m_hRotationCurve->SaveAsJson();
+        j["rotation_keyframes_enabled"] = m_bEnableKeyFramesOnRotation;
+        j["opacity_curve"] = m_hOpacityCurve->SaveAsJson();
+        j["opacity_keyframes_enabled"] = m_bEnableKeyFramesOnOpacity;
+        return move(j);
     }
 
     bool LoadFromJson(const imgui_json::value& j) override
     {
-        std::string strAttrName;
+        string strAttrName;
         strAttrName = "output_format";
         if (j.contains(strAttrName) && j[strAttrName].is_string())
         {
             if (!SetOutputFormat(j[strAttrName].get<imgui_json::string>()))
                 return false;
         }
-        strAttrName = "scale_type";
+        strAttrName = "aspect_fit_type";
         if (j.contains(strAttrName) && j[strAttrName].is_number())
         {
-            if (!SetScaleType((ScaleType)j[strAttrName].get<imgui_json::number>()))
+            if (!SetAspectFitType((AspectFitType)j[strAttrName].get<imgui_json::number>()))
                 return false;
         }
         strAttrName = "pos_offset_curve";
         if (j.contains(strAttrName) && j[strAttrName].is_object())
-        {
             m_hPosOffsetCurve->LoadFromJson(j[strAttrName]);
-        }
         strAttrName = "pos_offset_keyframes_enabled";
         if (j.contains(strAttrName) && j[strAttrName].is_boolean())
-            m_bEnablePosOffsetKeyFrames = j[strAttrName].get<imgui_json::boolean>();
+            m_bEnableKeyFramesOnPosOffset = j[strAttrName].get<imgui_json::boolean>();
+        strAttrName = "crop_lt_curve";
+        if (j.contains(strAttrName) && j[strAttrName].is_object())
+            m_aCropCurves[0]->LoadFromJson(j[strAttrName]);
+        strAttrName = "crop_rb_curve";
+        if (j.contains(strAttrName) && j[strAttrName].is_object())
+            m_aCropCurves[1]->LoadFromJson(j[strAttrName]);
+        strAttrName = "crop_keyframes_enabled";
+        if (j.contains(strAttrName) && j[strAttrName].is_boolean())
+            m_bEnableKeyFramesOnCrop = j[strAttrName].get<imgui_json::boolean>();
+        strAttrName = "scale_curve";
+        if (j.contains(strAttrName) && j[strAttrName].is_object())
+            m_hScaleCurve->LoadFromJson(j[strAttrName]);
+        strAttrName = "keep_aspect_ratio";
+        if (j.contains(strAttrName) && j[strAttrName].is_boolean())
+            m_bKeepAspectRatio = j[strAttrName].get<imgui_json::boolean>();
+        strAttrName = "scale_keyframes_enabled";
+        if (j.contains(strAttrName) && j[strAttrName].is_boolean())
+            m_bEnableKeyFramesOnScale = j[strAttrName].get<imgui_json::boolean>();
+        strAttrName = "rotation_curve";
+        if (j.contains(strAttrName) && j[strAttrName].is_object())
+            m_hRotationCurve->LoadFromJson(j[strAttrName]);
+        strAttrName = "rotation_keyframes_enabled";
+        if (j.contains(strAttrName) && j[strAttrName].is_boolean())
+            m_bEnableKeyFramesOnRotation = j[strAttrName].get<imgui_json::boolean>();
+        strAttrName = "opacity_curve";
+        if (j.contains(strAttrName) && j[strAttrName].is_object())
+            m_hOpacityCurve->LoadFromJson(j[strAttrName]);
+        strAttrName = "opacity_keyframes_enabled";
+        if (j.contains(strAttrName) && j[strAttrName].is_boolean())
+            m_bEnableKeyFramesOnOpacity = j[strAttrName].get<imgui_json::boolean>();
         return true;
     }
 
-    std::string GetError() const override
+    string GetError() const override
     { return m_strErrMsg; }
-
-    bool SetKeyPoint(ImGui::KeyPointEditor &keypoint) override
-    {
-        std::lock_guard<std::recursive_mutex> lk(m_mtxProcessLock);
-        m_keyPoints = keypoint;
-        return true;
-    }
-
-    ImGui::KeyPointEditor* GetKeyPoint() override
-    { return &m_keyPoints; }
 
 protected:
     bool UpdateParamsByKeyFrames(int64_t i64Tick)
     {
-        ImGui::ImNewCurve::KeyPoint::ValType tKpVal;
-        tKpVal = m_hPosOffsetCurve->CalcPointVal((float)(m_bEnablePosOffsetKeyFrames ? i64Tick : m_tTimeRange.x), false, true);
-        const auto i32PosOffX = (int32_t)round((float)m_u32InWidth*tKpVal.x);
-        const auto i32PosOffY = (int32_t)round((float)m_u32InHeight*tKpVal.y);
+        float fTick;
+        LibCurve::KeyPoint::ValType tKpVal;
+        lock_guard<recursive_mutex> lk(m_mtxProcessLock);
+        // Position offset
+        fTick = m_bEnableKeyFramesOnPosOffset ? (float)i64Tick : m_tTimeRange.x;
+        tKpVal = m_hPosOffsetCurve->CalcPointVal(fTick, false, true);
+        const auto i32PosOffX = (int32_t)round((float)m_u32OutWidth*tKpVal.x);
+        const auto i32PosOffY = (int32_t)round((float)m_u32OutHeight*tKpVal.y);
         if (i32PosOffX != m_i32PosOffsetX || i32PosOffY != m_i32PosOffsetY)
         {
             m_i32PosOffsetX = i32PosOffX;
@@ -552,16 +1086,68 @@ protected:
             m_fPosOffsetRatioY = tKpVal.y;
             m_bNeedUpdatePosOffsetParam = true;
         }
+        // Crop
+        if (m_bNeedUpdateCropRatioParam)
+        {
+            const auto fCropRatioL = (float)m_u32CropL/m_u32InWidth;
+            const auto fCropRatioT = (float)m_u32CropT/m_u32InHeight;
+            const auto fCropRatioR = (float)m_u32CropR/m_u32InWidth;
+            const auto fCropRatioB = (float)m_u32CropB/m_u32InHeight;
+            m_bNeedUpdateCropRatioParam = false;
+            if (!SetCropRatio(fCropRatioL, fCropRatioT, fCropRatioR, fCropRatioB))
+                return false;
+        }
+        fTick = m_bEnableKeyFramesOnCrop ? (float)i64Tick : m_tTimeRange.x;
+        tKpVal = m_aCropCurves[0]->CalcPointVal(fTick, false, true);
+        const auto u32CropL = (uint32_t)round((float)m_u32InWidth*tKpVal.x);
+        const auto u32CropT = (uint32_t)round((float)m_u32InHeight*tKpVal.y);
+        m_fCropRatioL = tKpVal.x; m_fCropRatioT = tKpVal.y;
+        tKpVal = m_aCropCurves[1]->CalcPointVal(fTick, false, true);
+        const auto u32CropR = (uint32_t)round((float)m_u32InWidth*tKpVal.x);
+        const auto u32CropB = (uint32_t)round((float)m_u32InHeight*tKpVal.y);
+        m_fCropRatioR = tKpVal.x; m_fCropRatioB = tKpVal.y;
+        if (u32CropL != m_u32CropL || u32CropT != m_u32CropT || u32CropR != m_u32CropR || u32CropB != m_u32CropB)
+        {
+            m_u32CropL = u32CropL;
+            m_u32CropT = u32CropT;
+            m_u32CropR = u32CropR;
+            m_u32CropB = u32CropB;
+            m_bNeedUpdateCropParam = true;
+        }
+        // Scale
+        fTick = m_bEnableKeyFramesOnScale ? (float)i64Tick : m_tTimeRange.x;
+        tKpVal = m_hScaleCurve->CalcPointVal(fTick, false, true);
+        if (tKpVal.x != m_fScaleX || (!m_bKeepAspectRatio && tKpVal.y != m_fScaleY))
+        {
+            m_fScaleX = tKpVal.x;
+            m_fScaleY = tKpVal.y;
+            m_bNeedUpdateScaleParam = true;
+        }
+        // Rotation
+        fTick = m_bEnableKeyFramesOnRotation ? (float)i64Tick : m_tTimeRange.x;
+        tKpVal = m_hRotationCurve->CalcPointVal(fTick, false, true);
+        if (tKpVal.x != m_fRotateAngle)
+        {
+            m_fRotateAngle = tKpVal.x;
+            m_bNeedUpdateRotationParam = true;
+        }
+        // Opacity
+        fTick = m_bEnableKeyFramesOnOpacity ? (float)i64Tick : m_tTimeRange.x;
+        tKpVal = m_hOpacityCurve->CalcPointVal(fTick, false, true);
+        if (tKpVal.x != m_fRotateAngle)
+        {
+            m_fOpacity = tKpVal.x;
+        }
 
         return true;
     }
 
 protected:
-    std::recursive_mutex m_mtxProcessLock;
+    recursive_mutex m_mtxProcessLock;
     uint32_t m_u32InWidth{0}, m_u32InHeight{0};
     uint32_t m_u32OutWidth{0}, m_u32OutHeight{0};
-    std::string m_strOutputFormat;
-    ScaleType m_eScaleType{SCALE_TYPE__FIT};
+    string m_strOutputFormat;
+    AspectFitType m_eAspectFitType{ASPECT_FIT_TYPE__FIT};
     MatUtils::Vec2<int64_t> m_tTimeRange;
     int32_t m_i32PosOffsetX{0}, m_i32PosOffsetY{0};
     float m_fPosOffsetRatioX{0}, m_fPosOffsetRatioY{0};
@@ -572,14 +1158,20 @@ protected:
     float m_fRotateAngle{0};
     float m_fOpacity{1.f};
     bool m_bNeedUpdatePosOffsetParam{false};
-    bool m_bNeedUpdatePosOffsetRatioParam{false};
     bool m_bNeedUpdateCropParam{false};
     bool m_bNeedUpdateCropRatioParam{false};
-    bool m_bNeedUpdateRotateParam{false};
+    bool m_bNeedUpdateRotationParam{false};
     bool m_bNeedUpdateScaleParam{true};
-    ImGui::ImNewCurve::Curve::Holder m_hPosOffsetCurve;
-    bool m_bEnablePosOffsetKeyFrames{false};
-    std::string m_strErrMsg;
-    ImGui::KeyPointEditor m_keyPoints;
+    LibCurve::Curve::Holder m_hPosOffsetCurve;
+    bool m_bEnableKeyFramesOnPosOffset{false};
+    vector<LibCurve::Curve::Holder> m_aCropCurves;
+    bool m_bEnableKeyFramesOnCrop{false};
+    LibCurve::Curve::Holder m_hScaleCurve;
+    bool m_bEnableKeyFramesOnScale{false};
+    LibCurve::Curve::Holder m_hRotationCurve;
+    bool m_bEnableKeyFramesOnRotation{false};
+    LibCurve::Curve::Holder m_hOpacityCurve;
+    bool m_bEnableKeyFramesOnOpacity{false};
+    string m_strErrMsg;
 };
 }

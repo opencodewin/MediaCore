@@ -104,9 +104,9 @@ private:
         if (m_bNeedUpdateScaleParam)
         {
             uint32_t u32FitScaleWidth{m_u32InWidth}, u32FitScaleHeight{m_u32InHeight};
-            switch (m_eScaleType)
+            switch (m_eAspectFitType)
             {
-                case SCALE_TYPE__FIT:
+                case ASPECT_FIT_TYPE__FIT:
                 if (m_u32InWidth*m_u32OutHeight > m_u32InHeight*m_u32OutWidth)
                 {
                     u32FitScaleWidth = m_u32OutWidth;
@@ -118,11 +118,11 @@ private:
                     u32FitScaleWidth = (uint32_t)round((float)m_u32InWidth*m_u32OutHeight/m_u32InHeight);
                 }
                 break;
-                case SCALE_TYPE__CROP:
+                case ASPECT_FIT_TYPE__CROP:
                 u32FitScaleWidth = m_u32InWidth;
                 u32FitScaleHeight = m_u32InHeight;
                 break;
-                case SCALE_TYPE__FILL:
+                case ASPECT_FIT_TYPE__FILL:
                 if (m_u32InWidth*m_u32OutHeight > m_u32InHeight*m_u32OutWidth)
                 {
                     u32FitScaleHeight = m_u32OutHeight;
@@ -134,7 +134,7 @@ private:
                     u32FitScaleHeight = (uint32_t)round((float)m_u32InHeight*m_u32OutWidth/m_u32InWidth);
                 }
                 break;
-                case SCALE_TYPE__STRETCH:
+                case ASPECT_FIT_TYPE__STRETCH:
                 u32FitScaleWidth = m_u32OutWidth;
                 u32FitScaleHeight = m_u32OutHeight;
                 break;
@@ -142,14 +142,7 @@ private:
             m_fRealScaleRatioX = (float)u32FitScaleWidth/m_u32InWidth*m_fScaleX;
             m_fRealScaleRatioY = (float)u32FitScaleHeight/m_u32InHeight*(m_bKeepAspectRatio ? m_fScaleX : m_fScaleY);
         }
-        if (m_bNeedUpdatePosOffsetRatioParam)
-        {
-            m_i32PosOffsetX = m_fPosOffsetRatioX*(float)m_u32OutWidth;
-            m_i32PosOffsetY = m_fPosOffsetRatioY*(float)m_u32OutHeight;
-            m_bNeedUpdatePosOffsetRatioParam = false;
-            m_bNeedUpdatePosOffsetParam = true;
-        }
-        if (m_bNeedUpdateScaleParam || m_bNeedUpdateRotateParam || m_bNeedUpdatePosOffsetParam)
+        if (m_bNeedUpdateScaleParam || m_bNeedUpdateRotationParam || m_bNeedUpdatePosOffsetParam)
         {
             float _x_scale = 1.f / (m_fRealScaleRatioX + FLT_EPSILON);
             float _y_scale = 1.f / (m_fRealScaleRatioY + FLT_EPSILON);
@@ -174,7 +167,7 @@ private:
             m_mAffineMatrix.at<float>(0, 1) = -beta_10;
             m_mAffineMatrix.at<float>(1, 1) = alpha_11;
             m_mAffineMatrix.at<float>(2, 1) = beta_10 * center_x + (1 - alpha_11) * center_y - _y_offset;
-            m_bNeedUpdateScaleParam = m_bNeedUpdateRotateParam = m_bNeedUpdatePosOffsetParam = false;
+            m_bNeedUpdateScaleParam = m_bNeedUpdateRotationParam = m_bNeedUpdatePosOffsetParam = false;
             UpdatePassThrough();
         }
 

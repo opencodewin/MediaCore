@@ -241,44 +241,44 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         }
         ImGui::BeginDisabled(!fftransFilter);
         int sldintMaxValue = selectedClip ? selectedClip->SrcWidth() : 0;
-        uint32_t slduintValue = fftransFilter ? fftransFilter->GetCropMarginL() : 0;
+        uint32_t slduintValue = fftransFilter ? fftransFilter->GetCropL() : 0;
         if (ImGui::SliderInt("CropL", (int*)&slduintValue, 0, sldintMaxValue))
         {
-            fftransFilter->SetCropMarginL(slduintValue);
+            fftransFilter->SetCropL(slduintValue);
             g_mtVidReader->Refresh();
         }
         ImGui::SameLine(0, 10);
         sldintMaxValue = selectedClip ? selectedClip->SrcHeight() : 0;
-        slduintValue = fftransFilter ? fftransFilter->GetCropMarginT() : 0;
+        slduintValue = fftransFilter ? fftransFilter->GetCropT() : 0;
         if (ImGui::SliderInt("CropT", (int*)&slduintValue, 0, sldintMaxValue))
         {
-            fftransFilter->SetCropMarginT(slduintValue);
+            fftransFilter->SetCropT(slduintValue);
             g_mtVidReader->Refresh();
         }
         ImGui::SameLine(0, 10);
         sldintMaxValue = selectedClip ? selectedClip->SrcWidth() : 0;
-        slduintValue = fftransFilter ? fftransFilter->GetCropMarginR() : 0;
+        slduintValue = fftransFilter ? fftransFilter->GetCropR() : 0;
         if (ImGui::SliderInt("CropR", (int*)&slduintValue, 0, sldintMaxValue))
         {
-            fftransFilter->SetCropMarginR(slduintValue);
+            fftransFilter->SetCropR(slduintValue);
             g_mtVidReader->Refresh();
         }
         ImGui::SameLine(0, 10);
         sldintMaxValue = selectedClip ? selectedClip->SrcHeight() : 0;
-        slduintValue = fftransFilter ? fftransFilter->GetCropMarginB() : 0;
+        slduintValue = fftransFilter ? fftransFilter->GetCropB() : 0;
         if (ImGui::SliderInt("CropB", (int*)&slduintValue, 0, sldintMaxValue))
         {
-            fftransFilter->SetCropMarginB(slduintValue);
+            fftransFilter->SetCropB(slduintValue);
             g_mtVidReader->Refresh();
         }
         ImGui::EndDisabled();
 
         // control line #4
         ImGui::BeginDisabled(!fftransFilter);
-        float sldfltValue = fftransFilter ? fftransFilter->GetRotationAngle() : 0;
+        float sldfltValue = fftransFilter ? fftransFilter->GetRotation() : 0;
         if (ImGui::SliderFloat("Angle", &sldfltValue, -360, 360, "%.1f"))
         {
-            fftransFilter->SetRotationAngle(sldfltValue);
+            fftransFilter->SetRotation(sldfltValue);
             g_mtVidReader->Refresh();
         }
         ImGui::SameLine(0, 20);
@@ -286,7 +286,7 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         int32_t sldintValue = fftransFilter ? fftransFilter->GetPosOffsetX() : 0;
         if (ImGui::SliderInt("OffsetH", (int*)&sldintValue, -sldintMaxValue, sldintMaxValue))
         {
-            fftransFilter->SetPositionOffsetH(sldintValue);
+            fftransFilter->SetPosOffsetX(sldintValue);
             g_mtVidReader->Refresh();
         }
         ImGui::SameLine(0, 10);
@@ -307,22 +307,22 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
                 if (ImGui::Selectable(item.c_str(), isSelected))
                 {
                     s_fitScaleTypeSelIdx = i;
-                    MediaCore::ScaleType fitType;
+                    MediaCore::AspectFitType fitType;
                     switch (i)
                     {
                         case 1:
-                        fitType = MediaCore::SCALE_TYPE__CROP;
+                        fitType = MediaCore::ASPECT_FIT_TYPE__CROP;
                         break;
                         case 2:
-                        fitType = MediaCore::SCALE_TYPE__FILL;
+                        fitType = MediaCore::ASPECT_FIT_TYPE__FILL;
                         break;
                         case 3:
-                        fitType = MediaCore::SCALE_TYPE__STRETCH;
+                        fitType = MediaCore::ASPECT_FIT_TYPE__STRETCH;
                         break;
                         default:
-                        fitType = MediaCore::SCALE_TYPE__FIT;
+                        fitType = MediaCore::ASPECT_FIT_TYPE__FIT;
                     }
-                    fftransFilter->SetScaleType(fitType);
+                    fftransFilter->SetAspectFitType(fitType);
                     g_mtVidReader->Refresh();
                 }
                 if (isSelected)
@@ -336,28 +336,28 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         ImGui::BeginDisabled(!fftransFilter);
         if (ImGui::Checkbox("Keep aspect-ratio", &s_keepAspectRatio) &&s_keepAspectRatio)
         {
-            if (fftransFilter->GetScaleH() != fftransFilter->GetScaleV())
+            if (fftransFilter->GetScaleX() != fftransFilter->GetScaleY())
             {
-                fftransFilter->SetScaleV(fftransFilter->GetScaleH());
+                fftransFilter->SetScaleY(fftransFilter->GetScaleX());
                 g_mtVidReader->Refresh();
             }
         }
         ImGui::SameLine(0, 10);
-        sldfltValue = fftransFilter ? fftransFilter->GetScaleH() : 0;
+        sldfltValue = fftransFilter ? fftransFilter->GetScaleX() : 0;
         if (ImGui::SliderFloat("ScaleH", &sldfltValue, 0, 4, "%.2f"))
         {
-            fftransFilter->SetScaleH(sldfltValue);
+            fftransFilter->SetScaleX(sldfltValue);
             if (s_keepAspectRatio)
-                fftransFilter->SetScaleV(sldfltValue);
+                fftransFilter->SetScaleY(sldfltValue);
             g_mtVidReader->Refresh();
         }
         ImGui::SameLine(0, 10);
-        sldfltValue = fftransFilter ? fftransFilter->GetScaleV() : 0;
+        sldfltValue = fftransFilter ? fftransFilter->GetScaleY() : 0;
         if (ImGui::SliderFloat("ScaleV", &sldfltValue, 0, 4, "%.2f"))
         {
-            fftransFilter->SetScaleV(sldfltValue);
+            fftransFilter->SetScaleY(sldfltValue);
             if (s_keepAspectRatio)
-                fftransFilter->SetScaleH(sldfltValue);
+                fftransFilter->SetScaleX(sldfltValue);
             g_mtVidReader->Refresh();
         }
         ImGui::EndDisabled();
