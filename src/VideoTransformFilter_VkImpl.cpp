@@ -17,7 +17,6 @@
 
 #include <imconfig.h>
 #if IMGUI_VULKAN_SHADER
-#include <cmath>
 #include <imgui.h>
 #include <warpAffine_vulkan.h>
 #include "VideoTransformFilter_Base.h"
@@ -103,49 +102,14 @@ private:
 
         if (m_bNeedUpdateScaleParam)
         {
-            uint32_t u32FitScaleWidth{m_u32InWidth}, u32FitScaleHeight{m_u32InHeight};
-            switch (m_eAspectFitType)
-            {
-                case ASPECT_FIT_TYPE__FIT:
-                if (m_u32InWidth*m_u32OutHeight > m_u32InHeight*m_u32OutWidth)
-                {
-                    u32FitScaleWidth = m_u32OutWidth;
-                    u32FitScaleHeight = (uint32_t)round((float)m_u32InHeight*m_u32OutWidth/m_u32InWidth);
-                }
-                else
-                {
-                    u32FitScaleHeight = m_u32OutHeight;
-                    u32FitScaleWidth = (uint32_t)round((float)m_u32InWidth*m_u32OutHeight/m_u32InHeight);
-                }
-                break;
-                case ASPECT_FIT_TYPE__CROP:
-                u32FitScaleWidth = m_u32InWidth;
-                u32FitScaleHeight = m_u32InHeight;
-                break;
-                case ASPECT_FIT_TYPE__FILL:
-                if (m_u32InWidth*m_u32OutHeight > m_u32InHeight*m_u32OutWidth)
-                {
-                    u32FitScaleHeight = m_u32OutHeight;
-                    u32FitScaleWidth = (uint32_t)round((float)m_u32InWidth*m_u32OutHeight/m_u32InHeight);
-                }
-                else
-                {
-                    u32FitScaleWidth = m_u32OutWidth;
-                    u32FitScaleHeight = (uint32_t)round((float)m_u32InHeight*m_u32OutWidth/m_u32InWidth);
-                }
-                break;
-                case ASPECT_FIT_TYPE__STRETCH:
-                u32FitScaleWidth = m_u32OutWidth;
-                u32FitScaleHeight = m_u32OutHeight;
-                break;
-            }
-            m_fRealScaleRatioX = (float)u32FitScaleWidth/m_u32InWidth*m_fScaleX;
-            m_fRealScaleRatioY = (float)u32FitScaleHeight/m_u32InHeight*(m_bKeepAspectRatio ? m_fScaleX : m_fScaleY);
+            const auto v2FinalScale = CalcFinalScale(m_fScaleX, m_fScaleY);
+            m_fFinalScaleRatioX = v2FinalScale.x;
+            m_fFinalScaleRatioY = v2FinalScale.y;
         }
         if (m_bNeedUpdateScaleParam || m_bNeedUpdateRotationParam || m_bNeedUpdatePosOffsetParam)
         {
-            float _x_scale = 1.f / (m_fRealScaleRatioX + FLT_EPSILON);
-            float _y_scale = 1.f / (m_fRealScaleRatioY + FLT_EPSILON);
+            float _x_scale = 1.f / (m_fFinalScaleRatioX + FLT_EPSILON);
+            float _y_scale = 1.f / (m_fFinalScaleRatioY + FLT_EPSILON);
             float _angle = m_fRotateAngle / 180.f * M_PI;
             float alpha_00 = cos(_angle) * _x_scale;
             float alpha_11 = cos(_angle) * _y_scale;
@@ -153,8 +117,8 @@ private:
             float beta_10 = sin(_angle) * _y_scale;
             float x_diff = (float)m_u32OutWidth - (float)m_u32InWidth;
             float y_diff = (float)m_u32OutHeight - (float)m_u32InHeight;
-            float _x_diff = (m_u32OutWidth + m_u32InWidth * m_fRealScaleRatioX) / 2.f;
-            float _y_diff = (m_u32OutHeight + m_u32InHeight * m_fRealScaleRatioY) / 2.f;
+            float _x_diff = (m_u32OutWidth + m_u32InWidth * m_fFinalScaleRatioX) / 2.f;
+            float _y_diff = (m_u32OutHeight + m_u32InHeight * m_fFinalScaleRatioY) / 2.f;
             float x_offset = (float)m_i32PosOffsetX / (float)m_u32OutWidth;
             float _x_offset = x_offset * _x_diff + x_diff / 2;
             float y_offset = (float)m_i32PosOffsetY / (float)m_u32OutHeight;
@@ -222,7 +186,7 @@ private:
 
     void UpdatePassThrough()
     {
-        if (m_fRealScaleRatioX == 1 && m_fRealScaleRatioY == 1 &&
+        if (m_fFinalScaleRatioX == 1 && m_fFinalScaleRatioY == 1 &&
             m_u32InWidth == m_u32OutWidth && m_u32InHeight == m_u32OutHeight &&
             m_u32CropL == 0 && m_u32CropT == 0 && m_u32CropR == 0 && m_u32CropB == 0 &&
             m_fRotateAngle == 0 &&
@@ -235,7 +199,7 @@ private:
 private:
     ImGui::warpAffine_vulkan* m_pWarpAffine{nullptr};
     ImGui::ImMat m_mAffineMatrix;
-    float m_fRealScaleRatioX{1}, m_fRealScaleRatioY{1};
+    float m_fFinalScaleRatioX{1}, m_fFinalScaleRatioY{1};
     ImPixel m_tCropRect;
     ImInterpolateMode m_eInterpMode{IM_INTERPOLATE_BICUBIC};
     bool m_bPassThrough{false};

@@ -59,6 +59,10 @@ namespace MediaCore
         virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) = 0;
         virtual VideoFrame::Holder FilterImage(VideoFrame::Holder hVfrm, int64_t pos) = 0;
 
+        // return the coordinates of four corner points as array { TopLeft, TopRight, BottomRight, BottomLeft },
+        // the coordinates use the canvas center as the origin
+        virtual bool CalcCornerPoints(int64_t i64Tick, ImVec2 aCornerPoints[4]) const = 0;
+
         // Position
         virtual bool SetPosOffset(int32_t i32PosOffX, int32_t i32PosOffY) = 0;
         virtual bool SetPosOffsetX(int32_t i32PosOffX) = 0;
@@ -75,6 +79,7 @@ namespace MediaCore
         virtual float GetPosOffsetRatioX(int64_t i64Tick) const = 0;
         virtual bool SetPosOffsetRatioY(int64_t i64Tick, float fPosOffRatioY) = 0;
         virtual float GetPosOffsetRatioY(int64_t i64Tick) const = 0;
+        virtual bool ChangePosOffset(int64_t i64Tick, int32_t i32DeltaX, int32_t i32DeltaY, bool* pParamUpdated = nullptr) = 0;
         virtual void EnableKeyFramesOnPosOffset(bool bEnable) = 0;
         virtual bool IsKeyFramesEnabledOnPosOffset() const = 0;
         virtual ImGui::ImNewCurve::Curve::Holder GetKeyFramesCurveOnPosOffset() const = 0;
@@ -88,24 +93,28 @@ namespace MediaCore
         virtual uint32_t GetCropR() const = 0;
         virtual bool SetCropB(uint32_t u32CropB) = 0;
         virtual uint32_t GetCropB() const = 0;
-        virtual bool SetCropRatio(float fCropRatioL, float fCropRatioT, float fCropRatioR, float fCropRatioB) = 0;
-        virtual bool SetCropRatioL(float fCropRatioL) = 0;
+        virtual bool SetCropRatio(float fCropRatioL, float fCropRatioT, float fCropRatioR, float fCropRatioB, bool bClipValue = false, bool* pParamUpdated = nullptr) = 0;
+        virtual bool SetCropRatioL(float fCropRatioL, bool bClipValue = false, bool* pParamUpdated = nullptr) = 0;
         virtual float GetCropRatioL() const = 0;
-        virtual bool SetCropRatioT(float fCropRatioT) = 0;
+        virtual bool SetCropRatioT(float fCropRatioT, bool bClipValue = false, bool* pParamUpdated = nullptr) = 0;
         virtual float GetCropRatioT() const = 0;
-        virtual bool SetCropRatioR(float fCropRatioR) = 0;
+        virtual bool SetCropRatioR(float fCropRatioR, bool bClipValue = false, bool* pParamUpdated = nullptr) = 0;
         virtual float GetCropRatioR() const = 0;
-        virtual bool SetCropRatioB(float fCropRatioB) = 0;
+        virtual bool SetCropRatioB(float fCropRatioB, bool bClipValue = false, bool* pParamUpdated = nullptr) = 0;
         virtual float GetCropRatioB() const = 0;
-        virtual bool SetCropRatio(int64_t i64Tick, float fCropRatioL, float fCropRatioT, float fCropRatioR, float fCropRatioB) = 0;
-        virtual bool SetCropRatioL(int64_t i64Tick, float fCropRatioL) = 0;
+        virtual bool SetCropRatio(int64_t i64Tick, float fCropRatioL, float fCropRatioT, float fCropRatioR, float fCropRatioB, bool bClipValue = false, bool* pParamUpdated = nullptr) = 0;
+        virtual bool SetCropRatioL(int64_t i64Tick, float fCropRatioL, bool bClipValue = false, bool* pParamUpdated = nullptr) = 0;
         virtual float GetCropRatioL(int64_t i64Tick) const = 0;
-        virtual bool SetCropRatioT(int64_t i64Tick, float fCropRatioT) = 0;
+        virtual bool SetCropRatioT(int64_t i64Tick, float fCropRatioT, bool bClipValue = false, bool* pParamUpdated = nullptr) = 0;
         virtual float GetCropRatioT(int64_t i64Tick) const = 0;
-        virtual bool SetCropRatioR(int64_t i64Tick, float fCropRatioR) = 0;
+        virtual bool SetCropRatioR(int64_t i64Tick, float fCropRatioR, bool bClipValue = false, bool* pParamUpdated = nullptr) = 0;
         virtual float GetCropRatioR(int64_t i64Tick) const = 0;
-        virtual bool SetCropRatioB(int64_t i64Tick, float fCropRatioB) = 0;
+        virtual bool SetCropRatioB(int64_t i64Tick, float fCropRatioB, bool bClipValue = false, bool* pParamUpdated = nullptr) = 0;
         virtual float GetCropRatioB(int64_t i64Tick) const = 0;
+        virtual bool ChangeCropL(int64_t i64Tick, int32_t i32Delta) = 0;
+        virtual bool ChangeCropT(int64_t i64Tick, int32_t i32Delta) = 0;
+        virtual bool ChangeCropR(int64_t i64Tick, int32_t i32Delta) = 0;
+        virtual bool ChangeCropB(int64_t i64Tick, int32_t i32Delta) = 0;
         virtual void EnableKeyFramesOnCrop(bool bEnable) = 0;
         virtual bool IsKeyFramesEnabledOnCrop() const = 0;
         virtual std::vector<ImGui::ImNewCurve::Curve::Holder> GetKeyFramesCurveOnCrop() const = 0;
@@ -120,6 +129,9 @@ namespace MediaCore
         virtual float GetScaleX(int64_t i64Tick) const = 0;
         virtual bool SetScaleY(int64_t i64Tick, float fScaleY) = 0;
         virtual float GetScaleY(int64_t i64Tick) const = 0;
+        virtual MatUtils::Vec2<float> GetScale(int64_t i64Tick) const = 0;
+        virtual MatUtils::Vec2<float> GetFinalScale(int64_t i64Tick) const = 0;
+        virtual bool ChangeScaleToFitOutputSize(int64_t i64Tick, uint32_t u32OutWidth, uint32_t u32OutHeight, bool* pParamUpdated = nullptr) = 0;
         virtual void SetKeepAspectRatio(bool bEnable) = 0;
         virtual bool IsKeepAspectRatio() const = 0;
         virtual void EnableKeyFramesOnScale(bool bEnable) = 0;
@@ -128,7 +140,7 @@ namespace MediaCore
         // Rotation
         virtual bool SetRotation(float fAngle) = 0;
         virtual float GetRotation() const = 0;
-        virtual bool SetRotation(int64_t i64Tick, float fAngle) = 0;
+        virtual bool SetRotation(int64_t i64Tick, float fAngle, bool* pParamUpdated = nullptr) = 0;
         virtual float GetRotation(int64_t i64Tick) const = 0;
         virtual void EnableKeyFramesOnRotation(bool bEnable) = 0;
         virtual bool IsKeyFramesEnabledOnRotation() const = 0;
