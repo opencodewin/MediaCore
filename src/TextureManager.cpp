@@ -520,7 +520,7 @@ private:
                 size_t buffSize = textureSize.x*textureSize.y*bytesPerPixel;
                 void* pBuff = malloc(buffSize);
                 memset(pBuff, 0, buffSize);
-                m_tid = ImGui::ImCreateTexture(pBuff, textureSize.x, textureSize.y, NAN, bitDepth);
+                m_tid = ImGui::ImCreateTexture(pBuff, textureSize.x, textureSize.y, channel, NAN, bitDepth);
                 free(pBuff);
                 if (m_tid)
                 {
