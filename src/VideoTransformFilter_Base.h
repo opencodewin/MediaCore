@@ -1401,7 +1401,7 @@ public:
         j["rotation_keyframes_enabled"] = m_bEnableKeyFramesOnRotation;
         j["opacity_curve"] = m_hOpacityCurve->SaveAsJson();
         j["opacity_keyframes_enabled"] = m_bEnableKeyFramesOnOpacity;
-        return move(j);
+        return std::move(j);
     }
 
     bool LoadFromJson(const imgui_json::value& j) override
