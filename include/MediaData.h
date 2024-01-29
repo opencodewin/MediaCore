@@ -31,7 +31,7 @@ struct Ratio
     bool operator!=(const Ratio& r)
     { return !(*this == r); }
 
-    friend std::ostream& operator<<(std::ostream& os, const Ratio& r);
+    friend MEDIACORE_API std::ostream& operator<<(std::ostream& os, const Ratio& r);
 };
 
 struct Value
@@ -89,7 +89,7 @@ struct Value
     std::string strval;
     Ratio ratval;
 
-    friend std::ostream& operator<<(std::ostream& os, const Value& val);
+    friend MEDIACORE_API std::ostream& operator<<(std::ostream& os, const Value& val);
 };
 
 struct VideoFrame

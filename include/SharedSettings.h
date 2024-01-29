@@ -45,7 +45,7 @@ struct SharedSettings
     virtual void SyncAudioSettingsFrom(const SharedSettings* pSettings) = 0;
 
     virtual bool SaveAsJson(imgui_json::value& jnSettings) const = 0;
-    static Holder CreateInstanceFromJson(const imgui_json::value& jnSettings);
+    static MEDIACORE_API Holder CreateInstanceFromJson(const imgui_json::value& jnSettings);
 };
 
 }
