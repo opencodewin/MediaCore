@@ -447,7 +447,7 @@ public:
         {
             if (!bEnable)
             {
-                const auto tHeadKpVal = m_hPosOffsetCurve->CalcPointVal(m_tTimeRange.x, false, true);
+                const auto tHeadKpVal = m_hPosOffsetCurve->CalcPointVal(m_tTimeRange.x);
                 m_hPosOffsetCurve->ClearAll();
                 m_hPosOffsetCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal), false);
             }
@@ -1017,10 +1017,10 @@ public:
         {
             if (!bEnable)
             {
-                const auto tHeadKpVal0 = m_aCropCurves[0]->CalcPointVal(m_tTimeRange.x, false, true);
+                const auto tHeadKpVal0 = m_aCropCurves[0]->CalcPointVal(m_tTimeRange.x);
                 m_aCropCurves[0]->ClearAll();
                 m_aCropCurves[0]->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal0), false);
-                const auto tHeadKpVal1 = m_aCropCurves[1]->CalcPointVal(m_tTimeRange.x, false, true);
+                const auto tHeadKpVal1 = m_aCropCurves[1]->CalcPointVal(m_tTimeRange.x);
                 m_aCropCurves[1]->ClearAll();
                 m_aCropCurves[1]->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal1), false);
             }
@@ -1248,7 +1248,7 @@ public:
         {
             if (!bEnable)
             {
-                const auto tHeadKpVal = m_hScaleCurve->CalcPointVal(m_tTimeRange.x, false, true);
+                const auto tHeadKpVal = m_hScaleCurve->CalcPointVal(m_tTimeRange.x);
                 m_hScaleCurve->ClearAll();
                 m_hScaleCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal), false);
             }
@@ -1306,7 +1306,7 @@ public:
         {
             if (!bEnable)
             {
-                const auto tHeadKpVal = m_hRotationCurve->CalcPointVal(m_tTimeRange.x, false, true);
+                const auto tHeadKpVal = m_hRotationCurve->CalcPointVal(m_tTimeRange.x);
                 m_hRotationCurve->ClearAll();
                 m_hRotationCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal), false);
             }
@@ -1370,7 +1370,7 @@ public:
         {
             if (!bEnable)
             {
-                const auto tHeadKpVal = m_hOpacityCurve->CalcPointVal(m_tTimeRange.x, false, true);
+                const auto tHeadKpVal = m_hOpacityCurve->CalcPointVal(m_tTimeRange.x);
                 m_hOpacityCurve->ClearAll();
                 m_hOpacityCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal), false);
             }
