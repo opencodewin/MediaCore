@@ -326,7 +326,7 @@ public:
         if (!m_bEnableKeyFramesOnPosOffset)
             i64Tick = m_tTimeRange.x;
         const LibCurve::KeyPoint::ValType tKpVal(fPosOffRatioX, fPosOffRatioY, 0.f, (float)i64Tick);
-        const auto iRet = m_hPosOffsetCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        const auto iRet = m_hPosOffsetCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
         if (iRet < 0)
         {
             ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set position offset ratio as (" << tKpVal.x << ", " << tKpVal.y
@@ -357,7 +357,7 @@ public:
         const auto fTick = m_bEnableKeyFramesOnPosOffset ? (float)i64Tick : (float)m_tTimeRange.x;
         auto tKpVal = m_hPosOffsetCurve->CalcPointVal(fTick, false);
         tKpVal.x = fPosOffRatioX;
-        const auto iRet = m_hPosOffsetCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        const auto iRet = m_hPosOffsetCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
         if (iRet < 0)
         {
             ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set position offset ratio as (" << tKpVal.x << ", " << tKpVal.y
@@ -395,7 +395,7 @@ public:
         const auto fTick = m_bEnableKeyFramesOnPosOffset ? (float)i64Tick : (float)m_tTimeRange.x;
         auto tKpVal = m_hPosOffsetCurve->CalcPointVal(fTick, false);
         tKpVal.y = fPosOffRatioY;
-        const auto iRet = m_hPosOffsetCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        const auto iRet = m_hPosOffsetCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
         if (iRet < 0)
         {
             ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set position offset ratio as (" << tKpVal.x << ", " << tKpVal.y
@@ -436,7 +436,7 @@ public:
         const auto tPosOffMaxVal = m_hPosOffsetCurve->GetMaxVal();
         tKpVal.x += fPosOffRatioDeltaX; if (tKpVal.x < tPosOffMinVal.x) tKpVal.x = tPosOffMinVal.x; if (tKpVal.x > tPosOffMaxVal.x) tKpVal.x = tPosOffMaxVal.x;
         tKpVal.y += fPosOffRatioDeltaY; if (tKpVal.y < tPosOffMinVal.y) tKpVal.y = tPosOffMinVal.y; if (tKpVal.y > tPosOffMaxVal.y) tKpVal.y = tPosOffMaxVal.y;
-        m_hPosOffsetCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        m_hPosOffsetCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
         if (pParamUpdated) *pParamUpdated = true;
         return true;
     }
@@ -449,7 +449,7 @@ public:
             {
                 const auto tHeadKpVal = m_hPosOffsetCurve->CalcPointVal(m_tTimeRange.x);
                 m_hPosOffsetCurve->ClearAll();
-                m_hPosOffsetCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal), false);
+                m_hPosOffsetCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal));
             }
             m_bEnableKeyFramesOnPosOffset = bEnable;
         }
@@ -666,7 +666,7 @@ public:
         if (bParamUpdated0)
         {
             tKpVal.x = fCropRatioL; tKpVal.y = fCropRatioT;
-            auto iRet = m_aCropCurves[0]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+            auto iRet = m_aCropCurves[0]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
             if (iRet < 0)
             {
                 ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set crop ratio (LT) as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
@@ -679,7 +679,7 @@ public:
         if (bParamUpdated1)
         {
             tKpVal.x = fCropRatioR; tKpVal.y = fCropRatioB;
-            auto iRet = m_aCropCurves[1]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+            auto iRet = m_aCropCurves[1]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
             if (iRet < 0)
             {
                 ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set crop ratio (RB) as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
@@ -723,7 +723,7 @@ public:
         if (bParamUpdated)
         {
             tKpVal.x = fCropRatioL;
-            const auto iRet = m_aCropCurves[0]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+            const auto iRet = m_aCropCurves[0]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
             if (iRet < 0)
             {
                 ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set crop ratio (LT) as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
@@ -774,7 +774,7 @@ public:
         if (bParamUpdated)
         {
             tKpVal.y = fCropRatioT;
-            const auto iRet = m_aCropCurves[0]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+            const auto iRet = m_aCropCurves[0]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
             if (iRet < 0)
             {
                 ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set crop ratio (LT) as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
@@ -825,7 +825,7 @@ public:
         if (bParamUpdated)
         {
             tKpVal.x = fCropRatioR;
-            const auto iRet = m_aCropCurves[1]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+            const auto iRet = m_aCropCurves[1]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
             if (iRet < 0)
             {
                 ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set crop ratio (RB) as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
@@ -876,7 +876,7 @@ public:
         if (bParamUpdated)
         {
             tKpVal.y = fCropRatioB;
-            const auto iRet = m_aCropCurves[1]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+            const auto iRet = m_aCropCurves[1]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
             if (iRet < 0)
             {
                 ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set crop ratio (RB) as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
@@ -914,7 +914,7 @@ public:
         const auto tMaxVal = m_aCropCurves[0]->GetMaxVal();
         if (tKpVal.x < tMinVal.x) tKpVal.x = tMinVal.x;
         if (tKpVal.x > tMaxVal.x) tKpVal.x = tMaxVal.x;
-        const auto iRet = m_aCropCurves[0]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        const auto iRet = m_aCropCurves[0]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
         if (iRet < 0)
         {
             ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to change crop ratio (LT) as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
@@ -943,7 +943,7 @@ public:
         const auto tMaxVal = m_aCropCurves[0]->GetMaxVal();
         if (tKpVal.y < tMinVal.y) tKpVal.y = tMinVal.y;
         if (tKpVal.y > tMaxVal.y) tKpVal.y = tMaxVal.y;
-        const auto iRet = m_aCropCurves[0]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        const auto iRet = m_aCropCurves[0]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
         if (iRet < 0)
         {
             ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to change crop ratio (LT) as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
@@ -972,7 +972,7 @@ public:
         const auto tMaxVal = m_aCropCurves[1]->GetMaxVal();
         if (tKpVal.x < tMinVal.x) tKpVal.x = tMinVal.x;
         if (tKpVal.x > tMaxVal.x) tKpVal.x = tMaxVal.x;
-        const auto iRet = m_aCropCurves[1]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        const auto iRet = m_aCropCurves[1]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
         if (iRet < 0)
         {
             ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to change crop ratio (RB) as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
@@ -1001,7 +1001,7 @@ public:
         const auto tMaxVal = m_aCropCurves[1]->GetMaxVal();
         if (tKpVal.y < tMinVal.y) tKpVal.y = tMinVal.y;
         if (tKpVal.y > tMaxVal.y) tKpVal.y = tMaxVal.y;
-        const auto iRet = m_aCropCurves[1]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        const auto iRet = m_aCropCurves[1]->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
         if (iRet < 0)
         {
             ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to change crop ratio (RB) as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
@@ -1019,10 +1019,10 @@ public:
             {
                 const auto tHeadKpVal0 = m_aCropCurves[0]->CalcPointVal(m_tTimeRange.x);
                 m_aCropCurves[0]->ClearAll();
-                m_aCropCurves[0]->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal0), false);
+                m_aCropCurves[0]->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal0));
                 const auto tHeadKpVal1 = m_aCropCurves[1]->CalcPointVal(m_tTimeRange.x);
                 m_aCropCurves[1]->ClearAll();
-                m_aCropCurves[1]->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal1), false);
+                m_aCropCurves[1]->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal1));
             }
             m_bEnableKeyFramesOnCrop = bEnable;
         }
@@ -1078,7 +1078,7 @@ public:
         if (!m_bEnableKeyFramesOnScale)
             i64Tick = m_tTimeRange.x;
         const LibCurve::KeyPoint::ValType tKpVal(fScaleX, fScaleY, 0.f, (float)i64Tick);
-        const auto iRet = m_hScaleCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        const auto iRet = m_hScaleCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
         if (iRet < 0)
         {
             ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set scale as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
@@ -1110,7 +1110,7 @@ public:
         const auto fTick = m_bEnableKeyFramesOnScale ? (float)i64Tick : (float)m_tTimeRange.x;
         auto tKpVal = m_hScaleCurve->CalcPointVal(fTick, false);
         tKpVal.x = fScaleX;
-        const auto iRet = m_hScaleCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        const auto iRet = m_hScaleCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
         if (iRet < 0)
         {
             ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set scale as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
@@ -1149,7 +1149,7 @@ public:
         const auto fTick = m_bEnableKeyFramesOnScale ? (float)i64Tick : (float)m_tTimeRange.x;
         auto tKpVal = m_hScaleCurve->CalcPointVal(fTick, false);
         tKpVal.y = fScaleY;
-        const auto iRet = m_hScaleCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        const auto iRet = m_hScaleCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
         if (iRet < 0)
         {
             ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set scale as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
@@ -1215,7 +1215,7 @@ public:
         bool bParamUpdated = false;
         if (tKpVal.x != tOrgVal.x || tKpVal.y != tOrgVal.y)
         {
-            const auto iRet = m_hScaleCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+            const auto iRet = m_hScaleCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
             if (iRet < 0)
             {
                 ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set scale as (" << tKpVal.x << ", " << tKpVal.y << ") at time tick " << i64Tick << " !";
@@ -1250,7 +1250,7 @@ public:
             {
                 const auto tHeadKpVal = m_hScaleCurve->CalcPointVal(m_tTimeRange.x);
                 m_hScaleCurve->ClearAll();
-                m_hScaleCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal), false);
+                m_hScaleCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal));
             }
             m_bEnableKeyFramesOnScale = bEnable;
         }
@@ -1281,7 +1281,7 @@ public:
         if (bParamUpdated)
         {
             tKpVal.x = fAngle;
-            auto iRet = m_hRotationCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+            auto iRet = m_hRotationCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
             if (iRet < 0)
             {
                 ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set rotation as (" << tKpVal.x << ") at time tick " << i64Tick << " !";
@@ -1308,7 +1308,7 @@ public:
             {
                 const auto tHeadKpVal = m_hRotationCurve->CalcPointVal(m_tTimeRange.x);
                 m_hRotationCurve->ClearAll();
-                m_hRotationCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal), false);
+                m_hRotationCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal));
             }
             m_bEnableKeyFramesOnRotation = bEnable;
         }
@@ -1347,7 +1347,7 @@ public:
         if (!m_bEnableKeyFramesOnOpacity)
             i64Tick = m_tTimeRange.x;
         const LibCurve::KeyPoint::ValType tKpVal(fOpacity, 0.f, 0.f, (float)i64Tick);
-        auto iRet = m_hOpacityCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal), false);
+        auto iRet = m_hOpacityCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tKpVal));
         if (iRet < 0)
         {
             ostringstream oss; oss << "FAILED to invoke 'LibCurve::AddPoint()' to set opacity as (" << tKpVal.x << ") at time tick " << i64Tick << " !";
@@ -1372,7 +1372,7 @@ public:
             {
                 const auto tHeadKpVal = m_hOpacityCurve->CalcPointVal(m_tTimeRange.x);
                 m_hOpacityCurve->ClearAll();
-                m_hOpacityCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal), false);
+                m_hOpacityCurve->AddPoint(LibCurve::KeyPoint::CreateInstance(tHeadKpVal));
             }
             m_bEnableKeyFramesOnOpacity = bEnable;
         }
