@@ -31,12 +31,18 @@ public:
     VideoTransformFilter_Base()
     {
         m_hPosOffsetCurve = LibCurve::Curve::CreateInstance("PosOffsetCurve", LibCurve::Linear, {-1,-1,0,0}, {1,1,0,0}, {0,0,0,0}, true);
+        m_hPosOffsetCurve->SetLimitOutputValueInRange(true);
         m_aCropCurves.resize(2);
         m_aCropCurves[0] = LibCurve::Curve::CreateInstance("CropCurveLT", LibCurve::Linear, {0,0,0,0}, {1,1,0,0}, {0,0,0,0}, true);
+        m_aCropCurves[0]->SetLimitOutputValueInRange(true);
         m_aCropCurves[1] = LibCurve::Curve::CreateInstance("CropCurveRB", LibCurve::Linear, {0,0,0,0}, {1,1,0,0}, {0,0,0,0}, true);
+        m_aCropCurves[1]->SetLimitOutputValueInRange(true);
         m_hScaleCurve = LibCurve::Curve::CreateInstance("ScaleCurve", LibCurve::Linear, {0,0,0,0}, {32,32,0,0}, {1,1,0,0}, true);
+        m_hScaleCurve->SetLimitOutputValueInRange(true);
         m_hRotationCurve = LibCurve::Curve::CreateInstance("RotationCurve", LibCurve::Linear, {-360,-360,0,0}, {360,360,0,0}, {0,0,0,0}, true);
+        m_hRotationCurve->SetLimitOutputValueInRange(true);
         m_hOpacityCurve = LibCurve::Curve::CreateInstance("OpacityCurve", LibCurve::Linear, {0,0,0,0}, {1,1,0,0}, {1,1,0,0}, true);
+        m_hOpacityCurve->SetLimitOutputValueInRange(true);
     }
 
     virtual ~VideoTransformFilter_Base() {}
