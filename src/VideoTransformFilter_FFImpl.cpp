@@ -813,7 +813,7 @@ private:
     uint32_t m_diagonalLen{0}, m_scaleSafePadding{2};
     AVPixelFormat m_unifiedInputPixfmt{AV_PIX_FMT_RGBA};
     AVPixelFormat m_unifiedOutputPixfmt{AV_PIX_FMT_NONE};
-    AVRational m_inputFrameRate{25, 1};
+    AVRational m_inputFrameRate{25000, 1000};
     int32_t m_inputCount{0};
 
     ImMatToAVFrameConverter m_mat2frmCvt;
