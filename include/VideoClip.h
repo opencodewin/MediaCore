@@ -78,6 +78,7 @@ struct VideoClip
     virtual int64_t Duration() const = 0;
     virtual uint32_t SrcWidth() const = 0;
     virtual uint32_t SrcHeight() const = 0;
+    virtual int64_t SrcDuration() const = 0;
     virtual uint32_t OutWidth() const = 0;
     virtual uint32_t OutHeight() const = 0;
 

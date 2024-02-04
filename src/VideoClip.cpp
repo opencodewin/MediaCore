@@ -154,7 +154,7 @@ public:
         m_hWarpFilter = VideoTransformFilter::CreateInstance();
         if (!m_hWarpFilter->Initialize(hSettings))
             throw runtime_error(m_hWarpFilter->GetError());
-        m_hWarpFilter->SetTimeRange({0, Duration()});
+        m_hWarpFilter->ApplyTo(this);
     }
 
     ~VideoClip_VideoImpl()
@@ -218,6 +218,11 @@ public:
         return m_hReader->GetVideoOutHeight();
     }
 
+    int64_t SrcDuration() const override
+    {
+        return m_srcDuration+m_padding;
+    }
+
     uint32_t OutWidth() const override
     {
         return m_hWarpFilter->GetOutWidth();
@@ -249,7 +254,7 @@ public:
         m_startOffset = startOffset;
         if (m_hFilter)
             m_hFilter->UpdateClipRange();
-        m_hWarpFilter->SetTimeRange({0, Duration()});
+        m_hWarpFilter->UpdateClipRange();
     }
 
     void ChangeEndOffset(int64_t endOffset) override
@@ -263,7 +268,7 @@ public:
         m_endOffset = endOffset;
         if (m_hFilter)
             m_hFilter->UpdateClipRange();
-        m_hWarpFilter->SetTimeRange({0, Duration()});
+        m_hWarpFilter->UpdateClipRange();
     }
 
     void SetDuration(int64_t duration) override
@@ -570,7 +575,7 @@ public:
         m_hWarpFilter = VideoTransformFilter::CreateInstance();
         if (!m_hWarpFilter->Initialize(hSettings))
             throw runtime_error(m_hWarpFilter->GetError());
-        m_hWarpFilter->SetTimeRange({0, Duration()});
+        m_hWarpFilter->ApplyTo(this);
     }
 
     ~VideoClip_ImageImpl()
@@ -634,6 +639,11 @@ public:
         return m_hReader->GetVideoOutHeight();
     }
 
+    int64_t SrcDuration() const override
+    {
+        return m_srcDuration;
+    }
+
     uint32_t OutWidth() const override
     {
         return m_hWarpFilter->GetOutWidth();
@@ -665,7 +675,7 @@ public:
         if (duration <= 0)
             throw invalid_argument("Argument 'duration' must be a positive integer!");
         m_srcDuration = duration;
-        m_hWarpFilter->SetTimeRange({0, Duration()});
+        m_hWarpFilter->UpdateClipRange();
     }
 
     VideoFrame::Holder ReadVideoFrame(int64_t pos, vector<CorrelativeFrame>& frames, bool& eof) override

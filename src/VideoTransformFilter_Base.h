@@ -18,6 +18,7 @@
 #pragma once
 #include <cmath>
 #include <MatUtilsImVecHelper.h>
+#include "VideoClip.h"
 #include "VideoTransformFilter.h"
 
 using namespace std;
@@ -32,17 +33,18 @@ public:
     {
         m_hPosOffsetCurve = LibCurve::Curve::CreateInstance("PosOffsetCurve", LibCurve::Linear, {-1,-1,0,0}, {1,1,0,0}, {0,0,0,0}, true);
         m_hPosOffsetCurve->SetLimitOutputValueInRange(true);
+        m_hPosOffsetCurve->SetLimitKeyPointValueInRange(true);
         m_aCropCurves.resize(2);
         m_aCropCurves[0] = LibCurve::Curve::CreateInstance("CropCurveLT", LibCurve::Linear, {0,0,0,0}, {1,1,0,0}, {0,0,0,0}, true);
-        m_aCropCurves[0]->SetLimitOutputValueInRange(true);
+        m_aCropCurves[0]->SetLimitOutputValueInRange(true); m_aCropCurves[0]->SetLimitKeyPointValueInRange(true);
         m_aCropCurves[1] = LibCurve::Curve::CreateInstance("CropCurveRB", LibCurve::Linear, {0,0,0,0}, {1,1,0,0}, {0,0,0,0}, true);
-        m_aCropCurves[1]->SetLimitOutputValueInRange(true);
+        m_aCropCurves[1]->SetLimitOutputValueInRange(true); m_aCropCurves[1]->SetLimitKeyPointValueInRange(true);
         m_hScaleCurve = LibCurve::Curve::CreateInstance("ScaleCurve", LibCurve::Linear, {0,0,0,0}, {32,32,0,0}, {1,1,0,0}, true);
-        m_hScaleCurve->SetLimitOutputValueInRange(true);
+        m_hScaleCurve->SetLimitOutputValueInRange(true); m_hScaleCurve->SetLimitKeyPointValueInRange(true);
         m_hRotationCurve = LibCurve::Curve::CreateInstance("RotationCurve", LibCurve::Linear, {-360,-360,0,0}, {360,360,0,0}, {0,0,0,0}, true);
-        m_hRotationCurve->SetLimitOutputValueInRange(true);
+        m_hRotationCurve->SetLimitOutputValueInRange(true); m_hRotationCurve->SetLimitKeyPointValueInRange(true);
         m_hOpacityCurve = LibCurve::Curve::CreateInstance("OpacityCurve", LibCurve::Linear, {0,0,0,0}, {1,1,0,0}, {1,1,0,0}, true);
-        m_hOpacityCurve->SetLimitOutputValueInRange(true);
+        m_hOpacityCurve->SetLimitOutputValueInRange(true); m_hOpacityCurve->SetLimitKeyPointValueInRange(true);
     }
 
     virtual ~VideoTransformFilter_Base() {}
@@ -103,19 +105,6 @@ public:
     AspectFitType GetAspectFitType() const override
     { return m_eAspectFitType; }
 
-    bool SetTimeRange(const MatUtils::Vec2<int64_t>& tTimeRange) override
-    {
-        const auto v2TimeRange = MatUtils::ToImVec2(tTimeRange);
-        m_hPosOffsetCurve->SetTimeRange(v2TimeRange, true);
-        m_tTimeRange = tTimeRange;
-        return true;
-    }
-
-    MatUtils::Vec2<int64_t> GetTimeRange() const override
-    {
-        return m_tTimeRange;
-    }
-
     virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) override = 0;
 
     VideoFrame::Holder FilterImage(VideoFrame::Holder hVfrm, int64_t pos) override
@@ -136,6 +125,55 @@ public:
         if (vmat.empty())
             return nullptr;
         return VideoFrame::CreateMatInstance(vmat);
+    }
+
+    void ApplyTo(VideoClip* pVClip) override
+    {
+        m_i64ClipStartOffset = pVClip->StartOffset();
+        m_i64ClipEndOffset = pVClip->EndOffset();
+        m_i64ClipDuration = pVClip->Duration();
+        m_pOwnerClip = pVClip;
+        m_tTimeRange = {0, pVClip->SrcDuration()};
+        const ImVec2 v2TimeRange((float)m_tTimeRange.x, (float)m_tTimeRange.y);
+        m_hPosOffsetCurve->SetTimeRange(v2TimeRange);
+        m_aCropCurves[0]->SetTimeRange(v2TimeRange);
+        m_aCropCurves[1]->SetTimeRange(v2TimeRange);
+        m_hScaleCurve->SetTimeRange(v2TimeRange);
+        m_hRotationCurve->SetTimeRange(v2TimeRange);
+        m_hOpacityCurve->SetTimeRange(v2TimeRange);
+    }
+
+    void UpdateClipRange() override
+    {
+        if (!m_pOwnerClip)
+            return;
+        const MatUtils::Vec2<int64_t> tNewTimeRange(0, m_pOwnerClip->SrcDuration());
+        if (m_tTimeRange != tNewTimeRange)
+        {
+            m_tTimeRange = tNewTimeRange;
+            const ImVec2 v2TimeRange((float)m_tTimeRange.x, (float)m_tTimeRange.y);
+            m_hPosOffsetCurve->SetTimeRange(v2TimeRange);
+            m_aCropCurves[0]->SetTimeRange(v2TimeRange);
+            m_aCropCurves[1]->SetTimeRange(v2TimeRange);
+            m_hScaleCurve->SetTimeRange(v2TimeRange);
+            m_hRotationCurve->SetTimeRange(v2TimeRange);
+            m_hOpacityCurve->SetTimeRange(v2TimeRange);
+        }
+
+        const auto i64NewStartOffset = m_pOwnerClip->StartOffset();
+        if (i64NewStartOffset != m_i64ClipStartOffset)
+        {
+            const LibCurve::KeyPoint::ValType tPanOffset(0, 0, 0, (float)(m_i64ClipStartOffset-i64NewStartOffset));
+            m_hPosOffsetCurve->PanKeyPoints(tPanOffset);
+            m_aCropCurves[0]->PanKeyPoints(tPanOffset);
+            m_aCropCurves[1]->PanKeyPoints(tPanOffset);
+            m_hScaleCurve->PanKeyPoints(tPanOffset);
+            m_hRotationCurve->PanKeyPoints(tPanOffset);
+            m_hOpacityCurve->PanKeyPoints(tPanOffset);
+            m_i64ClipStartOffset = i64NewStartOffset;
+        }
+        m_i64ClipEndOffset = m_pOwnerClip->EndOffset();
+        m_i64ClipDuration = m_pOwnerClip->Duration();
     }
 
     bool CalcCornerPoints(int64_t i64Tick, ImVec2 aCornerPoints[4]) const override
@@ -1623,6 +1661,8 @@ protected:
     bool m_bEnableKeyFramesOnRotation{false};
     LibCurve::Curve::Holder m_hOpacityCurve;
     bool m_bEnableKeyFramesOnOpacity{false};
+    VideoClip* m_pOwnerClip{nullptr};
+    int64_t m_i64ClipStartOffset{0}, m_i64ClipEndOffset{0}, m_i64ClipDuration{0};
     string m_strErrMsg;
 };
 }

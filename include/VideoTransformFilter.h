@@ -35,6 +35,8 @@ namespace MediaCore
         ASPECT_FIT_TYPE__STRETCH,
     };
 
+    struct VideoClip;
+
     struct VideoTransformFilter
     {
         using Holder = std::shared_ptr<VideoTransformFilter>;
@@ -53,11 +55,12 @@ namespace MediaCore
         virtual std::string GetOutputFormat() const = 0;
         virtual bool SetAspectFitType(AspectFitType type) = 0;
         virtual AspectFitType GetAspectFitType() const = 0;
-        virtual bool SetTimeRange(const MatUtils::Vec2<int64_t>& tTimeRange) = 0;
-        virtual MatUtils::Vec2<int64_t> GetTimeRange() const = 0;
 
         virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) = 0;
         virtual VideoFrame::Holder FilterImage(VideoFrame::Holder hVfrm, int64_t pos) = 0;
+
+        virtual void ApplyTo(VideoClip* pVClip) = 0;
+        virtual void UpdateClipRange() = 0;
 
         // return the coordinates of four corner points as array { TopLeft, TopRight, BottomRight, BottomLeft },
         // the coordinates use the canvas center as the origin
