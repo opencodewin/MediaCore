@@ -891,6 +891,7 @@ private:
                 }
 
                 bool enqDone = false;
+                bool bEof = false;
                 while (!m_quit && !enqDone)
                 {
                     bool idleLoop2 = true;
@@ -918,7 +919,12 @@ private:
                         }
                         else
                         {
-                            if (fferr != AVERROR_EOF)
+                            if (fferr == AVERROR_EOF)
+                            {
+                                bEof = true;
+                                break;
+                            }
+                            else
                                 m_logger->Log(Error) << "Demuxer ERROR! 'av_read_frame()' returns " << fferr << "." << endl;
                             break;
                         }
@@ -956,6 +962,8 @@ private:
                     if (idleLoop2)
                         this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
                 }
+                if (bEof)
+                    break;
             }
             else
             {

@@ -23,6 +23,7 @@
 #include <algorithm>
 #include "Logger.h"
 #include "FFUtils.h"
+#include "HwaccelManager.h"
 extern "C"
 {
     #include "libavutil/pixdesc.h"
@@ -1975,9 +1976,10 @@ static bool _OpenHwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codec
     AVHWDeviceType useHardwareType = options->useHardwareType;
     vector<const MediaCore::HwaccelManager::HwaccelTypeInfo*> tryHwDevList;
     vector<const MediaCore::HwaccelManager::HwaccelTypeInfo*>::iterator tryHwDevIter;
-    if (useHardwareType == AV_HWDEVICE_TYPE_NONE && options->hHwaMgr)
+    auto hHwaMgr = options->hHwaMgr ? options->hHwaMgr : MediaCore::HwaccelManager::GetDefaultInstance();
+    if (useHardwareType == AV_HWDEVICE_TYPE_NONE && hHwaMgr)
     {
-        tryHwDevList = options->hHwaMgr->GetHwaccelTypesForCodec(string(avcodec_get_name(codecpar->codec_id)), MediaCore::HwaccelManager::VIDEO|MediaCore::HwaccelManager::DECODER);
+        tryHwDevList = hHwaMgr->GetHwaccelTypesForCodec(string(avcodec_get_name(codecpar->codec_id)), MediaCore::HwaccelManager::VIDEO|MediaCore::HwaccelManager::DECODER);
         tryHwDevIter = find_if(tryHwDevList.begin(), tryHwDevList.end(), [] (auto& pDevInfo) {
             return pDevInfo->usable;
         });

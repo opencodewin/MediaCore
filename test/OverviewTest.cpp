@@ -58,6 +58,8 @@ static void MediaOverview_Initialize(void** handle)
     // g_movr2 = CreateMediaOverview();
     // g_movr2->SetSnapshotSize(320, 180);
     // g_movr2->SetFixedAggregateSamples(1);
+
+    HwaccelManager::GetDefaultInstance()->Init();
 }
 
 static void MediaOverview_Finalize(void** handle)
