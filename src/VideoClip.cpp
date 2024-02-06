@@ -1042,7 +1042,7 @@ public:
         }
 
         auto hTrans = m_hTrans;
-        auto hOutVfrm = hTrans->MixTwoImages(hInVf1, hInVf2, pos+m_start, Duration());
+        auto hOutVfrm = hTrans->MixTwoImages(hClipOutVfrm1, hClipOutVfrm2, pos+m_start, Duration());
         ImGui::ImMat tTransMat;
         if (hOutVfrm) hOutVfrm->GetMat(tTransMat);
         frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSITION, m_hFrontClip->Id(), m_hFrontClip->TrackId(), tTransMat});
