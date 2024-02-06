@@ -452,6 +452,11 @@ public:
         return m_hWarpFilter;
     }
 
+    SharedSettings::Holder GetSharedSettings() const override
+    {
+        return m_hSettings;
+    }
+
     void UpdateSettings(SharedSettings::Holder hSettings) override
     {
         auto outWidth = hSettings->VideoOutWidth();
@@ -789,6 +794,11 @@ public:
     VideoTransformFilter::Holder GetTransformFilter() override
     {
         return m_hWarpFilter;
+    }
+
+    SharedSettings::Holder GetSharedSettings() const override
+    {
+        return m_hSettings;
     }
 
     void UpdateSettings(SharedSettings::Holder hSettings) override

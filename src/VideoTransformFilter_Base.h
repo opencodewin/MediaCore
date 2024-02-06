@@ -17,6 +17,7 @@
 
 #pragma once
 #include <cmath>
+#include <utility>
 #include <MatUtilsImVecHelper.h>
 #include "VideoClip.h"
 #include "VideoTransformFilter.h"
@@ -32,19 +33,23 @@ public:
     VideoTransformFilter_Base()
     {
         m_hPosOffsetCurve = LibCurve::Curve::CreateInstance("PosOffsetCurve", LibCurve::Linear, {-1,-1,0,0}, {1,1,0,0}, {0,0,0,0}, true);
-        m_hPosOffsetCurve->SetLimitOutputValueInRange(true);
-        m_hPosOffsetCurve->SetLimitKeyPointValueInRange(true);
+        m_hPosOffsetCurve->SetClipOutputValue(LibCurve::Curve::FLAGS_CLIP_MINMAX); m_hPosOffsetCurve->SetClipKeyPointValue(LibCurve::Curve::FLAGS_CLIP_MINMAX);
+        m_hPosOffsetCurve->SetClipKeyPointTime(LibCurve::Curve::FLAGS_CLIP_MINMAX);
         m_aCropCurves.resize(2);
         m_aCropCurves[0] = LibCurve::Curve::CreateInstance("CropCurveLT", LibCurve::Linear, {0,0,0,0}, {1,1,0,0}, {0,0,0,0}, true);
-        m_aCropCurves[0]->SetLimitOutputValueInRange(true); m_aCropCurves[0]->SetLimitKeyPointValueInRange(true);
+        m_aCropCurves[0]->SetClipOutputValue(LibCurve::Curve::FLAGS_CLIP_MINMAX); m_aCropCurves[0]->SetClipKeyPointValue(LibCurve::Curve::FLAGS_CLIP_MINMAX);
         m_aCropCurves[1] = LibCurve::Curve::CreateInstance("CropCurveRB", LibCurve::Linear, {0,0,0,0}, {1,1,0,0}, {0,0,0,0}, true);
-        m_aCropCurves[1]->SetLimitOutputValueInRange(true); m_aCropCurves[1]->SetLimitKeyPointValueInRange(true);
-        m_hScaleCurve = LibCurve::Curve::CreateInstance("ScaleCurve", LibCurve::Linear, {0,0,0,0}, {32,32,0,0}, {1,1,0,0}, true);
-        m_hScaleCurve->SetLimitOutputValueInRange(true); m_hScaleCurve->SetLimitKeyPointValueInRange(true);
+        m_aCropCurves[1]->SetClipOutputValue(LibCurve::Curve::FLAGS_CLIP_MINMAX); m_aCropCurves[1]->SetClipKeyPointValue(LibCurve::Curve::FLAGS_CLIP_MINMAX);
+        m_aCropCurves[0]->SetClipKeyPointTime(LibCurve::Curve::FLAGS_CLIP_MINMAX); m_aCropCurves[1]->SetClipKeyPointTime(LibCurve::Curve::FLAGS_CLIP_MINMAX);
+        m_hScaleCurve = LibCurve::Curve::CreateInstance("ScaleCurve", LibCurve::Linear, {0,0,0,0}, {4,4,0,0}, {1,1,0,0}, true);
+        m_hScaleCurve->SetClipOutputValue(LibCurve::Curve::FLAGS_CLIP_MIN); m_hScaleCurve->SetClipKeyPointValue(LibCurve::Curve::FLAGS_CLIP_MIN);
+        m_hScaleCurve->SetClipKeyPointTime(LibCurve::Curve::FLAGS_CLIP_MINMAX);
         m_hRotationCurve = LibCurve::Curve::CreateInstance("RotationCurve", LibCurve::Linear, {-360,-360,0,0}, {360,360,0,0}, {0,0,0,0}, true);
-        m_hRotationCurve->SetLimitOutputValueInRange(true); m_hRotationCurve->SetLimitKeyPointValueInRange(true);
+        m_hRotationCurve->SetClipOutputValue(LibCurve::Curve::FLAGS_CLIP_MINMAX); m_hRotationCurve->SetClipKeyPointValue(LibCurve::Curve::FLAGS_CLIP_MINMAX);
+        m_hRotationCurve->SetClipKeyPointTime(LibCurve::Curve::FLAGS_CLIP_MINMAX);
         m_hOpacityCurve = LibCurve::Curve::CreateInstance("OpacityCurve", LibCurve::Linear, {0,0,0,0}, {1,1,0,0}, {1,1,0,0}, true);
-        m_hOpacityCurve->SetLimitOutputValueInRange(true); m_hOpacityCurve->SetLimitKeyPointValueInRange(true);
+        m_hOpacityCurve->SetClipOutputValue(LibCurve::Curve::FLAGS_CLIP_MINMAX); m_hOpacityCurve->SetClipKeyPointValue(LibCurve::Curve::FLAGS_CLIP_MINMAX);
+        m_hOpacityCurve->SetClipKeyPointTime(LibCurve::Curve::FLAGS_CLIP_MINMAX);
     }
 
     virtual ~VideoTransformFilter_Base() {}
@@ -141,6 +146,14 @@ public:
         m_hScaleCurve->SetTimeRange(v2TimeRange);
         m_hRotationCurve->SetTimeRange(v2TimeRange);
         m_hOpacityCurve->SetTimeRange(v2TimeRange);
+        const auto tFrameRate = pVClip->GetSharedSettings()->VideoOutFrameRate();
+        const pair<uint32_t, uint32_t> tTimeBase(tFrameRate.den, tFrameRate.num);
+        m_hPosOffsetCurve->SetTimeBase(tTimeBase);
+        m_aCropCurves[0]->SetTimeBase(tTimeBase);
+        m_aCropCurves[1]->SetTimeBase(tTimeBase);
+        m_hScaleCurve->SetTimeBase(tTimeBase);
+        m_hRotationCurve->SetTimeBase(tTimeBase);
+        m_hOpacityCurve->SetTimeBase(tTimeBase);
     }
 
     void UpdateClipRange() override
@@ -1428,6 +1441,16 @@ public:
     LibCurve::Curve::Holder GetKeyFramesCurveOnOpacity() const override
     { return m_hOpacityCurve; }
 
+    void SetUiStateJson(const imgui_json::value& j) override
+    {
+        m_jnUiState = j;
+    }
+
+    imgui_json::value GetUiStateJson() const override
+    {
+        return m_jnUiState;
+    }
+
     imgui_json::value SaveAsJson() const override
     {
         imgui_json::value j;
@@ -1445,6 +1468,7 @@ public:
         j["rotation_keyframes_enabled"] = m_bEnableKeyFramesOnRotation;
         j["opacity_curve"] = m_hOpacityCurve->SaveAsJson();
         j["opacity_keyframes_enabled"] = m_bEnableKeyFramesOnOpacity;
+        j["ui_state"] = m_jnUiState;
         return std::move(j);
     }
 
@@ -1499,6 +1523,9 @@ public:
         strAttrName = "opacity_keyframes_enabled";
         if (j.contains(strAttrName) && j[strAttrName].is_boolean())
             m_bEnableKeyFramesOnOpacity = j[strAttrName].get<imgui_json::boolean>();
+        strAttrName = "ui_state";
+        if (j.contains(strAttrName) && j[strAttrName].is_object())
+            m_jnUiState = j[strAttrName];
         return true;
     }
 
@@ -1663,6 +1690,7 @@ protected:
     bool m_bEnableKeyFramesOnOpacity{false};
     VideoClip* m_pOwnerClip{nullptr};
     int64_t m_i64ClipStartOffset{0}, m_i64ClipEndOffset{0}, m_i64ClipDuration{0};
+    imgui_json::value m_jnUiState;
     string m_strErrMsg;
 };
 }

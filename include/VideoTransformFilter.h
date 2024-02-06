@@ -157,6 +157,8 @@ namespace MediaCore
         virtual bool IsKeyFramesEnabledOnOpacity() const = 0;
         virtual ImGui::ImNewCurve::Curve::Holder GetKeyFramesCurveOnOpacity() const = 0;
 
+        virtual void SetUiStateJson(const imgui_json::value& j) = 0;
+        virtual imgui_json::value GetUiStateJson() const = 0;
         virtual imgui_json::value SaveAsJson() const = 0;
         virtual bool LoadFromJson(const imgui_json::value& j) = 0;
         virtual std::string GetError() const = 0;
