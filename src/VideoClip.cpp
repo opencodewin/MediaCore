@@ -292,9 +292,9 @@ public:
         // string filename = SysUtils::ExtractFileBaseName(m_hInfo->url);
         // AddCheckPoint(filename+", t0");
         const int64_t readPos = pos+m_startOffset;
-        auto hVf = m_hReader->ReadVideoFrame(readPos, eof);
+        auto hInVf = m_hReader->ReadVideoFrame(readPos, eof);
         // m_logger->Log(DEBUG) << ">> Read vf @" << readPosTs << ", sucess=" << (bool)hVf << endl;
-        if (!hVf)
+        if (!hInVf)
         {
             m_logger->Log(WARN) << "FAILED to read frame @ timeline-pos=" << pos << "ms, media-time=" << readPos << "ms! Error is '" << m_hReader->GetError() << "'." << endl;
             return nullptr;
@@ -302,31 +302,35 @@ public:
         // AddCheckPoint(filename+", t1");
         // LogCheckPointsTimeInfo();
 
+        VideoFrame::Holder hFilteredVfrm;
         ImGui::ImMat tImgMat;
-        hVf->GetMat(tImgMat);
+        hInVf->GetMat(tImgMat);
         if (tImgMat.empty())
             return nullptr;
         frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, tImgMat});
-
-        // process with transform filter
-        auto hFilteredVfrm = m_hWarpFilter->FilterImage(hVf, pos);
-        if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
-        if (!hFilteredVfrm || tImgMat.empty())
-            return nullptr;
-        hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
-        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, tImgMat});
 
         // process with external filter
         auto hFilter = m_hFilter;
         if (hFilter)
         {
-            hFilteredVfrm = hFilter->FilterImage(hFilteredVfrm, pos);
+            hFilteredVfrm = hFilter->FilterImage(hInVf, pos);
             if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
             if (!hFilteredVfrm || tImgMat.empty())
                 return nullptr;
         }
+        else
+            hFilteredVfrm = hInVf;
         hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
         frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, tImgMat});
+        hInVf = hFilteredVfrm;
+
+        // process with transform filter
+        hFilteredVfrm = m_hWarpFilter->FilterImage(hInVf, pos);
+        if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
+        if (!hFilteredVfrm || tImgMat.empty())
+            return nullptr;
+        hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, tImgMat});
         return hFilteredVfrm;
     }
 
@@ -357,31 +361,35 @@ public:
         if (!hInVf)
             return nullptr;
 
+        VideoFrame::Holder hFilteredVfrm;
         ImGui::ImMat tImgMat;
         hInVf->GetMat(tImgMat);
         if (tImgMat.empty())
             return nullptr;
         frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, tImgMat});
 
+        // process with external filter
+        auto hFilter = m_hFilter;
+        if (hFilter)
+        {
+            hFilteredVfrm = hFilter->FilterImage(hInVf, pos);
+            if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
+            if (!hFilteredVfrm || tImgMat.empty())
+                return nullptr;
+        }
+        else
+            hFilteredVfrm = hInVf;
+        hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, tImgMat});
+        hInVf = hFilteredVfrm;
+
         // process with transform filter
-        auto hFilteredVfrm = m_hWarpFilter->FilterImage(hInVf, pos);
+        hFilteredVfrm = m_hWarpFilter->FilterImage(hInVf, pos);
         if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
         if (!hFilteredVfrm || tImgMat.empty())
             return nullptr;
         hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
         frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, tImgMat});
-
-        // process with external filter
-        auto hFilter = m_hFilter;
-        if (hFilter)
-        {
-            hFilteredVfrm = hFilter->FilterImage(hFilteredVfrm, pos);
-            if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
-            if (!hFilteredVfrm || tImgMat.empty())
-                return nullptr;
-        }
-        hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
-        frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, tImgMat});
         return hFilteredVfrm;
     }
 
@@ -690,6 +698,8 @@ public:
             eof = true;
             return nullptr;
         }
+
+        VideoFrame::Holder hFilteredVfrm;
         ImGui::ImMat tImgMat;
         if (!m_hReader->ReadVideoFrame(0, tImgMat, eof))
             throw runtime_error(m_hReader->GetError());
@@ -697,25 +707,28 @@ public:
         auto hInVf = VideoFrame::CreateMatInstance(tImgMat);
         frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, tImgMat});
 
+        // process with external filter
+        auto hFilter = m_hFilter;
+        if (hFilter)
+        {
+            hFilteredVfrm = hFilter->FilterImage(hInVf, pos);
+            if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
+            if (!hFilteredVfrm || tImgMat.empty())
+                return nullptr;
+        }
+        else
+            hFilteredVfrm = hInVf;
+        hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, tImgMat});
+        hInVf = hFilteredVfrm;
+
         // process with transform filter
-        auto hFilteredVfrm = m_hWarpFilter->FilterImage(hInVf, pos);
+        hFilteredVfrm = m_hWarpFilter->FilterImage(hInVf, pos);
         if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
         if (!hFilteredVfrm || tImgMat.empty())
             return nullptr;
         hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
         frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, tImgMat});
-
-        // process with external filter
-        auto hFilter = m_hFilter;
-        if (hFilter)
-        {
-            hFilteredVfrm = hFilter->FilterImage(hFilteredVfrm, pos);
-            if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
-            if (!hFilteredVfrm || tImgMat.empty())
-                return nullptr;
-        }
-        hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
-        frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, tImgMat});
         return hFilteredVfrm;
     }
 
@@ -736,31 +749,35 @@ public:
         if (!hInVf)
             return nullptr;
 
+        VideoFrame::Holder hFilteredVfrm;
         ImGui::ImMat tImgMat;
         hInVf->GetMat(tImgMat);
         if (tImgMat.empty())
             return nullptr;
         frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, tImgMat});
 
+        // process with external filter
+        auto hFilter = m_hFilter;
+        if (hFilter)
+        {
+            hFilteredVfrm = hFilter->FilterImage(hInVf, pos);
+            if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
+            if (!hFilteredVfrm || tImgMat.empty())
+                return nullptr;
+        }
+        else
+            hFilteredVfrm = hInVf;
+        hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, tImgMat});
+        hInVf = hFilteredVfrm;
+
         // process with transform filter
-        auto hFilteredVfrm = m_hWarpFilter->FilterImage(hInVf, pos);
+        hFilteredVfrm = m_hWarpFilter->FilterImage(hInVf, pos);
         if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
         if (!hFilteredVfrm || tImgMat.empty())
             return nullptr;
         hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
         frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, tImgMat});
-
-        // process with external filter
-        auto hFilter = m_hFilter;
-        if (hFilter)
-        {
-            hFilteredVfrm = hFilter->FilterImage(hFilteredVfrm, pos);
-            if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
-            if (!hFilteredVfrm || tImgMat.empty())
-                return nullptr;
-        }
-        hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
-        frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, tImgMat});
         return hFilteredVfrm;
     }
 

@@ -108,29 +108,29 @@ private:
         }
         if (m_bNeedUpdateScaleParam || m_bNeedUpdateRotationParam || m_bNeedUpdatePosOffsetParam)
         {
-            float _x_scale = 1.f / (m_fFinalScaleRatioX + FLT_EPSILON);
-            float _y_scale = 1.f / (m_fFinalScaleRatioY + FLT_EPSILON);
-            float _angle = m_fRotateAngle / 180.f * M_PI;
-            float alpha_00 = cos(_angle) * _x_scale;
-            float alpha_11 = cos(_angle) * _y_scale;
-            float beta_01 = sin(_angle) * _x_scale;
-            float beta_10 = sin(_angle) * _y_scale;
-            float x_diff = (float)m_u32OutWidth - (float)m_u32InWidth;
-            float y_diff = (float)m_u32OutHeight - (float)m_u32InHeight;
-            float _x_diff = (m_u32OutWidth + m_u32InWidth * m_fFinalScaleRatioX) / 2.f;
-            float _y_diff = (m_u32OutHeight + m_u32InHeight * m_fFinalScaleRatioY) / 2.f;
-            float x_offset = (float)m_i32PosOffsetX / (float)m_u32OutWidth;
-            float _x_offset = x_offset * _x_diff + x_diff / 2;
-            float y_offset = (float)m_i32PosOffsetY / (float)m_u32OutHeight;
-            float _y_offset = y_offset * _y_diff + y_diff / 2;
-            int center_x = m_u32InWidth / 2.f + _x_offset;
-            int center_y = m_u32InHeight / 2.f + _y_offset;
-            m_mAffineMatrix.at<float>(0, 0) =  alpha_00;
-            m_mAffineMatrix.at<float>(1, 0) = beta_01;
-            m_mAffineMatrix.at<float>(2, 0) = (1 - alpha_00) * center_x - beta_01 * center_y - _x_offset;
-            m_mAffineMatrix.at<float>(0, 1) = -beta_10;
-            m_mAffineMatrix.at<float>(1, 1) = alpha_11;
-            m_mAffineMatrix.at<float>(2, 1) = beta_10 * center_x + (1 - alpha_11) * center_y - _y_offset;
+            const float fScaleFactorX = 1.f/(m_fFinalScaleRatioX+FLT_EPSILON);
+            const float fScaleFactorY = 1.f/(m_fFinalScaleRatioY+FLT_EPSILON);
+            const float fRotationRadian = m_fRotateAngle/180.f*M_PI;
+            const float fAlpha00 = cos(fRotationRadian)*fScaleFactorX;
+            const float fAlpha11 = cos(fRotationRadian)*fScaleFactorY;
+            const float fBeta01 = sin(fRotationRadian)*fScaleFactorX;
+            const float fBeta10 = sin(fRotationRadian)*fScaleFactorY;
+            const float fSizeDiffX = (float)m_u32OutWidth-(float)m_u32InWidth;
+            const float fSizeDiffY = (float)m_u32OutHeight-(float)m_u32InHeight;
+            const float fSizeSumX = (m_u32OutWidth+m_u32InWidth*m_fFinalScaleRatioX)/2.f;
+            const float fSizeSumY = (m_u32OutHeight+m_u32InHeight*m_fFinalScaleRatioY)/2.f;
+            const float fOffsetRatioX = (float)m_i32PosOffsetX/(float)m_u32OutWidth;
+            const float fOffsetX = fOffsetRatioX*fSizeSumX+fSizeDiffX/2.f;
+            const float fOffsetRatioY = (float)m_i32PosOffsetY/(float)m_u32OutHeight;
+            const float fOffsetY = fOffsetRatioY*fSizeSumY+fSizeDiffY/2.f;
+            const float fCenterX = (float)m_u32InWidth/2.f+fOffsetX;
+            const float fCenterY = (float)m_u32InHeight/2.f+fOffsetY;
+            m_mAffineMatrix.at<float>(0, 0) = fAlpha00;
+            m_mAffineMatrix.at<float>(1, 0) = fBeta01;
+            m_mAffineMatrix.at<float>(2, 0) = (1-fAlpha00)*fCenterX-fBeta01*fCenterY-fOffsetX;
+            m_mAffineMatrix.at<float>(0, 1) = -fBeta10;
+            m_mAffineMatrix.at<float>(1, 1) = fAlpha11;
+            m_mAffineMatrix.at<float>(2, 1) = fBeta10*fCenterX+(1-fAlpha11)*fCenterY-fOffsetY;
             m_bNeedUpdateScaleParam = m_bNeedUpdateRotationParam = m_bNeedUpdatePosOffsetParam = false;
             UpdatePassThrough();
         }

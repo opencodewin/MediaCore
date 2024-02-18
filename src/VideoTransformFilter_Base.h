@@ -89,6 +89,9 @@ public:
     uint32_t GetOutHeight() const override
     { return m_u32OutHeight; }
 
+    MatUtils::Vec2<uint32_t>GetOutSize() const override
+    { return {m_u32OutWidth, m_u32OutHeight}; }
+
     string GetOutputFormat() const override
     { return m_strOutputFormat; }
 
@@ -342,6 +345,18 @@ public:
     int32_t GetPosOffsetY() const override
     { return m_i32PosOffsetY; }
 
+    MatUtils::Vec2<int32_t> GetPosOffset() const override
+    { return {m_i32PosOffsetX, m_i32PosOffsetY}; }
+
+    MatUtils::Vec2<int32_t> GetPosOffset(int64_t i64Tick) const override
+    {
+        const auto fTick = m_bEnableKeyFramesOnPosOffset ? (float)i64Tick : (float)m_tTimeRange.x;
+        const auto tKpVal = m_hPosOffsetCurve->CalcPointVal(fTick, false);
+        const auto i32PosOffX = (int32_t)round((float)m_u32OutWidth*tKpVal.x);
+        const auto i32PosOffY = (int32_t)round((float)m_u32OutHeight*tKpVal.y);
+        return {i32PosOffX, i32PosOffY};
+    }
+
     bool SetPosOffsetRatio(float fPosOffRatioX, float fPosOffRatioY) override
     { return SetPosOffsetRatio(m_tTimeRange.x, fPosOffRatioX, fPosOffRatioY); }
 
@@ -468,6 +483,18 @@ public:
         const auto fTick = m_bEnableKeyFramesOnPosOffset ? (float)i64Tick : (float)m_tTimeRange.x;
         const auto tKpVal = m_hPosOffsetCurve->CalcPointVal(fTick, false);
         return tKpVal.y;
+    }
+
+    MatUtils::Vec2<float> GetPosOffsetRatio() const override
+    {
+        return {m_fPosOffsetRatioX, m_fPosOffsetRatioY};
+    }
+
+    MatUtils::Vec2<float> GetPosOffsetRatio(int64_t i64Tick) const override
+    {
+        const auto fTick = m_bEnableKeyFramesOnPosOffset ? (float)i64Tick : (float)m_tTimeRange.x;
+        const auto tKpVal = m_hPosOffsetCurve->CalcPointVal(fTick, false);
+        return {tKpVal.x, tKpVal.y};
     }
 
     bool ChangePosOffset(int64_t i64Tick, int32_t i32DeltaX, int32_t i32DeltaY, bool* pParamUpdated) override
@@ -1227,7 +1254,7 @@ public:
     {
         const auto fTick = m_bEnableKeyFramesOnScale ? (float)i64Tick : (float)m_tTimeRange.x;
         const auto tKpVal = m_hScaleCurve->CalcPointVal(fTick, false);
-        return MatUtils::Vec2<float>(tKpVal.x, tKpVal.y);
+        return m_bKeepAspectRatio ? MatUtils::Vec2<float>(tKpVal.x, tKpVal.x) : MatUtils::Vec2<float>(tKpVal.x, tKpVal.y);
     }
 
     MatUtils::Vec2<float> GetFinalScale(int64_t i64Tick) const override

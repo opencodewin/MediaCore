@@ -50,6 +50,7 @@ namespace MediaCore
         virtual uint32_t GetInHeight() const = 0;
         virtual uint32_t GetOutWidth() const = 0;
         virtual uint32_t GetOutHeight() const = 0;
+        virtual MatUtils::Vec2<uint32_t>GetOutSize() const = 0;
 
         virtual bool SetOutputFormat(const std::string& outputFormat) = 0;
         virtual std::string GetOutputFormat() const = 0;
@@ -72,11 +73,15 @@ namespace MediaCore
         virtual int32_t GetPosOffsetX() const = 0;
         virtual bool SetPosOffsetY(int32_t i32PosOffY) = 0;
         virtual int32_t GetPosOffsetY() const = 0;
+        virtual MatUtils::Vec2<int32_t> GetPosOffset() const = 0; 
+        virtual MatUtils::Vec2<int32_t> GetPosOffset(int64_t i64Tick) const = 0; 
         virtual bool SetPosOffsetRatio(float fPosOffRatioX, float fPosOffRatioY) = 0;
         virtual bool SetPosOffsetRatioX(float fPosOffRatioX) = 0;
         virtual float GetPosOffsetRatioX() const = 0;
         virtual bool SetPosOffsetRatioY(float fPosOffRatioY) = 0;
         virtual float GetPosOffsetRatioY() const = 0;
+        virtual MatUtils::Vec2<float> GetPosOffsetRatio() const = 0; 
+        virtual MatUtils::Vec2<float> GetPosOffsetRatio(int64_t i64Tick) const = 0; 
         virtual bool SetPosOffsetRatio(int64_t i64Tick, float fPosOffRatioX, float fPosOffRatioY) = 0;
         virtual bool SetPosOffsetRatioX(int64_t i64Tick, float fPosOffRatioX) = 0;
         virtual float GetPosOffsetRatioX(int64_t i64Tick) const = 0;
