@@ -487,6 +487,8 @@ public:
         if (readerWidth*readerHeight < vidStm->width*vidStm->height)
             interpMode = IM_INTERPOLATE_AREA;
         m_hReader->ChangeVideoOutputSize(readerWidth, readerHeight, interpMode);
+        if (m_hFilter)
+            m_hFilter = m_hFilter->Clone(hSettings);
         m_hWarpFilter = m_hWarpFilter->Clone(hSettings);
     }
 
@@ -840,6 +842,8 @@ public:
         if (readerWidth*readerHeight < vidStm->width*vidStm->height)
             interpMode = IM_INTERPOLATE_AREA;
         m_hReader->ChangeVideoOutputSize(readerWidth, readerHeight, interpMode);
+        if (m_hFilter)
+            m_hFilter = m_hFilter->Clone(hSettings);
         m_hWarpFilter = m_hWarpFilter->Clone(hSettings);
     }
 
