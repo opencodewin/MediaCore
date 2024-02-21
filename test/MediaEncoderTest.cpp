@@ -52,7 +52,7 @@ int main(int argc, const char* argv[])
     uint32_t outAudChannels = 2;
     uint32_t outSampleRate = 44100;
     uint64_t outAudBitRate = 128*1000;
-    int64_t maxEncodeDuration = 60*1000;
+    int64_t maxEncodeDuration = 600*1000;
     bool videoOnly{false}, audioOnly{false};
 
     MediaParser::Holder hParser = MediaParser::CreateInstance();
