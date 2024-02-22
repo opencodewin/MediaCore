@@ -1709,7 +1709,13 @@ static MediaEncoder::Description ConvertAVCodecToEncoderDescription(AVCodecPtr c
     MediaEncoder::Description encdesc;
     encdesc.codecName = string(cdcptr->name);
     if (cdcptr->long_name)
+    {
         encdesc.longName = string(cdcptr->long_name);
+        encdesc.fullName = encdesc.longName + " (" + encdesc.codecName + ")";
+    }
+    else
+        encdesc.fullName = encdesc.codecName;
+
     encdesc.isHardwareEncoder = (cdcptr->capabilities&AV_CODEC_CAP_HARDWARE) != 0;
     if (cdcptr->type == AVMEDIA_TYPE_VIDEO)
         encdesc.mediaType = MediaType::VIDEO;

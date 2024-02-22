@@ -84,6 +84,7 @@ struct MediaEncoder
     {
         std::string codecName;
         std::string longName;
+        std::string fullName;
         MediaType mediaType;
         bool isHardwareEncoder;
         std::vector<Option::Description> optDescList;
