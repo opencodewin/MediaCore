@@ -1357,8 +1357,8 @@ public:
     {
         if (pParamUpdated) *pParamUpdated = false;
         lock_guard<recursive_mutex> lk(m_mtxProcessLock);
-        int32_t n = (int32_t)trunc(fAngle/360);
-        fAngle -= n*360;
+        // int32_t n = (int32_t)trunc(fAngle/360);
+        // fAngle -= n*360;
         auto fTick = m_bEnableKeyFramesOnRotation ? (float)i64Tick : (float)m_tTimeRange.x;
         auto tKpVal = m_hRotationCurve->CalcPointVal(fTick, false);
         const bool bParamUpdated = tKpVal.x != fAngle;
