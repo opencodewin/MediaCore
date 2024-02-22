@@ -649,6 +649,11 @@ public:
             hClip->UpdateSettings(hSettings);
     }
 
+    void SetPreReadMaxNum(int iMaxNum) override
+    {
+        m_iPreReadMaxNum = iMaxNum > 4 ? iMaxNum : 4;
+    }
+
     void SetLogLevel(Logger::Level l) override
     {
         m_logger->SetShowLevels(l);
@@ -693,7 +698,7 @@ private:
                     // 2nd, if no frame needs to be processed, then try to find a frame that needs to read the source mat
                     int index = 0;
                     iter = m_readFrameTasks.begin();
-                    while (iter != m_readFrameTasks.end() && index < 4)
+                    while (iter != m_readFrameTasks.end() && index < m_iPreReadMaxNum)
                     {
                         // remove this task if it's discarded
                         if ((*iter)->IsDiscarded())
@@ -1052,6 +1057,7 @@ private:
     thread m_readThread;
     bool m_quitThread{false};
     list<ReadFrameTask::Holder> m_readFrameTasks;
+    int m_iPreReadMaxNum{4};
     mutex m_readFrameTasksLock;
 };
 

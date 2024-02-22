@@ -67,6 +67,8 @@ struct MultiTrackVideoReader
     virtual bool Refresh(bool updateDuration = true) = 0;
     virtual bool RefreshTrackView(const std::unordered_set<int64_t>& trackIds) = 0;
     virtual bool UpdateSettings(SharedSettings::Holder hSettings) = 0;
+    virtual size_t GetCacheFrameNum() const = 0;
+    virtual void SetCacheFrameNum(size_t szCacheNum) = 0;
 
     virtual int64_t Duration() const = 0;
     virtual int64_t ReadPos() const = 0;

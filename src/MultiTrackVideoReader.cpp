@@ -25,6 +25,7 @@
 #include "VideoBlender.h"
 #include "FFUtils.h"
 #include "ThreadUtils.h"
+#include "DebugHelper.h"
 
 using namespace std;
 using namespace Logger;
@@ -388,7 +389,8 @@ public:
         m_readFrameIdx = frmIdx;
         int step = m_readForward ? 1 : -1;
         AddMixFrameTask(m_readFrameIdx, bForceReseek, true);
-        AddMixFrameTask(m_readFrameIdx+step, false, false);
+        for (auto i = 1; i < m_szCacheFrameNum; i++)
+            AddMixFrameTask(m_readFrameIdx+i*step, false, false);
         return true;
     }
 
@@ -428,7 +430,8 @@ public:
         {
             AddMixFrameTask(m_readFrameIdx, false, true, true);
         }
-        AddMixFrameTask(m_readFrameIdx+step, false, false);
+        for (auto i = 1; i < m_szCacheFrameNum; i++)
+            AddMixFrameTask(m_readFrameIdx+i*step, false, false);
         return true;
     }
 
@@ -657,6 +660,18 @@ public:
         SeekToByIdx(m_readFrameIdx, true);
         StartMixingThread();
         return true;
+    }
+
+    size_t GetCacheFrameNum() const override
+    {
+        return m_szCacheFrameNum;
+    }
+
+    void SetCacheFrameNum(size_t szCacheNum) override
+    {
+        m_szCacheFrameNum = szCacheNum;
+        for (auto& hTrack : m_tracks)
+            hTrack->SetPreReadMaxNum(szCacheNum);
     }
 
     uint32_t TrackCount() const override
@@ -940,7 +955,8 @@ private:
             {
                 if (!hCandiFrame)
                     AddMixFrameTask(frameIndex, false, false);
-                AddMixFrameTask(frameIndex+step, false, false);
+                for (auto i = 1; i < m_szCacheFrameNum; i++)
+                    AddMixFrameTask(frameIndex+i*step, false, false);
             }
             else
             {
@@ -949,19 +965,22 @@ private:
 
             if (!nonblocking && precise)
             {
-                while (!m_quit && !m_inSeeking)
+                if (!hCandiFrame || !hCandiFrame->outputReady)
                 {
-                    this_thread::sleep_for(chrono::milliseconds(5));
-                    hCandiFrame = FindCandidateAndRemoveDeprecatedTasks(frameIndex, precise);
-                    if (!hCandiFrame)
+                    while (!m_quit)
                     {
-                        ostringstream oss;
-                        oss << "CANNOT find corresponding MixFrameTask for frameIndex=" << frameIndex << "!";
-                        m_errMsg = oss.str();
-                        break;
+                        this_thread::sleep_for(chrono::milliseconds(5));
+                        hCandiFrame = FindCandidateAndRemoveDeprecatedTasks(frameIndex, precise);
+                        if (!hCandiFrame)
+                        {
+                            ostringstream oss;
+                            oss << "CANNOT find corresponding MixFrameTask for frameIndex=" << frameIndex << "!";
+                            m_errMsg = oss.str();
+                            break;
+                        }
+                        else if (hCandiFrame->outputReady)
+                            break;
                     }
-                    else if (hCandiFrame->outputReady)
-                        break;
                 }
                 if (hCandiFrame)
                 {
@@ -982,15 +1001,17 @@ private:
         m_quit = false;
         m_mixingThread = thread(&MultiTrackVideoReader_Impl::MixingThreadProc, this);
         SysUtils::SetThreadName(m_mixingThread, "MtvMixing");
+        m_mixingThread2 = thread(&MultiTrackVideoReader_Impl::MixingThreadProc2, this);
+        SysUtils::SetThreadName(m_mixingThread2, "MtvMixing2");
     }
 
     void TerminateMixingThread()
     {
+        m_quit = true;
         if (m_mixingThread.joinable())
-        {
-            m_quit = true;
             m_mixingThread.join();
-        }
+        if (m_mixingThread2.joinable())
+            m_mixingThread2.join();
     }
 
     struct MixFrameTask : public ReadFrameTask::Callback
@@ -1010,10 +1031,23 @@ private:
 
         int64_t frameIndex;
         vector<pair<VideoTrack::Holder, ReadFrameTask::Holder>> readFrameTaskTable;
+        bool processingStarted{false};
         bool outputReady{false};
         vector<CorrelativeFrame> outputFrames;
         atomic_uint8_t state{0};  // lsb#1 means this task is dropped, lsb#2 means this task is started
         static const uint8_t DROP_BIT, START_BIT;
+
+        bool IsProcessingStarted() const { return processingStarted; }
+
+        void StartProcessing()
+        {
+            for (auto& elem : readFrameTaskTable)
+            {
+                auto& rft = elem.second;
+                rft->StartProcessing();
+            }
+            processingStarted = true;
+        }
 
         bool TriggerDrop() override
         {
@@ -1387,88 +1421,24 @@ private:
             while (mftIter != mixFrameTasks.end())
             {
                 auto& mft = *mftIter++;
-                if (mft->outputReady)
+                if (mft->outputReady || mft->IsProcessingStarted())
                     continue;
 
-                bool allProcessed = true;
                 bool allSourceReady = true;
                 for (auto& elem : mft->readFrameTaskTable)
                 {
                     auto& rft = elem.second;
                     if (!rft->IsSourceFrameReady())
                     {
-                        allSourceReady = allProcessed = false;
+                        allSourceReady = false;
                         break;
                     }
-                    if (!rft->IsOutputFrameReady())
-                        allProcessed = false;
                 }
-                if (allProcessed)
-                {
-                    ImGui::ImMat mixedFrame;
-                    vector<CorrelativeFrame> frames;
-                    frames.push_back({CorrelativeFrame::PHASE_AFTER_MIXING, 0, 0, mixedFrame});
-                    double timestamp = (double)mft->frameIndex*frameRate.den/frameRate.num;
-                    auto rftIter = mft->readFrameTaskTable.rbegin();
-                    int mixFrameCnt = 0;
-                    while (rftIter != mft->readFrameTaskTable.rend())
-                    {
-                        auto elem = *rftIter++;
-                        auto& trk = elem.first;
-                        auto& rft = elem.second;
-                        VideoFrame::Holder hVfrm;
-                        if (trk->IsVisible())
-                        {
-                            hVfrm = rft->GetVideoFrame(frames);
-                            mixFrameCnt++;
-                        }
-                        ImGui::ImMat vmat;
-                        if (hVfrm) hVfrm->GetMat(vmat);
-                        if (!vmat.empty())
-                        {
-                            const auto fOpacity = hVfrm->Opacity();
-                            if (mixedFrame.empty() && fOpacity >= 0.f)
-                            {
-                                mixedFrame.create_type(outWidth, outHeight, 4, matDtype);
-                                memset(mixedFrame.data, 0, mixedFrame.total()*mixedFrame.elemsize);
-                            }
-                            if (mixedFrame.empty())
-                                mixedFrame = vmat;
-                            else
-                                mixedFrame = m_hMixBlender->Blend(mixedFrame, vmat, fOpacity);
-                            if (abs(timestamp-vmat.time_stamp) > 0.001)
-                                m_logger->Log(WARN) << "'vmat' read from track #" << trk->Id() << " has WRONG TIMESTAMP! timestamp("
-                                    << timestamp << ") != vmat(" << vmat.time_stamp << ")." << endl;
-                        }
-                    }
+                if (!allSourceReady)
+                    continue;
 
-                    const bool bMixedFrameIsEmpty = mixedFrame.empty();
-                    if (bMixedFrameIsEmpty)
-                    {
-                        mixedFrame.create_type(outWidth, outHeight, 4, matDtype);
-                        memset(mixedFrame.data, 0, mixedFrame.total()*mixedFrame.elemsize);
-                    }
-                    mixedFrame.time_stamp = timestamp;
-                    mixedFrame.flags |= IM_MAT_FLAGS_VIDEO_FRAME;
-                    mixedFrame.rate.num = frameRate.num;
-                    mixedFrame.rate.den = frameRate.den;
-                    mixedFrame.index_count = mft->frameIndex;
-                    frames[0].frame = mixedFrame;
-                    mft->outputFrames = frames;
-                    if (mixFrameCnt == 0 || !bMixedFrameIsEmpty)
-                        m_seekingFlash = std::move(frames);
-                    mft->outputReady = true;
-                    m_logger->Log(DEBUG) << "---------> Got mixed frame at frameIndex=" << mft->frameIndex << ", pos=" << (int64_t)(timestamp*1000) << endl;
-                    idleLoop = false;
-                }
-                else if (allSourceReady)
-                {
-                    for (auto& elem : mft->readFrameTaskTable)
-                    {
-                        auto& rft = elem.second;
-                        rft->StartProcessing();
-                    }
-                }
+                mft->StartProcessing();
+                idleLoop = false;
             }
 
             if (idleLoop)
@@ -1476,6 +1446,116 @@ private:
         }
 
         m_logger->Log(DEBUG) << "Leave MixingThreadProc(VIDEO)." << endl;
+    }
+
+    void MixingThreadProc2()
+    {
+        m_logger->Log(DEBUG) << "Enter MixingThreadProc2(VIDEO)..." << endl;
+
+        const auto outWidth = m_hSettings->VideoOutWidth();
+        const auto outHeight = m_hSettings->VideoOutHeight();
+        const auto frameRate = m_hSettings->VideoOutFrameRate();
+        const auto matDtype = m_hSettings->VideoOutDataType();
+        bool afterSeek = false;
+        bool prevInSeekingState = m_inSeeking;
+        while (!m_quit)
+        {
+            bool idleLoop = true;
+
+            list<MixFrameTask::Holder> mixFrameTasks;
+            if (m_inSeeking)
+            {
+                lock_guard<mutex> lk(m_seekingTasksLock);
+                mixFrameTasks = m_seekingTasks;
+            }
+            else
+            {
+                lock_guard<recursive_mutex> lk(m_mixFrameTasksLock);
+                mixFrameTasks = m_mixFrameTasks;
+            }
+            auto mftIter = mixFrameTasks.begin();
+            while (mftIter != mixFrameTasks.end())
+            {
+                auto& mft = *mftIter++;
+                if (mft->outputReady || !mft->IsProcessingStarted())
+                    continue;
+
+                bool allProcessed = true;
+                for (auto& elem : mft->readFrameTaskTable)
+                {
+                    auto& rft = elem.second;
+                    if (!rft->IsOutputFrameReady())
+                    {
+                        allProcessed = false;
+                        break;
+                    }
+                }
+                if (!allProcessed)
+                    continue;
+
+                ImGui::ImMat mixedFrame;
+                vector<CorrelativeFrame> frames;
+                frames.push_back({CorrelativeFrame::PHASE_AFTER_MIXING, 0, 0, mixedFrame});
+                double timestamp = (double)mft->frameIndex*frameRate.den/frameRate.num;
+                auto rftIter = mft->readFrameTaskTable.rbegin();
+                int mixFrameCnt = 0;
+                while (rftIter != mft->readFrameTaskTable.rend())
+                {
+                    auto elem = *rftIter++;
+                    auto& trk = elem.first;
+                    auto& rft = elem.second;
+                    VideoFrame::Holder hVfrm;
+                    if (trk->IsVisible())
+                    {
+                        hVfrm = rft->GetVideoFrame(frames);
+                        mixFrameCnt++;
+                    }
+                    ImGui::ImMat vmat;
+                    if (hVfrm) hVfrm->GetMat(vmat);
+                    if (!vmat.empty())
+                    {
+                        const auto fOpacity = hVfrm->Opacity();
+                        if (mixedFrame.empty() && fOpacity < 1.f)
+                        {
+                            mixedFrame.create_type(outWidth, outHeight, 4, matDtype);
+                            memset(mixedFrame.data, 0, mixedFrame.total()*mixedFrame.elemsize);
+                        }
+                        if (mixedFrame.empty())
+                            mixedFrame = vmat;
+                        else
+                            mixedFrame = m_hMixBlender->Blend(mixedFrame, vmat, fOpacity);
+                        if (abs(timestamp-vmat.time_stamp) > 0.001)
+                            m_logger->Log(WARN) << "'vmat' read from track #" << trk->Id() << " has WRONG TIMESTAMP! timestamp("
+                                << timestamp << ") != vmat(" << vmat.time_stamp << ")." << endl;
+                    }
+                }
+
+                const bool bMixedFrameIsEmpty = mixedFrame.empty();
+                if (bMixedFrameIsEmpty)
+                {
+                    mixedFrame.create_type(outWidth, outHeight, 4, matDtype);
+                    memset(mixedFrame.data, 0, mixedFrame.total()*mixedFrame.elemsize);
+                }
+                mixedFrame.time_stamp = timestamp;
+                mixedFrame.flags |= IM_MAT_FLAGS_VIDEO_FRAME;
+                mixedFrame.rate.num = frameRate.num;
+                mixedFrame.rate.den = frameRate.den;
+                mixedFrame.index_count = mft->frameIndex;
+                frames[0].frame = mixedFrame;
+                mft->outputFrames = frames;
+                if (mixFrameCnt == 0 || !bMixedFrameIsEmpty)
+                    m_seekingFlash = std::move(frames);
+                mft->outputReady = true;
+                m_logger->Log(DEBUG) << "---------> Got mixed frame at frameIndex=" << mft->frameIndex << ", pos=" << (int64_t)(timestamp*1000) << endl;
+                idleLoop = false;
+                break;
+            }
+
+            if (idleLoop)
+                this_thread::sleep_for(chrono::milliseconds(THREAD_IDLE_TIME));
+        }
+
+        m_logger->Log(DEBUG) << "Leave MixingThreadProc2(VIDEO)." << endl;
     }
 
     string PrintMixFrameTaskListStatus(list<MixFrameTask::Holder>& taskList, const string& listName)
@@ -1571,11 +1651,13 @@ private:
     recursive_mutex m_apiLock;
 
     thread m_mixingThread;
+    thread m_mixingThread2;
     list<VideoTrack::Holder> m_tracks;
     recursive_mutex m_trackLock;
     VideoBlender::Holder m_hMixBlender;
 
     list<MixFrameTask::Holder> m_mixFrameTasks;
+    size_t m_szCacheFrameNum{1};
     recursive_mutex m_mixFrameTasksLock;
     MixFrameTask::Holder m_prevOutFrame;
     bool m_inSeeking{false};
