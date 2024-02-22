@@ -43,14 +43,14 @@ static void MediaSnapshot_Initialize(void** handle)
         ->SetShowLevels(INFO);
     g_txmgr = TextureManager::CreateInstance();
 
-#ifdef USE_BOOKMARK
+#ifdef USE_PLACES_FEATURE
 	// load bookmarks
 	ifstream docFile(c_bookmarkPath, ios::in);
 	if (docFile.is_open())
 	{
 		stringstream strStream;
 		strStream << docFile.rdbuf(); //read the file
-		ImGuiFileDialog::Instance()->DeserializeBookmarks(strStream.str());
+		ImGuiFileDialog::Instance()->DeserializePlaces(strStream.str());
 		docFile.close();
 	}
 #endif
@@ -75,12 +75,12 @@ static void MediaSnapshot_Finalize(void** handle)
     g_ssgen->ReleaseViewer(g_ssvw1);
     g_ssgen = nullptr;
     g_movr = nullptr;
-#ifdef USE_BOOKMARK
+#ifdef USE_PLACES_FEATURE
 	// save bookmarks
 	ofstream configFileWriter(c_bookmarkPath, ios::out);
 	if (!configFileWriter.bad())
 	{
-		configFileWriter << ImGuiFileDialog::Instance()->SerializeBookmarks();
+		configFileWriter << ImGuiFileDialog::Instance()->SerializePlaces();
 		configFileWriter.close();
 	}
 #endif
