@@ -131,7 +131,8 @@ ImColorFormat ConvertPixelFormatToColorFormat(AVPixelFormat pixfmt)
     const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(pixfmt);
     ImColorFormat clrfmt = (ImColorFormat)-1;
     if (pixfmt == AV_PIX_FMT_GRAY8 || pixfmt == AV_PIX_FMT_GRAY10 || pixfmt == AV_PIX_FMT_GRAY12 ||
-        pixfmt == AV_PIX_FMT_GRAY14 || pixfmt == AV_PIX_FMT_GRAY16 || pixfmt == AV_PIX_FMT_GRAYF32)
+        pixfmt == AV_PIX_FMT_GRAY14 || pixfmt == AV_PIX_FMT_GRAY16 || pixfmt == AV_PIX_FMT_GRAYF32 ||
+        pixfmt == AV_PIX_FMT_PAL8)
         clrfmt = IM_CF_GRAY;
     else if (pixfmt == AV_PIX_FMT_BGR24 || pixfmt == AV_PIX_FMT_BGR48)
         clrfmt = IM_CF_RGB;
