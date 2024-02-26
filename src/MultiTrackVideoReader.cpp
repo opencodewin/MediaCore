@@ -404,7 +404,7 @@ public:
         }
         m_logger->Log(DEBUG) << "======> ConsecutiveSeek pos=" << pos << endl;
         m_prevOutFrame = nullptr;
-        m_readFrameIdx = MillsecToFrameIndex(pos);
+        m_readFrameIdx = MillsecToFrameIndex(pos, 1);
         AddSeekingTask(m_readFrameIdx);
         m_inSeeking = true;
         return true;
@@ -556,8 +556,12 @@ public:
         return true;
     }
 
-    int64_t MillsecToFrameIndex(int64_t mts) override
+    int64_t MillsecToFrameIndex(int64_t mts, int iMode = 0) override
     {
+        if (iMode == 1)
+            return (int64_t)round((double)mts*m_outFrameRate.num/(m_outFrameRate.den*1000));
+        else if (iMode == 2)
+            return (int64_t)ceil((double)mts*m_outFrameRate.num/(m_outFrameRate.den*1000));
         return (int64_t)floor((double)mts*m_outFrameRate.num/(m_outFrameRate.den*1000));
     }
 

@@ -61,7 +61,7 @@ struct MultiTrackVideoReader
     virtual bool ReadVideoFrameByIdx(int64_t frmIdx, ImGui::ImMat& vmat, bool nonblocking = false) = 0;
     virtual bool ReadNextVideoFrameEx(std::vector<CorrelativeFrame>& frames) = 0;
     virtual bool ReadNextVideoFrame(ImGui::ImMat& vmat) = 0;
-    virtual int64_t MillsecToFrameIndex(int64_t mts) = 0;
+    virtual int64_t MillsecToFrameIndex(int64_t mts, int iMode = 0) = 0;  // iMode: 1 -> round, 2 -> cell, other -> floor
     virtual int64_t FrameIndexToMillsec(int64_t frmIdx) = 0;
     virtual void UpdateDuration() = 0;
     virtual bool Refresh(bool updateDuration = true) = 0;
