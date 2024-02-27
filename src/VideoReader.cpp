@@ -1831,11 +1831,16 @@ private:
                     bool remove = false;
                     if (pVf->pts+pVf->dur < m_cacheRange.first)
                     {
-                        if (m_readForward && (!pVf->isEofFrame || m_vfrmQ.size() > 1))
+                        if (m_readForward)
                         {
-                            // m_logger->Log(VERBOSE) << "   --------- Set remove=true : pVf->pts(" << pVf->pts << ")+pVf->dur(" << pVf->dur << ") < cacheRange.first(" << m_cacheRange.first
-                            //         << "), readForward=" << m_readForward << ", isEofFrame=" << pVf->isEofFrame << ", vfrmQ.size=" << m_vfrmQ.size() << endl;
-                            remove = true;
+                            auto itNxtFrm = iter; itNxtFrm++;
+                            VideoFrame_Impl* pNxtVf = itNxtFrm == m_vfrmQ.end() ? nullptr : dynamic_cast<VideoFrame_Impl*>(iter->get());
+                            if (pNxtVf && pNxtVf->pts <= m_cacheRange.first)
+                            {
+                                // m_logger->Log(VERBOSE) << "   --------- Set remove=true : pVf->pts(" << pVf->pts << ")+pVf->dur(" << pVf->dur << ") < cacheRange.first(" << m_cacheRange.first
+                                //         << "), readForward=" << m_readForward << ", pNxtVf->pts=" << (pNxtVf ? std::to_string(pNxtVf->pts) : "NULL") << endl;;
+                                remove = true;
+                            }
                         }
                     }
                     else if (pVf->pts > m_cacheRange.second)
