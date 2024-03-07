@@ -137,6 +137,7 @@ namespace MediaCore
         virtual float GetScaleX(int64_t i64Tick) const = 0;
         virtual bool SetScaleY(int64_t i64Tick, float fScaleY) = 0;
         virtual float GetScaleY(int64_t i64Tick) const = 0;
+        virtual MatUtils::Vec2<float> GetScale() const = 0;
         virtual MatUtils::Vec2<float> GetScale(int64_t i64Tick) const = 0;
         virtual MatUtils::Vec2<float> GetFinalScale(int64_t i64Tick) const = 0;
         virtual bool ChangeScaleToFitOutputSize(int64_t i64Tick, uint32_t u32OutWidth, uint32_t u32OutHeight, bool* pParamUpdated = nullptr) = 0;

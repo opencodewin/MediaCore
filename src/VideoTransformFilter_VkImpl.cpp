@@ -102,12 +102,18 @@ public:
         {
             ImGui::ImMat mCombinedMask;
             const MatUtils::Size2i szImageSize(res.w, res.h);
+            const auto v2WaOffsetRatio = MatUtils::ToImVec2(GetPosOffsetRatio());
+            const auto v2WaScale = MatUtils::ToImVec2(GetScale());
+            const auto v2OutSize = MatUtils::ToImVec2(GetOutSize());
+            const auto v2WaOffset = v2WaOffsetRatio*(v2WaScale+ImVec2(1,1))*v2OutSize/2.f;
+            const auto fWaRotAngle = GetRotation();
             const auto szMaskCnt = m_ahMaskCreators.size();
             for (auto i = 0; i < szMaskCnt; i++)
             {
                 auto& hMaskCreator = m_ahMaskCreators[i];
                 if (szImageSize != hMaskCreator->GetMaskSize())
                     hMaskCreator->ChangeMaskSize(szImageSize, true);
+                m_ahMaskCreators[i]->SetMaskWarpAffineParameters(v2WaOffset, v2WaScale, -fWaRotAngle, MatUtils::ToImVec2(szImageSize)/2.f);
                 auto mMask = m_ahMaskCreators[i]->GetMask(ImGui::MaskCreator::AA, true, IM_DT_FLOAT32, 1, 0, i64Tick);
                 if (mCombinedMask.empty())
                     mCombinedMask = mMask;

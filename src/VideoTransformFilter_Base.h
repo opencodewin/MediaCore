@@ -1253,6 +1253,11 @@ public:
         return tKpVal.y;
     }
 
+    MatUtils::Vec2<float> GetScale() const override
+    {
+        return {m_fScaleX, m_fScaleY};
+    }
+
     MatUtils::Vec2<float> GetScale(int64_t i64Tick) const override
     {
         const auto fTick = m_bEnableKeyFramesOnScale ? (float)i64Tick : (float)m_tTimeRange.x;
