@@ -320,7 +320,6 @@ public:
         }
         else
             hFilteredVfrm = hInVf;
-        hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
         frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, tImgMat});
         hInVf = hFilteredVfrm;
 
@@ -329,7 +328,6 @@ public:
         if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
         if (!hFilteredVfrm || tImgMat.empty())
             return nullptr;
-        hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
         frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, tImgMat});
         return hFilteredVfrm;
     }
@@ -379,7 +377,6 @@ public:
         }
         else
             hFilteredVfrm = hInVf;
-        hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
         frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, tImgMat});
         hInVf = hFilteredVfrm;
 
@@ -388,7 +385,6 @@ public:
         if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
         if (!hFilteredVfrm || tImgMat.empty())
             return nullptr;
-        hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
         frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, tImgMat});
         return hFilteredVfrm;
     }
@@ -720,7 +716,6 @@ public:
         }
         else
             hFilteredVfrm = hInVf;
-        hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
         frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, tImgMat});
         hInVf = hFilteredVfrm;
 
@@ -729,7 +724,6 @@ public:
         if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
         if (!hFilteredVfrm || tImgMat.empty())
             return nullptr;
-        hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
         frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, tImgMat});
         return hFilteredVfrm;
     }
@@ -769,7 +763,6 @@ public:
         }
         else
             hFilteredVfrm = hInVf;
-        hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
         frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, tImgMat});
         hInVf = hFilteredVfrm;
 
@@ -778,7 +771,6 @@ public:
         if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
         if (!hFilteredVfrm || tImgMat.empty())
             return nullptr;
-        hFilteredVfrm->SetOpacity(m_hWarpFilter->GetOpacity());
         frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, tImgMat});
         return hFilteredVfrm;
     }

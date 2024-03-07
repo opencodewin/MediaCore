@@ -19,6 +19,9 @@
 #if IMGUI_VULKAN_SHADER
 #include <imgui.h>
 #include <warpAffine_vulkan.h>
+#include <OpacityFilter_vulkan.h>
+#include <ColorConvert_vulkan.h>
+#include <MatMath.h>
 #include "VideoTransformFilter_Base.h"
 #include "Logger.h"
 
@@ -36,6 +39,11 @@ public:
         {
             delete m_pWarpAffine;
             m_pWarpAffine = nullptr;
+        }
+        if (m_pOpacityFilter)
+        {
+            delete m_pOpacityFilter;
+            m_pOpacityFilter = nullptr;
         }
     }
 
@@ -79,7 +87,7 @@ public:
         return true;
     }
 
-    ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos)
+    ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos, float& fOpacity)
     {
         ImGui::ImMat res;
         if (!_filterImage(vmat, res, pos))
@@ -87,6 +95,58 @@ public:
             res.release();
             Log(Error) << "VideoTransformFilter_VkImpl::FilterImage() FAILED! " << m_strErrMsg << endl;
         }
+
+        const int64_t i64Tick = pos;
+        fOpacity = GetOpacity(i64Tick);
+        if (!m_ahMaskCreators.empty())
+        {
+            ImGui::ImMat mCombinedMask;
+            const MatUtils::Size2i szImageSize(res.w, res.h);
+            const auto szMaskCnt = m_ahMaskCreators.size();
+            for (auto i = 0; i < szMaskCnt; i++)
+            {
+                auto& hMaskCreator = m_ahMaskCreators[i];
+                if (szImageSize != hMaskCreator->GetMaskSize())
+                    hMaskCreator->ChangeMaskSize(szImageSize, true);
+                auto mMask = m_ahMaskCreators[i]->GetMask(ImGui::MaskCreator::AA, true, IM_DT_FLOAT32, 1, 0, i64Tick);
+                if (mCombinedMask.empty())
+                    mCombinedMask = mMask;
+                else
+                    MatUtils::Max(mCombinedMask, mMask);
+            }
+            if (!mCombinedMask.empty())
+            {
+                if (!m_pOpacityFilter) m_pOpacityFilter = new ImGui::OpacityFilter_vulkan();
+                const bool bInplace = res.data != vmat.data;
+                // int tx = 100, ty = 100;
+                // ImGui::ImMat dbgMat;
+                // if (res.device == IM_DD_CPU)
+                //     dbgMat = res;
+                // else
+                // {
+                //     dbgMat.type = res.type;
+                //     dbgMat.device = IM_DD_CPU;
+                //     m_tClrCvt.Conv(res, dbgMat);
+                // }
+                // const int alphaVal0 = (int)dbgMat.at<uint8_t>(tx, ty, 3);
+                // const float maskVal = mCombinedMask.at<float>(tx, ty);
+                // Log(WARN) << "---> Before 'maskOpacity', at pos(" << tx << ", " << ty << "), alpha=" << alphaVal0 << ", mask=" << maskVal << ", opacity=" << fOpacity << ", inplace=" << bInplace << endl;
+                res = m_pOpacityFilter->maskOpacity(res, mCombinedMask, fOpacity, false, bInplace);
+                // if (res.device == IM_DD_CPU)
+                //     dbgMat = res;
+                // else
+                // {
+                //     dbgMat.type = res.type;
+                //     dbgMat.device = IM_DD_CPU;
+                //     m_tClrCvt.Conv(res, dbgMat);
+                // }
+                // const int alphaVal1 = (int)dbgMat.at<uint8_t>(tx, ty, 3);
+                // const int alphaExpected = (int)floor((float)alphaVal0*maskVal*fOpacity);
+                // Log(WARN) << "<--- After 'maskOpacity', at pos(" << tx << ", " << ty << "), alpha=" << alphaVal1 << ", expected=" << alphaExpected << endl;
+                fOpacity = 1.f;
+            }
+        }
+
         return res;
     }
 
@@ -176,9 +236,6 @@ private:
             if (!m_pWarpAffine)
                 m_pWarpAffine = new ImGui::warpAffine_vulkan();
             m_pWarpAffine->warp(inMat, vkmat, m_mAffineMatrix, m_eInterpMode, ImPixel(0, 0, 0, 0), m_tCropRect);
-            vkmat.time_stamp = inMat.time_stamp;
-            vkmat.rate = inMat.rate;
-            vkmat.flags = inMat.flags;
             outMat = vkmat;
         }
         return true;
@@ -202,6 +259,7 @@ private:
     float m_fFinalScaleRatioX{1}, m_fFinalScaleRatioY{1};
     ImPixel m_tCropRect;
     ImInterpolateMode m_eInterpMode{IM_INTERPOLATE_BICUBIC};
+    ImGui::OpacityFilter_vulkan* m_pOpacityFilter{nullptr};
     bool m_bPassThrough{false};
     std::string m_strErrMsg;
 };

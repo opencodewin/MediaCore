@@ -134,7 +134,7 @@ public:
         return true;
     }
 
-    ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) override
+    ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos, float& fOpacity) override
     {
         ImGui::ImMat res;
         if (!_filterImage(vmat, res, pos))
@@ -142,6 +142,9 @@ public:
             res.release();
             Log(Error) << "FilterImage() FAILED! " << m_strErrMsg << endl;
         }
+
+        const int64_t i64Tick = pos;
+        fOpacity = GetOpacity(i64Tick);
         return res;
     }
 

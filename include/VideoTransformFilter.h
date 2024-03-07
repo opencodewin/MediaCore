@@ -22,6 +22,7 @@
 #include <MatUtilsVecTypeDef.h>
 #include <ImNewCurve.h>
 #include <imgui_curve.h>
+#include <ImMaskCreator.h>
 #include <imgui_json.h>
 #include "SharedSettings.h"
 
@@ -57,7 +58,6 @@ namespace MediaCore
         virtual bool SetAspectFitType(AspectFitType type) = 0;
         virtual AspectFitType GetAspectFitType() const = 0;
 
-        virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) = 0;
         virtual VideoFrame::Holder FilterImage(VideoFrame::Holder hVfrm, int64_t pos) = 0;
 
         virtual void ApplyTo(VideoClip* pVClip) = 0;
@@ -161,6 +161,10 @@ namespace MediaCore
         virtual void EnableKeyFramesOnOpacity(bool bEnable) = 0;
         virtual bool IsKeyFramesEnabledOnOpacity() const = 0;
         virtual ImGui::ImNewCurve::Curve::Holder GetKeyFramesCurveOnOpacity() const = 0;
+        virtual ImGui::MaskCreator::Holder CreateNewOpacityMask(const std::string& name) = 0;
+        virtual int GetOpacityMaskCount() const = 0;
+        virtual const ImGui::MaskCreator::Holder GetOpacityMaskCreator(size_t index) const = 0;
+        virtual bool RemoveOpacityMask(size_t index) = 0;
 
         virtual void SetUiStateJson(const imgui_json::value& j) = 0;
         virtual imgui_json::value GetUiStateJson() const = 0;

@@ -113,7 +113,7 @@ public:
     AspectFitType GetAspectFitType() const override
     { return m_eAspectFitType; }
 
-    virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) override = 0;
+    virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos, float& fOpacity) = 0;
 
     VideoFrame::Holder FilterImage(VideoFrame::Holder hVfrm, int64_t pos) override
     {
@@ -129,10 +129,13 @@ public:
             m_strErrMsg = "FAILED to get ImMat instance from 'hVfrm'!";
             return nullptr;
         }
-        vmat = this->FilterImage(vmat, pos);
+        float fOpacity = 1.f;
+        vmat = this->FilterImage(vmat, pos, fOpacity);
         if (vmat.empty())
             return nullptr;
-        return VideoFrame::CreateMatInstance(vmat);
+        auto hOutVfrm = VideoFrame::CreateMatInstance(vmat);
+        hOutVfrm->SetOpacity(fOpacity);
+        return hOutVfrm;
     }
 
     void ApplyTo(VideoClip* pVClip) override
@@ -1468,6 +1471,38 @@ public:
     LibCurve::Curve::Holder GetKeyFramesCurveOnOpacity() const override
     { return m_hOpacityCurve; }
 
+    ImGui::MaskCreator::Holder CreateNewOpacityMask(const std::string& name) override
+    {
+        const MatUtils::Size2i szMaskSize(m_pOwnerClip->OutWidth(), m_pOwnerClip->OutHeight());
+        auto hMaskCreator = ImGui::MaskCreator::CreateInstance(szMaskSize, name);
+        hMaskCreator->SetTickRange(0, m_pOwnerClip->Duration());
+        m_ahMaskCreators.push_back(hMaskCreator);
+        return hMaskCreator;
+    }
+
+    int GetOpacityMaskCount() const override
+    {
+        return m_ahMaskCreators.size();
+    }
+
+    const ImGui::MaskCreator::Holder GetOpacityMaskCreator(size_t index) const override
+    {
+        const auto szMaskCnt = m_ahMaskCreators.size();
+        if (index >= szMaskCnt)
+            return nullptr;
+        return m_ahMaskCreators[index];
+    }
+
+    bool RemoveOpacityMask(size_t index) override
+    {
+        const auto szMaskCnt = m_ahMaskCreators.size();
+        if (index >= szMaskCnt)
+            return false;
+        auto itDel = m_ahMaskCreators.begin()+index;
+        m_ahMaskCreators.erase(itDel);
+        return true;
+    }
+
     void SetUiStateJson(const imgui_json::value& j) override
     {
         m_jnUiState = j;
@@ -1496,6 +1531,15 @@ public:
         j["opacity_curve"] = m_hOpacityCurve->SaveAsJson();
         j["opacity_keyframes_enabled"] = m_bEnableKeyFramesOnOpacity;
         j["ui_state"] = m_jnUiState;
+        imgui_json::array ajnOpacityMasks;
+        for (const auto& hMaskCreator : m_ahMaskCreators)
+        {
+            imgui_json::value jnMask;
+            if (hMaskCreator->SaveAsJson(jnMask))
+                ajnOpacityMasks.push_back(jnMask);
+        }
+        if (!ajnOpacityMasks.empty())
+            j["opacity_masks"] = ajnOpacityMasks;
         return std::move(j);
     }
 
@@ -1553,6 +1597,17 @@ public:
         strAttrName = "ui_state";
         if (j.contains(strAttrName) && j[strAttrName].is_object())
             m_jnUiState = j[strAttrName];
+        strAttrName = "opacity_masks";
+        if (j.contains(strAttrName) && j[strAttrName].is_array())
+        {
+            const auto& ajnMasks = j[strAttrName].get<imgui_json::array>();
+            for (const auto& jnMask : ajnMasks)
+            {
+                auto hMaskCreator = ImGui::MaskCreator::LoadFromJson(jnMask);
+                if (m_pOwnerClip) hMaskCreator->SetTickRange(0, m_pOwnerClip->Duration());
+                m_ahMaskCreators.push_back(hMaskCreator);
+            }
+        }
         return true;
     }
 
@@ -1715,6 +1770,7 @@ protected:
     bool m_bEnableKeyFramesOnRotation{false};
     LibCurve::Curve::Holder m_hOpacityCurve;
     bool m_bEnableKeyFramesOnOpacity{false};
+    vector<ImGui::MaskCreator::Holder> m_ahMaskCreators;
     VideoClip* m_pOwnerClip{nullptr};
     int64_t m_i64ClipStartOffset{0}, m_i64ClipEndOffset{0}, m_i64ClipDuration{0};
     imgui_json::value m_jnUiState;

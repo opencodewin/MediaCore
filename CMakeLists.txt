@@ -70,7 +70,7 @@ endif(MEDIACORE_STATIC)
 
 set(MEDIACORE_VERSION_MAJOR 1)
 set(MEDIACORE_VERSION_MINOR 12)
-set(MEDIACORE_VERSION_PATCH 15)
+set(MEDIACORE_VERSION_PATCH 16)
 string(TIMESTAMP MEDIACORE_VERSION_BUILD "%y%m%d")
 set(MEDIACORE_VERSION_STRING ${MEDIACORE_VERSION_MAJOR}.${MEDIACORE_VERSION_MINOR}.${MEDIACORE_VERSION_PATCH})
 add_definitions(-DMEDIACORE_VERSION_MAJOR=${MEDIACORE_VERSION_MAJOR})
@@ -132,6 +132,17 @@ target_link_libraries(MediaCore PUBLIC
     BaseUtils
     imgui
 )
+
+if (IM_MASK_CREATOR_STATIC_LIB)
+target_link_libraries(MediaCore INTERFACE
+    ImMaskCreator
+)
+else ()
+target_link_libraries(MediaCore PUBLIC
+    ImMaskCreator
+)
+endif ()
+
 # <<<
 get_directory_property(hasParent PARENT_DIRECTORY)
 if(hasParent)
