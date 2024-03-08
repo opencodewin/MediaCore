@@ -114,9 +114,11 @@ public:
                 if (szImageSize != hMaskCreator->GetMaskSize())
                     hMaskCreator->ChangeMaskSize(szImageSize, true);
                 m_ahMaskCreators[i]->SetMaskWarpAffineParameters(v2WaOffset, v2WaScale, -fWaRotAngle, MatUtils::ToImVec2(szImageSize)/2.f);
+                if (!hMaskCreator->IsMaskReady())
+                    continue;
                 auto mMask = m_ahMaskCreators[i]->GetMask(ImGui::MaskCreator::AA, true, IM_DT_FLOAT32, 1, 0, i64Tick);
                 if (mCombinedMask.empty())
-                    mCombinedMask = mMask;
+                    mCombinedMask = mMask.clone();
                 else
                     MatUtils::Max(mCombinedMask, mMask);
             }
