@@ -59,21 +59,8 @@ public:
         VideoTransformFilter::Holder hNewInst = VideoTransformFilter::CreateInstance();
         if (!hNewInst->Initialize(hSettings))
             return nullptr;
-        VideoTransformFilter_Base* pBaseFilter = dynamic_cast<VideoTransformFilter_Base*>(hNewInst.get());
-        pBaseFilter->m_tTimeRange = m_tTimeRange;
-        pBaseFilter->m_eAspectFitType = m_eAspectFitType;
-        pBaseFilter->m_hPosOffsetCurve = m_hPosOffsetCurve->Clone();
-        pBaseFilter->m_bEnableKeyFramesOnPosOffset = m_bEnableKeyFramesOnPosOffset;
-        pBaseFilter->m_aCropCurves[0] = m_aCropCurves[0]->Clone();
-        pBaseFilter->m_aCropCurves[1] = m_aCropCurves[1]->Clone();
-        pBaseFilter->m_bEnableKeyFramesOnCrop = m_bEnableKeyFramesOnCrop;
-        pBaseFilter->m_bKeepAspectRatio = m_bKeepAspectRatio;
-        pBaseFilter->m_hScaleCurve = m_hScaleCurve->Clone();
-        pBaseFilter->m_bEnableKeyFramesOnScale = m_bEnableKeyFramesOnScale;
-        pBaseFilter->m_hRotationCurve = m_hRotationCurve->Clone();
-        pBaseFilter->m_bEnableKeyFramesOnRotation = m_bEnableKeyFramesOnRotation;
-        pBaseFilter->m_hOpacityCurve = m_hOpacityCurve->Clone();
-        pBaseFilter->m_bEnableKeyFramesOnOpacity = m_bEnableKeyFramesOnOpacity;
+        const auto j = SaveAsJson();
+        hNewInst->LoadFromJson(j);
         return hNewInst;
     }
 

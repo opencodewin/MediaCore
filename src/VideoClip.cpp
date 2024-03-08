@@ -535,6 +535,7 @@ VideoClip::Holder VideoClip_VideoImpl::Clone(SharedSettings::Holder hSettings) c
         m_id, m_hReader->GetMediaParser(), hSettings, m_start, End(), m_startOffset, m_endOffset, 0, true);
     if (m_hFilter) newInstance->SetFilter(m_hFilter->Clone(hSettings));
     newInstance->m_hWarpFilter = m_hWarpFilter->Clone(hSettings);
+    newInstance->m_hWarpFilter->ApplyTo(newInstance);
     return VideoClip::Holder(newInstance, VIDEO_CLIP_HOLDER_VIDEOIMPL_DELETER);
 }
 
@@ -877,6 +878,7 @@ VideoClip::Holder VideoClip_ImageImpl::Clone(SharedSettings::Holder hSettings) c
         m_id, m_hReader->GetMediaParser(), hSettings, m_start, m_srcDuration);
     if (m_hFilter) newInstance->SetFilter(m_hFilter->Clone(hSettings));
     newInstance->m_hWarpFilter = m_hWarpFilter->Clone(hSettings);
+    newInstance->m_hWarpFilter->ApplyTo(newInstance);
     return VideoClip::Holder(newInstance, VIDEO_CLIP_HOLDER_IMAGEIMPL_DELETER);
 }
 
