@@ -50,9 +50,9 @@ typedef AVCodec*            AVCodecPtr;
 
 #define DONOT_CACHE_HWAVFRAME 1
 
-extern const AVRational MILLISEC_TIMEBASE;
-extern const AVRational MICROSEC_TIMEBASE;
-extern const AVRational FF_AV_TIMEBASE;
+MEDIACORE_API extern const AVRational MILLISEC_TIMEBASE;
+MEDIACORE_API extern const AVRational MICROSEC_TIMEBASE;
+MEDIACORE_API extern const AVRational FF_AV_TIMEBASE;
 
 MEDIACORE_API std::string MillisecToString(int64_t millisec);
 MEDIACORE_API std::string TimestampToString(double timestamp);
