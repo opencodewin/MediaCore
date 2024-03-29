@@ -648,7 +648,7 @@ static void MultiTrackVideoReader_Initialize(void** handle)
     InitializeSubtitleLibrary();
 
     g_mtVidReader = MultiTrackVideoReader::CreateInstance();
-    g_mtVidReader->Configure(c_videoOutputWidth, c_videoOutputHeight, c_videoFrameRate);
+    g_mtVidReader->Configure(c_videoOutputWidth, c_videoOutputHeight, c_videoFrameRate, IM_DT_INT8);
     g_mtVidReader->Start();
 }
 

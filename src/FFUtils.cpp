@@ -2741,12 +2741,11 @@ MediaCore::MediaInfo::Holder GenerateMediaInfoByAVFormatContext(const AVFormatCo
             vidStream->avgFrameRate = MediaCoreRatioFromAVRational(stream->avg_frame_rate);
             vidStream->realFrameRate = MediaCoreRatioFromAVRational(stream->r_frame_rate);
             auto cdcdesc = avcodec_descriptor_get(codecpar->codec_id);
-            string mimeType = cdcdesc && cdcdesc->mime_types ? string(cdcdesc->mime_types[0]) : "";
+            // string mimeType = cdcdesc && cdcdesc->mime_types ? string(cdcdesc->mime_types[0]) : "";
             string demuxerName(avfmtCtx->iformat->name);
             if (demuxerName.find("image2") != string::npos ||
                 demuxerName.find("_pipe") != string::npos ||
-                demuxerName.find("mp3") != string::npos ||
-                mimeType.find("image/") != string::npos)
+                demuxerName.find("mp3") != string::npos)
                 vidStream->isImage = true;
             if (!vidStream->isImage)
             {
