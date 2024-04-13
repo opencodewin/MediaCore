@@ -652,7 +652,8 @@ private:
         {
             lock_guard<mutex> lk(m_taskTableLock);
             auto iter = m_taskTable.find(type);
-            hTask = iter->second;
+            if (iter != m_taskTable.end())
+                hTask = iter->second;
         }
         if (!hTask)
             return;
