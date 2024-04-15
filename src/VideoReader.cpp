@@ -1117,6 +1117,11 @@ private:
                     break;
                 this_thread::sleep_for(chrono::milliseconds(5));
             }
+            if (!frmPtr)
+            {
+                owner->m_logger->Log(Error) << "NULL avframe ptr at pos " << pos << "(" << pts << ")! (2)" << endl;
+                return false;
+            }
 
             // transfer hw-frame to sw-frame if needed
             if (isHwfrm)

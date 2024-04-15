@@ -123,6 +123,8 @@ struct VideoFrame
 
 struct CorrelativeFrame
 {
+    using Holder = std::shared_ptr<CorrelativeFrame>;
+
     enum Phase
     {
         PHASE_SOURCE_FRAME = 0,
@@ -135,5 +137,23 @@ struct CorrelativeFrame
     int64_t clipId{0};
     int64_t trackId{0};
     ImGui::ImMat frame;
+
+    CorrelativeFrame() = default;
+    CorrelativeFrame(Phase _phase, int64_t _clipId, int64_t _trackId, const ImGui::ImMat& _frame)
+        : phase(_phase), clipId(_clipId), trackId(_trackId), frame(_frame)
+    {}
 };
+
+struct CorrelativeVideoFrame : CorrelativeFrame
+{
+    using Holder = std::shared_ptr<CorrelativeVideoFrame>;
+
+    VideoFrame::Holder hVfrm;
+
+    CorrelativeVideoFrame() = default;
+    CorrelativeVideoFrame(Phase _phase, int64_t _clipId, int64_t _trackId, const VideoFrame::Holder& _hVfrm)
+        : CorrelativeFrame(_phase, _clipId, _trackId, ImGui::ImMat()), hVfrm(_hVfrm)
+    {}
+};
+
 }

@@ -87,10 +87,8 @@ public:
         m_outputReady = false;
     }
 
-    VideoFrame::Holder GetVideoFrame(std::vector<CorrelativeFrame>& frames) override
+    VideoFrame::Holder GetVideoFrame() override
     {
-        for (auto& frm : m_outFrames)
-            frames.push_back(frm);
         return m_hOutVfrm;
     }
 
@@ -132,6 +130,16 @@ public:
         m_visible = visible;
     }
 
+    void UpdateHostFrames() override
+    {
+        if (!m_pCb)
+            return;
+        unique_lock<mutex> lk(m_mtxOutFrames);
+        const auto outFrames(m_outFrames);
+        lk.unlock();
+        m_pCb->UpdateOutputFrames(outFrames);
+    }
+
     bool IsInited() const
     {
         return m_inited;
@@ -165,7 +173,14 @@ public:
                 auto clipPos = m_readPos-m_hClip1->Start();
                 m_srcVf1 = m_hClip1->ReadSourceFrame(clipPos, m_eof1, false);
                 if (m_srcVf1 || m_eof1)
+                {
+                    if (m_srcVf1)
+                    {
+                        lock_guard<mutex> lg(m_mtxOutFrames);
+                        m_outFrames.push_back(CorrelativeVideoFrame::Holder(new CorrelativeVideoFrame(CorrelativeFrame::PHASE_SOURCE_FRAME, m_hClip1->Id(), m_hClip1->TrackId(), m_srcVf1)));
+                    }
                     m_src1Ready = true;
+                }
             }
         }
         else
@@ -177,7 +192,14 @@ public:
                 auto clipPos = m_readPos-m_hClip2->Start();
                 m_srcVf2 = m_hClip2->ReadSourceFrame(clipPos, m_eof2, false);
                 if (m_srcVf2 || m_eof2)
+                {
+                    if (m_srcVf2)
+                    {
+                        lock_guard<mutex> lg(m_mtxOutFrames);
+                        m_outFrames.push_back(CorrelativeVideoFrame::Holder(new CorrelativeVideoFrame(CorrelativeFrame::PHASE_SOURCE_FRAME, m_hClip2->Id(), m_hClip2->TrackId(), m_srcVf2)));
+                    }
                     m_src2Ready = true;
+                }
             }
         }
         else
@@ -198,16 +220,21 @@ public:
             m_outputReady = true;
             return;
         }
+        vector<CorrelativeVideoFrame::Holder> outFrames;
         VideoFrame::Holder hOutVfrm;
         if (m_hasOvlp)
         {
             m_outFrames.clear();
-            hOutVfrm = m_hOvlp->ProcessSourceFrame(m_readPos-m_hOvlp->Start(), m_outFrames, m_srcVf1, m_srcVf2);
+            hOutVfrm = m_hOvlp->ProcessSourceFrame(m_readPos-m_hOvlp->Start(), outFrames, m_srcVf1, m_srcVf2);
         }
         else if (m_hClip1)
         {
             m_outFrames.clear();
-            hOutVfrm = m_hClip1->ProcessSourceFrame(m_readPos-m_hClip1->Start(), m_outFrames, m_srcVf1);
+            hOutVfrm = m_hClip1->ProcessSourceFrame(m_readPos-m_hClip1->Start(), outFrames, m_srcVf1);
+        }
+        {
+            lock_guard<mutex> lg(m_mtxOutFrames);
+            m_outFrames.insert(m_outFrames.end(), outFrames.begin(), outFrames.end());
         }
         if (!hOutVfrm)
             return;
@@ -245,7 +272,8 @@ private:
     VideoClip::Holder m_hClip2;
     bool m_src2Ready{false};
     VideoOverlap::Holder m_hOvlp;
-    vector<CorrelativeFrame> m_outFrames;
+    vector<CorrelativeVideoFrame::Holder> m_outFrames;
+    mutex m_mtxOutFrames;
     VideoFrame::Holder m_hOutVfrm;
     bool m_outputReady{false};
     bool m_discarded{false};

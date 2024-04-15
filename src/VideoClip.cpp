@@ -354,38 +354,30 @@ public:
         return hVf;
     }
 
-    VideoFrame::Holder ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, VideoFrame::Holder hInVf) override
+    VideoFrame::Holder ProcessSourceFrame(int64_t pos, vector<CorrelativeVideoFrame::Holder>& frames, VideoFrame::Holder hInVf) override
     {
         if (!hInVf)
             return nullptr;
 
-        VideoFrame::Holder hFilteredVfrm;
-        ImGui::ImMat tImgMat;
-        hInVf->GetMat(tImgMat);
-        if (tImgMat.empty())
-            return nullptr;
-        frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, tImgMat});
-
         // process with external filter
         auto hFilter = m_hFilter;
+        VideoFrame::Holder hFilteredVfrm;
         if (hFilter)
         {
             hFilteredVfrm = hFilter->FilterImage(hInVf, pos);
-            if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
-            if (!hFilteredVfrm || tImgMat.empty())
+            if (!hFilteredVfrm)
                 return nullptr;
         }
         else
             hFilteredVfrm = hInVf;
-        frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, tImgMat});
+        frames.push_back(CorrelativeVideoFrame::Holder(new CorrelativeVideoFrame(CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, hFilteredVfrm)));
         hInVf = hFilteredVfrm;
 
         // process with transform filter
         hFilteredVfrm = m_hWarpFilter->FilterImage(hInVf, pos);
-        if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
-        if (!hFilteredVfrm || tImgMat.empty())
+        if (!hFilteredVfrm)
             return nullptr;
-        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, tImgMat});
+        frames.push_back(CorrelativeVideoFrame::Holder(new CorrelativeVideoFrame(CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, hFilteredVfrm)));
         return hFilteredVfrm;
     }
 
@@ -741,38 +733,30 @@ public:
         return m_hVf;
     }
 
-    VideoFrame::Holder ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, VideoFrame::Holder hInVf) override
+    VideoFrame::Holder ProcessSourceFrame(int64_t pos, vector<CorrelativeVideoFrame::Holder>& frames, VideoFrame::Holder hInVf) override
     {
         if (!hInVf)
             return nullptr;
 
-        VideoFrame::Holder hFilteredVfrm;
-        ImGui::ImMat tImgMat;
-        hInVf->GetMat(tImgMat);
-        if (tImgMat.empty())
-            return nullptr;
-        frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, tImgMat});
-
         // process with external filter
+        VideoFrame::Holder hFilteredVfrm;
         auto hFilter = m_hFilter;
         if (hFilter)
         {
             hFilteredVfrm = hFilter->FilterImage(hInVf, pos);
-            if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
-            if (!hFilteredVfrm || tImgMat.empty())
+            if (!hFilteredVfrm)
                 return nullptr;
         }
         else
             hFilteredVfrm = hInVf;
-        frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, tImgMat});
+        frames.push_back(CorrelativeVideoFrame::Holder(new CorrelativeVideoFrame(CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, hFilteredVfrm)));
         hInVf = hFilteredVfrm;
 
         // process with transform filter
         hFilteredVfrm = m_hWarpFilter->FilterImage(hInVf, pos);
-        if (hFilteredVfrm) hFilteredVfrm->GetMat(tImgMat);
-        if (!hFilteredVfrm || tImgMat.empty())
+        if (!hFilteredVfrm)
             return nullptr;
-        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, tImgMat});
+        frames.push_back(CorrelativeVideoFrame::Holder(new CorrelativeVideoFrame(CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, hFilteredVfrm)));
         return hFilteredVfrm;
     }
 
@@ -1028,7 +1012,7 @@ public:
         return hOutVfrm;
     }
 
-    VideoFrame::Holder ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, VideoFrame::Holder hInVf1, VideoFrame::Holder hInVf2) override
+    VideoFrame::Holder ProcessSourceFrame(int64_t pos, vector<CorrelativeVideoFrame::Holder>& frames, VideoFrame::Holder hInVf1, VideoFrame::Holder hInVf2) override
     {
         if (pos < 0 || pos > Duration())
             throw invalid_argument("Argument 'pos' can NOT be NEGATIVE or larger than overlap duration!");
@@ -1041,26 +1025,9 @@ public:
         int64_t pos2 = pos+(Start()-m_hRearClip->Start());
         auto hClipOutVfrm2 = m_hRearClip->ProcessSourceFrame(pos2, frames, hInVf2);
 
-        ImGui::ImMat vmat1;
-        if (hClipOutVfrm1) hClipOutVfrm1->GetMat(vmat1);
-        if (vmat1.empty())
-        {
-            m_logger->Log(WARN) << "'vmat1' is EMPTY!" << endl;
-            return hClipOutVfrm2;
-        }
-        ImGui::ImMat vmat2;
-        if (hClipOutVfrm2) hClipOutVfrm2->GetMat(vmat2);
-        if (vmat2.empty())
-        {
-            m_logger->Log(WARN) << "'vmat2' is EMPTY!" << endl;
-            return hClipOutVfrm1;
-        }
-
         auto hTrans = m_hTrans;
         auto hOutVfrm = hTrans->MixTwoImages(hClipOutVfrm1, hClipOutVfrm2, pos+m_start, Duration());
-        ImGui::ImMat tTransMat;
-        if (hOutVfrm) hOutVfrm->GetMat(tTransMat);
-        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSITION, m_hFrontClip->Id(), m_hFrontClip->TrackId(), tTransMat});
+        frames.push_back(CorrelativeVideoFrame::Holder(new CorrelativeVideoFrame(CorrelativeFrame::PHASE_AFTER_TRANSITION, m_hFrontClip->Id(), m_hFrontClip->TrackId(), hOutVfrm)));
         return hOutVfrm;
     }
 

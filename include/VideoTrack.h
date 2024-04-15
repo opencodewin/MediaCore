@@ -34,17 +34,19 @@ struct ReadFrameTask
     virtual void StartProcessing() = 0;
     virtual void Reprocess() = 0;
     virtual bool IsOutputFrameReady() const = 0;
-    virtual VideoFrame::Holder GetVideoFrame(std::vector<CorrelativeFrame>& frames) = 0;
+    virtual VideoFrame::Holder GetVideoFrame() = 0;
     virtual bool IsStarted() const = 0;
     virtual void SetDiscarded() = 0;
     virtual bool IsDiscarded() const = 0;
     virtual bool IsVisible() const = 0;
     virtual void SetVisible(bool visible) = 0;
+    virtual void UpdateHostFrames() = 0;
 
     struct Callback
     {
         virtual bool TriggerDrop() = 0;
         virtual bool TriggerStart() = 0;
+        virtual void UpdateOutputFrames(const std::vector<CorrelativeVideoFrame::Holder>& corVidFrames) = 0;
     };
     virtual void SetCallback(Callback* pCallback) = 0;
 };

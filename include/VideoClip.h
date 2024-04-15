@@ -89,7 +89,7 @@ struct VideoClip
     virtual void SetDuration(int64_t duration) = 0;
     virtual VideoFrame::Holder ReadVideoFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, bool& eof) = 0;
     virtual VideoFrame::Holder ReadSourceFrame(int64_t pos, bool& eof, bool wait) = 0;
-    virtual VideoFrame::Holder ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, VideoFrame::Holder hInVf) = 0;
+    virtual VideoFrame::Holder ProcessSourceFrame(int64_t pos, std::vector<CorrelativeVideoFrame::Holder>& frames, VideoFrame::Holder hInVf) = 0;
     virtual void SeekTo(int64_t pos) = 0;
     virtual void NotifyReadPos(int64_t pos) = 0;
     virtual void SetDirection(bool forward) = 0;
@@ -121,8 +121,10 @@ struct VideoTransition
         if (hVfrm1) hVfrm1->GetMat(vmat1);
         ImGui::ImMat vmat2;
         if (hVfrm2) hVfrm2->GetMat(vmat2);
-        if (vmat1.empty() || vmat2.empty())
-            return nullptr;
+        if (vmat2.empty())
+            return hVfrm1;
+        if (vmat1.empty())
+            return hVfrm2;
         auto vout = MixTwoImages(vmat1, vmat2, pos, dur);
         if (vout.empty())
             return nullptr;
@@ -146,7 +148,7 @@ struct VideoOverlap
 
     virtual VideoFrame::Holder ReadVideoFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, bool& eof) = 0;
     virtual void SetTransition(VideoTransition::Holder hTrans) = 0;
-    virtual VideoFrame::Holder ProcessSourceFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, VideoFrame::Holder hInVf1, VideoFrame::Holder hInVf2) = 0;
+    virtual VideoFrame::Holder ProcessSourceFrame(int64_t pos, std::vector<CorrelativeVideoFrame::Holder>& frames, VideoFrame::Holder hInVf1, VideoFrame::Holder hInVf2) = 0;
     virtual void SeekTo(int64_t pos) = 0;
     virtual void Update() = 0;
     virtual VideoTransition::Holder GetTransition() const = 0;
