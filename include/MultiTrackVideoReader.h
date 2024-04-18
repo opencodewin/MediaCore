@@ -34,6 +34,7 @@ struct MultiTrackVideoReader
 {
     using Holder = std::shared_ptr<MultiTrackVideoReader>;
     static MEDIACORE_API Holder CreateInstance();
+    static MEDIACORE_API Holder CreateSingleTrackInstance();
     static MEDIACORE_API Logger::ALogger* GetLogger();
 
     virtual bool Configure(SharedSettings::Holder hSettings) = 0;

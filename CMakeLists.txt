@@ -99,6 +99,7 @@ add_library(MediaCore ${LIBRARY}
     ${LIB_SRC_DIR}/MultiTrackVideoReader.cpp
     ${LIB_SRC_DIR}/Overview.cpp
     ${LIB_SRC_DIR}/SharedSettings.cpp
+    ${LIB_SRC_DIR}/SingleTrackVideoReader.cpp
     ${LIB_SRC_DIR}/Snapshot.cpp
     ${LIB_SRC_DIR}/SubtitleClip_AssImpl.cpp
     ${LIB_SRC_DIR}/SubtitleTrack_AssImpl.cpp

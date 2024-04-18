@@ -2443,6 +2443,17 @@ public:
         m_pLogger = strName.empty() ? GetLogger("FFFilterGraph") : GetLogger(strName);
     }
 
+    ~FFFilterGraph_Impl()
+    {
+        if (m_pFilterGraph)
+        {
+            avfilter_graph_free(&m_pFilterGraph);
+            m_pFilterGraph = nullptr;
+        }
+        m_pBufsrcCtx = nullptr;
+        m_pBufsinkCtx = nullptr;
+    }
+
     MediaCore::ErrorCode Initialize(const std::string& strFgArgs, const MediaCore::Ratio& tFrameRate, MediaCore::VideoFrame::NativeData::Type eOutputNativeType) override
     {
         m_strFgArgs = strFgArgs;
