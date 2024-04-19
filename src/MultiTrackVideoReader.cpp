@@ -924,7 +924,7 @@ private:
     bool ReadVideoFrameWithoutSubtitle(int64_t frameIndex, vector<CorrelativeFrame>& frames, bool nonblocking, bool precise)
     {
         m_readFrameIdx = frameIndex;
-        if (m_prevOutFrame && m_prevOutFrame->frameIndex == frameIndex && !precise)
+        if (m_prevOutFrame && m_prevOutFrame->frameIndex == frameIndex && m_prevOutFrame->outputReady && !precise)
         {
             frames = m_prevOutFrame->GetOutputFrames();
             return true;
@@ -939,11 +939,15 @@ private:
                 m_prevOutFrame = hCandiFrame;
                 frames = hCandiFrame->GetOutputFrames();
             }
+            else if (!m_seekingFlash.empty())
+            {
+                frames = m_seekingFlash;
+            }
         }
         else
         {
             hCandiFrame = FindCandidateAndRemoveDeprecatedTasks(frameIndex, precise);
-            if (hCandiFrame)
+            if (hCandiFrame && hCandiFrame->outputReady)
             {
                 m_prevOutFrame = hCandiFrame;
                 frames = hCandiFrame->GetOutputFrames();
@@ -1284,6 +1288,8 @@ private:
         lock_guard<mutex> lk(m_seekingTasksLock);
         for (auto& skt : m_seekingTasks)
         {
+            if (!skt->outputReady)
+                continue;
             if (!hCandiFrame || std::abs(hCandiFrame->frameIndex-targetIndex) > std::abs(skt->frameIndex-targetIndex))
                 hCandiFrame = skt;
         }
@@ -1460,12 +1466,19 @@ private:
                 {
                     auto& rft = elem.second;
                     if (!rft->IsSourceFrameReady())
+                    {
                         allSourceReady = false;
-                    else
-                        rft->UpdateHostFrames();
+                        break;
+                    }
                 }
                 if (!allSourceReady)
                     continue;
+
+                for (auto& elem : mft->readFrameTaskTable)
+                {
+                    auto& rft = elem.second;
+                    rft->UpdateHostFrames();
+                }
 
                 mft->StartProcessing();
                 idleLoop = false;
@@ -1515,12 +1528,19 @@ private:
                 {
                     auto& rft = elem.second;
                     if (!rft->IsOutputFrameReady())
+                    {
                         allProcessed = false;
-                    else
-                        rft->UpdateHostFrames();
+                        break;
+                    }
                 }
                 if (!allProcessed)
                     continue;
+
+                for (auto& elem : mft->readFrameTaskTable)
+                {
+                    auto& rft = elem.second;
+                    rft->UpdateHostFrames();
+                }
 
                 ImGui::ImMat mixedFrame;
                 double timestamp = (double)mft->frameIndex*frameRate.den/frameRate.num;
@@ -1570,6 +1590,8 @@ private:
                 mixedFrame.index_count = mft->frameIndex;
                 mft->UpdateOutputFrames({ CorrelativeVideoFrame::Holder(new CorrelativeVideoFrame(CorrelativeFrame::PHASE_AFTER_MIXING, 0, 0, VideoFrame::CreateMatInstance(mixedFrame))) });
                 mft->outputReady = true;
+                if (mixFrameCnt == 0 || !bMixedFrameIsEmpty)
+                    m_seekingFlash = mft->GetOutputFrames();
                 m_logger->Log(DEBUG) << "---------> Got mixed frame at frameIndex=" << mft->frameIndex << ", pos=" << (int64_t)(timestamp*1000) << endl;
                 idleLoop = false;
                 break;
@@ -1687,6 +1709,7 @@ private:
     bool m_inSeeking{false};
     list<MixFrameTask::Holder> m_seekingTasks;
     mutex m_seekingTasksLock;
+    vector<CorrelativeFrame> m_seekingFlash;
 
     SharedSettings::Holder m_hSettings;
     Ratio m_outFrameRate;
