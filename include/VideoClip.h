@@ -21,6 +21,7 @@
 #include <functional>
 #include <vector>
 #include <list>
+#include <unordered_map>
 #include <imgui_json.h>
 #include "MediaCore.h"
 #include "SharedSettings.h"
@@ -39,17 +40,17 @@ struct VideoFilter
     virtual void ApplyTo(VideoClip* clip) = 0;
     virtual const MediaCore::VideoClip* GetVideoClip() const = 0;
     virtual void UpdateClipRange() = 0;
-    virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) = 0;
+    virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos, const std::unordered_map<std::string, std::string>* pExtraArgs = nullptr) = 0;
     virtual imgui_json::value SaveAsJson() const = 0;
 
-    virtual VideoFrame::Holder FilterImage(VideoFrame::Holder hVfrm, int64_t pos)
+    virtual VideoFrame::Holder FilterImage(VideoFrame::Holder hVfrm, int64_t pos, const std::unordered_map<std::string, std::string>* pExtraArgs = nullptr)
     {
         if (!hVfrm)
             return nullptr;
         ImGui::ImMat tImgMat;
         if (!hVfrm->GetMat(tImgMat))
             return nullptr;
-        auto tOutMat = FilterImage(tImgMat, pos);
+        auto tOutMat = FilterImage(tImgMat, pos, pExtraArgs);
         if (tOutMat.empty())
             return nullptr;
         return VideoFrame::CreateMatInstance(tOutMat);
@@ -89,7 +90,8 @@ struct VideoClip
     virtual void SetDuration(int64_t duration) = 0;
     virtual VideoFrame::Holder ReadVideoFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, bool& eof) = 0;
     virtual VideoFrame::Holder ReadSourceFrame(int64_t pos, bool& eof, bool wait) = 0;
-    virtual VideoFrame::Holder ProcessSourceFrame(int64_t pos, std::vector<CorrelativeVideoFrame::Holder>& frames, VideoFrame::Holder hInVf) = 0;
+    virtual VideoFrame::Holder ProcessSourceFrame(int64_t pos, std::vector<CorrelativeVideoFrame::Holder>& frames, VideoFrame::Holder hInVf,
+            const std::unordered_map<std::string, std::string>* pExtraArgs = nullptr) = 0;
     virtual void SeekTo(int64_t pos) = 0;
     virtual void NotifyReadPos(int64_t pos) = 0;
     virtual void SetDirection(bool forward) = 0;
@@ -148,7 +150,8 @@ struct VideoOverlap
 
     virtual VideoFrame::Holder ReadVideoFrame(int64_t pos, std::vector<CorrelativeFrame>& frames, bool& eof) = 0;
     virtual void SetTransition(VideoTransition::Holder hTrans) = 0;
-    virtual VideoFrame::Holder ProcessSourceFrame(int64_t pos, std::vector<CorrelativeVideoFrame::Holder>& frames, VideoFrame::Holder hInVf1, VideoFrame::Holder hInVf2) = 0;
+    virtual VideoFrame::Holder ProcessSourceFrame(int64_t pos, std::vector<CorrelativeVideoFrame::Holder>& frames, VideoFrame::Holder hInVf1, VideoFrame::Holder hInVf2,
+            const std::unordered_map<std::string, std::string>* pExtraArgs = nullptr) = 0;
     virtual void SeekTo(int64_t pos) = 0;
     virtual void Update() = 0;
     virtual VideoTransition::Holder GetTransition() const = 0;

@@ -343,16 +343,8 @@ public:
         }
         m_logger->Log(DEBUG) << "=======> StopConsecutiveSeek" << endl;
         m_inSeeking = false;
+        AddSingleFrameTask(m_readFrameIdx, false, true, true);
         int step = m_readForward ? 1 : -1;
-        auto reuseTask = ExtractSeekingTask(m_readFrameIdx);
-        if (reuseTask && reuseTask->TriggerStart())
-        {
-            AddSingleFrameTask(reuseTask, true);
-        }
-        else
-        {
-            AddSingleFrameTask(m_readFrameIdx, false, true, true);
-        }
         for (auto i = 1; i < m_szCacheFrameNum; i++)
             AddSingleFrameTask(m_readFrameIdx+i*step, false, false);
         return true;
@@ -807,9 +799,10 @@ private:
     bool ReadVideoFrameWithoutSubtitle(int64_t frameIndex, vector<CorrelativeFrame>& frames, bool nonblocking, bool precise)
     {
         m_readFrameIdx = frameIndex;
-        if (m_prevOutFrame && m_prevOutFrame->frameIndex == frameIndex && !precise)
+        if (m_prevOutFrame && m_prevOutFrame->frameIndex == frameIndex && m_prevOutFrame->outputReady && !precise)
         {
             frames = m_prevOutFrame->GetOutputFrames();
+            m_logger->Log(WARN) << "-----> 1" << endl;
             return true;
         }
 
@@ -821,6 +814,12 @@ private:
             {
                 m_prevOutFrame = hCandiFrame;
                 frames = hCandiFrame->GetOutputFrames();
+                m_logger->Log(WARN) << "-----> 2" << endl;
+            }
+            else if (!m_seekingFlash.empty())
+            {
+                frames = m_seekingFlash;
+                m_logger->Log(WARN) << "-----> 3" << endl;
             }
         }
         else
@@ -900,6 +899,9 @@ private:
     {
         using Holder = shared_ptr<SingleFrameTask>;
 
+        SingleFrameTask(bool seeking = false) : m_seeking(seeking)
+        {}
+
         ~SingleFrameTask()
         {
             rft = nullptr;
@@ -973,6 +975,7 @@ private:
         }
 
     private:
+        bool m_seeking;
         vector<CorrelativeVideoFrame::Holder> m_outputFrames;
         mutex m_mtxOutputFrames;
     };
@@ -1076,7 +1079,7 @@ private:
             }
             hTask = SingleFrameTask::Holder(new SingleFrameTask());
             hTask->frameIndex = frameIndex;
-            auto rft = track->CreateReadFrameTask(frameIndex, canDrop, needSeek || needClearTaskList, dynamic_cast<ReadFrameTask::Callback*>(hTask.get()));
+            auto rft = track->CreateReadFrameTask(frameIndex, canDrop, needSeek || needClearTaskList, false, dynamic_cast<ReadFrameTask::Callback*>(hTask.get()));
             rft->SetVisible(track->IsVisible());
             hTask->rft = rft;
             m_logger->Log(DEBUG) << "++ AddSingleFrameTask: frameIndex=" << frameIndex << ", canDrop=" << canDrop << endl;
@@ -1147,6 +1150,8 @@ private:
         lock_guard<mutex> lk(m_seekingTasksLock);
         for (auto& skt : m_seekingTasks)
         {
+            if (!skt->outputReady)
+                continue;
             if (!hCandiFrame || std::abs(hCandiFrame->frameIndex-targetIndex) > std::abs(skt->frameIndex-targetIndex))
                 hCandiFrame = skt;
         }
@@ -1193,11 +1198,11 @@ private:
                 lock_guard<recursive_mutex> trackLk(m_trackLock);
                 track = m_track;
             }
-            hTask = SingleFrameTask::Holder(new SingleFrameTask());
+            hTask = SingleFrameTask::Holder(new SingleFrameTask(true));
             hTask->frameIndex = frameIndex;
-            auto rft = track->CreateReadFrameTask(frameIndex, true, true, dynamic_cast<ReadFrameTask::Callback*>(hTask.get()));
+            auto rft = track->CreateReadFrameTask(frameIndex, true, true, true, dynamic_cast<ReadFrameTask::Callback*>(hTask.get()));
             hTask->rft = rft;
-            m_logger->Log(DEBUG) << "++ AddSeekingTask: frameIndex=" << frameIndex << endl;
+            m_logger->Log(WARN) << "++ AddSeekingTask: frameIndex=" << frameIndex << endl;
             m_seekingTasks.push_back(hTask);
         }
         else
@@ -1280,8 +1285,10 @@ private:
                 lock_guard<mutex> lk(m_seekingTasksLock);
                 // auto statusLog = PrintMixFrameTaskListStatus(m_seekingTasks, "SeekingTasks");
                 // m_logger->Log(DEBUG) << statusLog << endl;
+                auto s1 = m_seekingTasks.size();
                 RemoveDiscardedTasks(m_seekingTasks);
                 frameTasks = m_seekingTasks;
+                m_logger->Log(WARN) << "~~~~ Search task in seeking tasks: " << s1 << " -> " << frameTasks.size() << endl;
             }
             else
             {
@@ -1296,15 +1303,15 @@ private:
                 RemoveDiscardedTasks(m_singleFrmTasks);
                 frameTasks = m_singleFrmTasks;
             }
-            auto mftIter = frameTasks.begin();
-            while (mftIter != frameTasks.end())
+            auto sftIter = frameTasks.begin();
+            while (sftIter != frameTasks.end())
             {
-                auto& mft = *mftIter++;
-                if (mft->outputReady || mft->IsProcessingStarted())
+                auto& sft = *sftIter++;
+                if (sft->outputReady || sft->IsProcessingStarted())
                     continue;
 
                 bool allSourceReady = true;
-                auto& rft = mft->rft;
+                auto& rft = sft->rft;
                 if (!rft->IsSourceFrameReady())
                     allSourceReady = false;
                 else
@@ -1312,7 +1319,10 @@ private:
                 if (!allSourceReady)
                     continue;
 
-                mft->StartProcessing();
+                rft->UpdateHostFrames();
+                m_seekingFlash = sft->GetOutputFrames();
+                m_logger->Log(WARN) << "---------> Got SOURCE frame at frameIndex=" << sft->frameIndex << endl;
+                sft->StartProcessing();
                 idleLoop = false;
             }
 
@@ -1348,15 +1358,15 @@ private:
                 lock_guard<recursive_mutex> lk(m_singleFrmTasksLock);
                 frameTasks = m_singleFrmTasks;
             }
-            auto mftIter = frameTasks.begin();
-            while (mftIter != frameTasks.end())
+            auto sftIter = frameTasks.begin();
+            while (sftIter != frameTasks.end())
             {
-                auto& mft = *mftIter++;
-                if (mft->outputReady || !mft->IsProcessingStarted())
+                auto& sft = *sftIter++;
+                if (sft->outputReady || !sft->IsProcessingStarted())
                     continue;
 
                 bool allProcessed = true;
-                auto& rft = mft->rft;
+                auto& rft = sft->rft;
                 if (!rft->IsOutputFrameReady())
                     allProcessed = false;
                 else
@@ -1364,9 +1374,9 @@ private:
                 if (!allProcessed)
                     continue;
 
-                double timestamp = (double)mft->frameIndex*frameRate.den/frameRate.num;
+                double timestamp = (double)sft->frameIndex*frameRate.den/frameRate.num;
                 ImGui::ImMat outFrame;
-                auto hVfrm = mft->rft->GetVideoFrame();
+                auto hVfrm = sft->rft->GetVideoFrame();
                 if (hVfrm)
                     hVfrm->GetMat(outFrame);
                 if (outFrame.empty())
@@ -1378,10 +1388,11 @@ private:
                 outFrame.flags |= IM_MAT_FLAGS_VIDEO_FRAME;
                 outFrame.rate.num = frameRate.num;
                 outFrame.rate.den = frameRate.den;
-                outFrame.index_count = mft->frameIndex;
-                mft->UpdateOutputFrames({ CorrelativeVideoFrame::Holder(new CorrelativeVideoFrame(CorrelativeFrame::PHASE_AFTER_MIXING, 0, 0, VideoFrame::CreateMatInstance(outFrame))) });
-                mft->outputReady = true;
-                m_logger->Log(DEBUG) << "---------> Got out frame at frameIndex=" << mft->frameIndex << ", pos=" << (int64_t)(timestamp*1000) << endl;
+                outFrame.index_count = sft->frameIndex;
+                sft->UpdateOutputFrames({ CorrelativeVideoFrame::Holder(new CorrelativeVideoFrame(CorrelativeFrame::PHASE_AFTER_MIXING, 0, 0, VideoFrame::CreateMatInstance(outFrame))) });
+                sft->outputReady = true;
+                // m_seekingFlash = sft->GetOutputFrames();
+                m_logger->Log(DEBUG) << "---------> Got out frame at frameIndex=" << sft->frameIndex << ", pos=" << (int64_t)(timestamp*1000) << endl;
                 idleLoop = false;
                 break;
             }
@@ -1450,6 +1461,7 @@ private:
     bool m_inSeeking{false};
     list<SingleFrameTask::Holder> m_seekingTasks;
     mutex m_seekingTasksLock;
+    vector<CorrelativeFrame> m_seekingFlash;
 
     SharedSettings::Holder m_hSettings;
     Ratio m_outFrameRate;

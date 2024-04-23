@@ -35,11 +35,12 @@ namespace MediaCore
 class ReadFrameTask_Impl : public ReadFrameTask
 {
 public:
-    ReadFrameTask_Impl(int64_t frameIndex, int64_t readPos, bool canDrop, bool needSeek)
+    ReadFrameTask_Impl(int64_t frameIndex, int64_t readPos, bool canDrop, bool needSeek, bool bypassBgNode)
         : m_frameIndex(frameIndex)
         , m_readPos(readPos)
         , m_canDrop(canDrop)
         , m_needSeek(needSeek)
+        , m_bypassBgNode(bypassBgNode)
     {}
 
     int64_t FrameIndex() const override
@@ -220,17 +221,21 @@ public:
             m_outputReady = true;
             return;
         }
+
+        unordered_map<string, string> extraArgs;
+        if (m_bypassBgNode)
+            extraArgs["bypass_bg_node"] = "true";
         vector<CorrelativeVideoFrame::Holder> outFrames;
         VideoFrame::Holder hOutVfrm;
         if (m_hasOvlp)
         {
             m_outFrames.clear();
-            hOutVfrm = m_hOvlp->ProcessSourceFrame(m_readPos-m_hOvlp->Start(), outFrames, m_srcVf1, m_srcVf2);
+            hOutVfrm = m_hOvlp->ProcessSourceFrame(m_readPos-m_hOvlp->Start(), outFrames, m_srcVf1, m_srcVf2, &extraArgs);
         }
         else if (m_hClip1)
         {
             m_outFrames.clear();
-            hOutVfrm = m_hClip1->ProcessSourceFrame(m_readPos-m_hClip1->Start(), outFrames, m_srcVf1);
+            hOutVfrm = m_hClip1->ProcessSourceFrame(m_readPos-m_hClip1->Start(), outFrames, m_srcVf1, &extraArgs);
         }
         {
             lock_guard<mutex> lg(m_mtxOutFrames);
@@ -257,6 +262,7 @@ private:
     int64_t m_readPos;
     bool m_canDrop;
     bool m_needSeek;
+    bool m_bypassBgNode;
     bool m_seeked{false};
     bool m_started{false};
     bool m_inited{false};
@@ -564,13 +570,13 @@ public:
         return m_readForward;
     }
 
-    ReadFrameTask::Holder CreateReadFrameTask(int64_t frameIndex, bool canDrop, bool needSeek, ReadFrameTask::Callback* pCb) override
+    ReadFrameTask::Holder CreateReadFrameTask(int64_t frameIndex, bool canDrop, bool needSeek, bool bypassBgNode, ReadFrameTask::Callback* pCb) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (frameIndex < 0)
             return nullptr;
         const int64_t readPos = ReadPos(frameIndex);
-        ReadFrameTask_Impl* pTask = new ReadFrameTask_Impl(frameIndex, readPos, canDrop, needSeek);
+        ReadFrameTask_Impl* pTask = new ReadFrameTask_Impl(frameIndex, readPos, canDrop, needSeek, bypassBgNode);
         ReadFrameTask::Holder hTask(pTask, READ_FRAME_TASK_HOLDER_DELETER);
         if (pCb) pTask->SetCallback(pCb);
         {

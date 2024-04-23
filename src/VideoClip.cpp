@@ -354,7 +354,7 @@ public:
         return hVf;
     }
 
-    VideoFrame::Holder ProcessSourceFrame(int64_t pos, vector<CorrelativeVideoFrame::Holder>& frames, VideoFrame::Holder hInVf) override
+    VideoFrame::Holder ProcessSourceFrame(int64_t pos, vector<CorrelativeVideoFrame::Holder>& frames, VideoFrame::Holder hInVf, const std::unordered_map<std::string, std::string>* pExtraArgs) override
     {
         if (!hInVf)
             return nullptr;
@@ -364,7 +364,7 @@ public:
         VideoFrame::Holder hFilteredVfrm;
         if (hFilter)
         {
-            hFilteredVfrm = hFilter->FilterImage(hInVf, pos);
+            hFilteredVfrm = hFilter->FilterImage(hInVf, pos, pExtraArgs);
             if (!hFilteredVfrm)
                 return nullptr;
         }
@@ -733,7 +733,7 @@ public:
         return m_hVf;
     }
 
-    VideoFrame::Holder ProcessSourceFrame(int64_t pos, vector<CorrelativeVideoFrame::Holder>& frames, VideoFrame::Holder hInVf) override
+    VideoFrame::Holder ProcessSourceFrame(int64_t pos, vector<CorrelativeVideoFrame::Holder>& frames, VideoFrame::Holder hInVf, const std::unordered_map<std::string, std::string>* pExtraArgs) override
     {
         if (!hInVf)
             return nullptr;
@@ -743,7 +743,7 @@ public:
         auto hFilter = m_hFilter;
         if (hFilter)
         {
-            hFilteredVfrm = hFilter->FilterImage(hInVf, pos);
+            hFilteredVfrm = hFilter->FilterImage(hInVf, pos, pExtraArgs);
             if (!hFilteredVfrm)
                 return nullptr;
         }
@@ -1012,18 +1012,18 @@ public:
         return hOutVfrm;
     }
 
-    VideoFrame::Holder ProcessSourceFrame(int64_t pos, vector<CorrelativeVideoFrame::Holder>& frames, VideoFrame::Holder hInVf1, VideoFrame::Holder hInVf2) override
+    VideoFrame::Holder ProcessSourceFrame(int64_t pos, vector<CorrelativeVideoFrame::Holder>& frames, VideoFrame::Holder hInVf1, VideoFrame::Holder hInVf2, const std::unordered_map<std::string, std::string>* pExtraArgs) override
     {
         if (pos < 0 || pos > Duration())
             throw invalid_argument("Argument 'pos' can NOT be NEGATIVE or larger than overlap duration!");
 
         bool eof1{false};
         int64_t pos1 = pos+(Start()-m_hFrontClip->Start());
-        auto hClipOutVfrm1 = m_hFrontClip->ProcessSourceFrame(pos1, frames, hInVf1);
+        auto hClipOutVfrm1 = m_hFrontClip->ProcessSourceFrame(pos1, frames, hInVf1, pExtraArgs);
 
         bool eof2{false};
         int64_t pos2 = pos+(Start()-m_hRearClip->Start());
-        auto hClipOutVfrm2 = m_hRearClip->ProcessSourceFrame(pos2, frames, hInVf2);
+        auto hClipOutVfrm2 = m_hRearClip->ProcessSourceFrame(pos2, frames, hInVf2, pExtraArgs);
 
         auto hTrans = m_hTrans;
         auto hOutVfrm = hTrans->MixTwoImages(hClipOutVfrm1, hClipOutVfrm2, pos+m_start, Duration());
