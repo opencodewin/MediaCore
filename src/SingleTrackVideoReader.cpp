@@ -1045,7 +1045,7 @@ private:
 
     SingleFrameTask::Holder AddSingleFrameTask(int64_t frameIndex, bool canDrop, bool needSeek, bool clearBeforeAdd = false)
     {
-        if (frameIndex < 0)
+        if (frameIndex < 0 || !m_track)
             return nullptr;
         lock_guard<recursive_mutex> lk(m_singleFrmTasksLock);
         list<SingleFrameTask::Holder>::iterator mftIter;
