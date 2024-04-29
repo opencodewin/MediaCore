@@ -1212,7 +1212,7 @@ private:
             hTask->frameIndex = frameIndex;
             for (auto& trk : tracks)
             {
-                auto rft = trk->CreateReadFrameTask(frameIndex, canDrop, needSeek || needClearTaskList, dynamic_cast<ReadFrameTask::Callback*>(hTask.get()));
+                auto rft = trk->CreateReadFrameTask(frameIndex, canDrop, needSeek || needClearTaskList, false, dynamic_cast<ReadFrameTask::Callback*>(hTask.get()));
                 rft->SetVisible(trk->IsVisible());
                 hTask->readFrameTaskTable.push_back({trk, rft});
             }
@@ -1344,7 +1344,7 @@ private:
             hTask->frameIndex = frameIndex;
             for (auto& trk : tracks)
             {
-                auto rft = trk->CreateReadFrameTask(frameIndex, true, true, dynamic_cast<ReadFrameTask::Callback*>(hTask.get()));
+                auto rft = trk->CreateReadFrameTask(frameIndex, true, true, true, dynamic_cast<ReadFrameTask::Callback*>(hTask.get()));
                 hTask->readFrameTaskTable.push_back({trk, rft});
             }
             m_logger->Log(DEBUG) << "++ AddSeekingTask: frameIndex=" << frameIndex << endl;
