@@ -390,8 +390,14 @@ public:
         bool ret = ReadVideoFrameWithoutSubtitle(targetIndex, frames, nonblocking, precise);
         if (ret && !m_subtrks.empty())
         {
-            auto& vmat = frames[0].frame;
-            vmat = BlendSubtitle(vmat);
+            auto iter = find_if(frames.begin(), frames.end(), [](const CorrelativeFrame& corFrame) {
+                return corFrame.phase == CorrelativeFrame::PHASE_AFTER_MIXING;
+            });
+            if (iter != frames.end())
+            {
+                auto& vmat = iter->frame;
+                vmat = BlendSubtitle(vmat);
+            }
         }
         return ret;
     }
@@ -402,8 +408,15 @@ public:
         bool success = ReadVideoFrameByPosEx(pos, frames, nonblocking, true);
         if (!success)
             return false;
-        vmat = frames[0].frame;
-        return true;
+        auto iter = find_if(frames.begin(), frames.end(), [](const CorrelativeFrame& corFrame) {
+            return corFrame.phase == CorrelativeFrame::PHASE_AFTER_MIXING;
+        });
+        if (iter != frames.end())
+        {
+            vmat = iter->frame;
+            return true;
+        }
+        return false;
     }
 
 
@@ -424,8 +437,14 @@ public:
         bool ret = ReadVideoFrameWithoutSubtitle(frmIdx, frames, nonblocking, precise);
         if (ret && !m_subtrks.empty())
         {
-            auto& vmat = frames[0].frame;
-            vmat = BlendSubtitle(vmat);
+            auto iter = find_if(frames.begin(), frames.end(), [](const CorrelativeFrame& corFrame) {
+                return corFrame.phase == CorrelativeFrame::PHASE_AFTER_MIXING;
+            });
+            if (iter != frames.end())
+            {
+                auto& vmat = iter->frame;
+                vmat = BlendSubtitle(vmat);
+            }
         }
         return ret;
     }
@@ -436,8 +455,15 @@ public:
         bool success = ReadVideoFrameByIdxEx(frmIdx, frames, nonblocking, true);
         if (!success)
             return false;
-        vmat = frames[0].frame;
-        return true;
+        auto iter = find_if(frames.begin(), frames.end(), [](const CorrelativeFrame& corFrame) {
+            return corFrame.phase == CorrelativeFrame::PHASE_AFTER_MIXING;
+        });
+        if (iter != frames.end())
+        {
+            vmat = iter->frame;
+            return true;
+        }
+        return false;
     }
 
     bool ReadNextVideoFrameEx(vector<CorrelativeFrame>& frames) override
@@ -455,8 +481,14 @@ public:
         bool ret = ReadVideoFrameWithoutSubtitle(targetIndex, frames, false, true);
         if (ret && !m_subtrks.empty())
         {
-            auto& vmat = frames[0].frame;
-            vmat = BlendSubtitle(vmat);
+            auto iter = find_if(frames.begin(), frames.end(), [](const CorrelativeFrame& corFrame) {
+                return corFrame.phase == CorrelativeFrame::PHASE_AFTER_MIXING;
+            });
+            if (iter != frames.end())
+            {
+                auto& vmat = iter->frame;
+                vmat = BlendSubtitle(vmat);
+            }
         }
         return ret;
     }
@@ -467,8 +499,15 @@ public:
         bool success = ReadNextVideoFrameEx(frames);
         if (!success)
             return false;
-        vmat = frames[0].frame;
-        return true;
+        auto iter = find_if(frames.begin(), frames.end(), [](const CorrelativeFrame& corFrame) {
+            return corFrame.phase == CorrelativeFrame::PHASE_AFTER_MIXING;
+        });
+        if (iter != frames.end())
+        {
+            vmat = iter->frame;
+            return true;
+        }
+        return false;
     }
 
     int64_t MillsecToFrameIndex(int64_t mts, int iMode = 0) override
