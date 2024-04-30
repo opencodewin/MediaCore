@@ -40,7 +40,7 @@ extern "C"
 }
 
 #define HWFRAME_MAPPING     0
-#define YUV_CONVERT_PLANAR  1
+#define YUV_CONVERT_PLANAR  0   // TODO::Dicky need debug for memory issue
 
 #define ISYUV420P(format)   \
 (format == AV_PIX_FMT_YUV420P || \
