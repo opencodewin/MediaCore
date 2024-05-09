@@ -9,13 +9,6 @@ using namespace std;
 using namespace Logger;
 using namespace MediaCore;
 
-struct MediaHandlers
-{
-    MediaReader::Holder hVidReader{nullptr};
-    MediaReader::Holder hAudReader{nullptr};
-    MediaEncoder::Holder hEncoder;
-};
-
 int main(int argc, const char* argv[])
 {
     if (argc < 3)
@@ -44,15 +37,22 @@ int main(int argc, const char* argv[])
     }
 #endif
 
-    string vidEncCodec = "h264";
-    uint32_t outWidth{1920}, outHeight{1080};
-    Ratio outFrameRate = { 25, 1 };
-    uint64_t outVidBitRate = 10*1000*1000;
+    string vidEncCodec = "h264_vaapi";
+    uint32_t outWidth{3840}, outHeight{2160};
+    Ratio outFrameRate = { 60, 1 };
+    uint64_t outVidBitRate = 30*1000*1000;
     string audEncCodec = "aac";
     uint32_t outAudChannels = 2;
-    uint32_t outSampleRate = 44100;
+    uint32_t outSampleRate = 48000;
     uint64_t outAudBitRate = 128*1000;
-    int64_t maxEncodeDuration = 600*1000;
+    int64_t maxEncodeDuration = 5*1000;
+    vector<MediaEncoder::Option> extraOpts = {
+        { "profile",                Value("high") },
+        { "aspect",                 Value(Ratio(1,1)) },
+        { "colorspace",             Value(1) },
+        { "color_trc",              Value(1) },
+        { "color_primaries",        Value(1) },
+    };
     bool videoOnly{false}, audioOnly{false};
 
     MediaParser::Holder hParser = MediaParser::CreateInstance();
@@ -63,13 +63,12 @@ int main(int argc, const char* argv[])
     }
     MediaInfo::Holder hInfo = hParser->GetMediaInfo();
 
-    MediaHandlers mhandlers;
     MediaReader::Holder hVidReader, hAudReader;
     string audioPcmFormat;
     uint32_t audioBlockAlign{0};
     if (hParser->GetBestVideoStreamIndex() >= 0 && !audioOnly)
     {
-        mhandlers.hVidReader = hVidReader = MediaReader::CreateVideoInstance();
+        hVidReader = MediaReader::CreateVideoInstance();
         if (!hVidReader->Open(hParser))
         {
             Log(Error) << "FAILED to open video MediaReader! Error is '" << hVidReader->GetError() << "'." << endl;
@@ -84,7 +83,7 @@ int main(int argc, const char* argv[])
     }
     if (hParser->GetBestAudioStreamIndex() >= 0 && !videoOnly)
     {
-        mhandlers.hAudReader = hAudReader = MediaReader::CreateInstance();
+        hAudReader = MediaReader::CreateInstance();
         if (!hAudReader->Open(hParser))
         {
             Log(Error) << "FAILED to open audio MediaReader! Error is '" << hAudReader->GetError() << "'." << endl;
@@ -100,20 +99,13 @@ int main(int argc, const char* argv[])
         hAudReader->Start();
     }
 
-    auto hEncoder = mhandlers.hEncoder = MediaEncoder::CreateInstance();
+    auto hEncoder = MediaEncoder::CreateInstance();
     if (!hEncoder->Open(argv[2]))
     {
         Log(Error) << "FAILED to open MediaEncoder by '" << argv[2] << "'! Error is '" << hEncoder->GetError() << "'." << endl;
         return -6;
     }
 
-    vector<MediaEncoder::Option> extraOpts = {
-        { "profile",                Value("high") },
-        { "aspect",                 Value(Ratio(1,1)) },
-        { "colorspace",             Value(1) },
-        { "color_trc",              Value(1) },
-        { "color_primaries",        Value(1) },
-    };
     string vidEncImgFormat;
     if (hVidReader && !hEncoder->ConfigureVideoStream(vidEncCodec, vidEncImgFormat, outWidth, outHeight, outFrameRate, outVidBitRate, &extraOpts))
     {
@@ -153,7 +145,8 @@ int main(int argc, const char* argv[])
             if (!eof)
             {
                 vmat.time_stamp = (double)vidpos/1000;
-                if (!hEncoder->EncodeVideoFrame(vmat))
+                bool consumed = false;
+                if (!hEncoder->EncodeVideoFrame(vmat, consumed))
                 {
                     Log(Error) << "FAILED to encode video frame! Error is '" << hEncoder->GetError() << "'." << endl;
                     break;
@@ -162,7 +155,8 @@ int main(int argc, const char* argv[])
             else
             {
                 vmat.release();
-                if (!hEncoder->EncodeVideoFrame(vmat))
+                bool consumed = false;
+                if (!hEncoder->EncodeVideoFrame(vmat, consumed))
                 {
                     Log(Error) << "FAILED to encode video EOF! Error is '" << hEncoder->GetError() << "'." << endl;
                     break;
@@ -184,7 +178,8 @@ int main(int argc, const char* argv[])
                 eof = true;
             if (!eof)
             {
-                if (!hEncoder->EncodeAudioSamples(amat))
+                bool consumed = false;
+                if (!hEncoder->EncodeAudioSamples(amat, consumed))
                 {
                     Log(Error) << "FAILED to encode audio samples! Error is '" << hEncoder->GetError() << "'." << endl;
                     break;
@@ -193,7 +188,8 @@ int main(int argc, const char* argv[])
             else
             {
                 amat.release();
-                if (!hEncoder->EncodeAudioSamples(nullptr, 0))
+                bool consumed = false;
+                if (!hEncoder->EncodeAudioSamples(amat, consumed))
                 {
                     Log(Error) << "FAILED to encode audio EOF! Error is '" << hEncoder->GetError() << "'." << endl;
                     break;
@@ -204,6 +200,12 @@ int main(int argc, const char* argv[])
     }
     hEncoder->FinishEncoding();
     hEncoder->Close();
+
+    hEncoder = nullptr;
+    hVidReader = nullptr;
+    hAudReader = nullptr;
+    hInfo = nullptr;
+    hParser = nullptr;
 
     return 0;
 }

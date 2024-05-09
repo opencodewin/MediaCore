@@ -104,10 +104,10 @@ struct MediaEncoder
             std::string& sampleFormat, uint32_t channels, uint32_t sampleRate, uint64_t bitRate) = 0;
     virtual bool Start() = 0;
     virtual bool FinishEncoding() = 0;
-    virtual bool EncodeVideoFrame(VideoFrame::Holder hVfrm, bool wait = true) = 0;
-    virtual bool EncodeVideoFrame(ImGui::ImMat& vmat, bool wait = true) = 0;
-    virtual bool EncodeAudioSamples(uint8_t* buf, uint32_t size, bool wait = true) = 0;
-    virtual bool EncodeAudioSamples(ImGui::ImMat& amat, bool wait = true) = 0;
+    virtual bool EncodeVideoFrame(VideoFrame::Holder hVfrm, bool& consumed, bool wait = true) = 0;
+    virtual bool EncodeVideoFrame(ImGui::ImMat& vmat, bool& consumed, bool wait = true) = 0;
+    virtual bool EncodeAudioSamples(uint8_t* buf, uint32_t size, bool& consumed, bool wait = true) = 0;
+    virtual bool EncodeAudioSamples(ImGui::ImMat& amat, bool& consumed, bool wait = true) = 0;
 
     virtual bool IsOpened() const = 0;
     virtual bool HasVideo() const = 0;

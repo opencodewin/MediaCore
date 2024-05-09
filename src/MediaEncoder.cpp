@@ -235,8 +235,9 @@ public:
         return success;
     }
 
-    bool EncodeVideoFrame(VideoFrame::Holder hVfrm, bool wait) override
+    bool EncodeVideoFrame(VideoFrame::Holder hVfrm, bool& consumed, bool wait) override
     {
+        consumed = false;
         if (!m_opened)
         {
             m_errMsg = "This MediaEncoder has NOT opened yet!";
@@ -274,28 +275,27 @@ public:
         if (m_quit)
             return false;
         if (m_vfrmQ.size() >= m_vmatQMaxSize)
-        {
-            m_errMsg = "Queue full!";
-            return false;
-        }
+            return true;
 
         {
             lock_guard<mutex> lk(m_vmatQLock);
             m_vfrmQ.push_back(hVfrm);
+            consumed = true;
         }
         return true;
     }
 
-    bool EncodeVideoFrame(ImGui::ImMat& vmat, bool wait) override
+    bool EncodeVideoFrame(ImGui::ImMat& vmat, bool& consumed, bool wait) override
     {
         VideoFrame::Holder hVfrm;
         if (!vmat.empty())
             hVfrm = VideoFrame::CreateMatInstance(vmat);
-        return EncodeVideoFrame(hVfrm, wait);
+        return EncodeVideoFrame(hVfrm, consumed, wait);
     }
 
-    bool EncodeAudioSamples(uint8_t* buf, uint32_t size, bool wait) override
+    bool EncodeAudioSamples(uint8_t* buf, uint32_t size, bool& consumed, bool wait) override
     {
+        consumed = false;
         if (!m_opened)
         {
             m_errMsg = "This MediaEncoder has NOT opened yet!";
@@ -341,10 +341,7 @@ public:
         if (m_audfrmQ.size() >= m_audfrmQMaxSize)
         {
             if (!wait)
-            {
-                m_errMsg = "Queue full!";
-                return false;
-            }
+                return true;
             while (m_audfrmQ.size() >= m_audfrmQMaxSize && !m_quit)
                 this_thread::sleep_for(chrono::milliseconds(5));
             if (m_quit)
@@ -423,15 +420,16 @@ public:
                 m_audencfrmSmpOffset = 0;
             }
         }
+        consumed = true;
         if (m_quit)
             return false;
 
         return true;
     }
 
-    bool EncodeAudioSamples(ImGui::ImMat& amat, bool wait) override
+    bool EncodeAudioSamples(ImGui::ImMat& amat, bool& consumed, bool wait) override
     {
-        return EncodeAudioSamples((uint8_t*)amat.data, amat.total()*amat.elemsize, wait);
+        return EncodeAudioSamples((uint8_t*)amat.data, amat.total()*amat.elemsize, consumed, wait);
     }
 
     bool IsOpened() const override
@@ -680,6 +678,8 @@ private:
         }
 
         m_vmatQMaxSize = (uint32_t)(((double)m_videncCtx->framerate.num/m_videncCtx->framerate.den)*m_dataQCacheDur);
+        if (m_vmatQMaxSize < 2)
+            m_vmatQMaxSize = 2;
 
         m_vidAvStm = avformat_new_stream(m_avfmtCtx, m_videnc);
         if (!m_vidAvStm)
@@ -964,6 +964,8 @@ private:
         m_audencFrameSize = av_get_bytes_per_sample(m_audencSmpfmt)*channels;
 
         m_audfrmQMaxSize = (uint32_t)(m_dataQCacheDur*sampleRate/m_audencFrameSamples);
+        if (m_audfrmQMaxSize < 2)
+            m_audfrmQMaxSize = 2;
 
         m_audAvStm = avformat_new_stream(m_avfmtCtx, m_audenc);
         if (!m_audAvStm)
@@ -1422,7 +1424,7 @@ private:
 
     ImMatToAVFrameConverter m_imgCvter;
 
-    double m_dataQCacheDur{5};
+    double m_dataQCacheDur{0.02};
     // video encoding thread
     thread m_videncThread;
     list<VideoFrame::Holder> m_vfrmQ;
