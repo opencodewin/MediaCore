@@ -1091,6 +1091,7 @@ private:
     {
         m_logger->Log(DEBUG) << "Enter VideoEncodingThreadProc()..." << endl;
 
+        VideoFrame::Holder hVfrm;
         SelfFreeAVFramePtr encfrm;
         m_vidNullFrameSent = false;
         while (!m_quit)
@@ -1102,7 +1103,6 @@ private:
             {
                 if (!m_vfrmQ.empty())
                 {
-                    VideoFrame::Holder hVfrm;
                     {
                         lock_guard<mutex> lk(m_vmatQLock);
                         hVfrm = m_vfrmQ.front();
@@ -1180,6 +1180,7 @@ private:
                     //     << MillisecToString(av_rescale_q(encfrm->pts, m_videncCtx->time_base, MILLISEC_TIMEBASE))
                     //     << "(" << encfrm->pts << ")." << endl;
                     encfrm = nullptr;
+                    hVfrm = nullptr;
                     idleLoop = false;
                 }
                 else
