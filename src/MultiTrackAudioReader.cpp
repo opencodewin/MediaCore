@@ -278,7 +278,7 @@ public:
             lock_guard<recursive_mutex> lk2(m_trackLock);
             m_tracks.push_back(hTrack);
             UpdateDuration();
-            int64_t pos = m_samplePos*1000/m_outSampleRate;
+            int64_t pos = ReadPos();
             for (auto track : m_tracks)
                 track->SeekTo(pos);
             m_outputMats.clear();
@@ -648,7 +648,7 @@ public:
 
     int64_t ReadPos() const override
     {
-        return round((double)m_readSamples*1000/m_outSampleRate);
+        return round((double)(m_readSamples > 0 ? m_readSamples : 0)*1000/m_outSampleRate);
     }
 
     string GetError() const override
