@@ -1117,7 +1117,7 @@ MultiTrackAudioReader::Holder MultiTrackAudioReader_Impl::CloneAndConfigure(Shar
     // clone all the tracks
     for (auto track : m_tracks)
     {
-        newInstance->m_tracks.push_back(track->Clone(m_hTrackSettings));
+        newInstance->m_tracks.push_back(track->Clone(hSettings));
     }
     newInstance->UpdateDuration();
     // create mixer in the new instance

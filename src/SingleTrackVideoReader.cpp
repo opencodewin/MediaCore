@@ -841,7 +841,6 @@ private:
         if (m_prevOutFrame && m_prevOutFrame->frameIndex == frameIndex && m_prevOutFrame->outputReady && !precise)
         {
             frames = m_prevOutFrame->GetOutputFrames();
-            m_logger->Log(WARN) << "-----> 1" << endl;
             return true;
         }
 
@@ -853,12 +852,10 @@ private:
             {
                 m_prevOutFrame = hCandiFrame;
                 frames = hCandiFrame->GetOutputFrames();
-                m_logger->Log(WARN) << "-----> 2" << endl;
             }
             else if (!m_seekingFlash.empty())
             {
                 frames = m_seekingFlash;
-                m_logger->Log(WARN) << "-----> 3" << endl;
             }
         }
         else
@@ -1241,7 +1238,7 @@ private:
             hTask->frameIndex = frameIndex;
             auto rft = track->CreateReadFrameTask(frameIndex, true, true, true, dynamic_cast<ReadFrameTask::Callback*>(hTask.get()));
             hTask->rft = rft;
-            m_logger->Log(WARN) << "++ AddSeekingTask: frameIndex=" << frameIndex << endl;
+            m_logger->Log(DEBUG) << "++ AddSeekingTask: frameIndex=" << frameIndex << endl;
             m_seekingTasks.push_back(hTask);
         }
         else
@@ -1327,7 +1324,6 @@ private:
                 auto s1 = m_seekingTasks.size();
                 RemoveDiscardedTasks(m_seekingTasks);
                 frameTasks = m_seekingTasks;
-                m_logger->Log(WARN) << "~~~~ Search task in seeking tasks: " << s1 << " -> " << frameTasks.size() << endl;
             }
             else
             {
@@ -1360,7 +1356,7 @@ private:
 
                 rft->UpdateHostFrames();
                 m_seekingFlash = sft->GetOutputFrames();
-                m_logger->Log(WARN) << "---------> Got SOURCE frame at frameIndex=" << sft->frameIndex << endl;
+                m_logger->Log(DEBUG) << "---------> Got SOURCE frame at frameIndex=" << sft->frameIndex << endl;
                 sft->StartProcessing();
                 idleLoop = false;
             }

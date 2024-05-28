@@ -1017,7 +1017,7 @@ AudioTrack::Holder AudioTrack_Impl::Clone(SharedSettings::Holder hSettings)
     // duplicate the clips
     for (auto clip : m_clips)
     {
-        auto newClip = clip->Clone(m_hSettings);
+        auto newClip = clip->Clone(hSettings);
         newInstance->m_clips.push_back(newClip);
         newClip->SetTrackId(m_id);
         AudioClip::Holder lastClip = newInstance->m_clips.back();

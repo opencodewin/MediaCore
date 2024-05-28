@@ -1233,7 +1233,7 @@ private:
         bool needFlushVfrmQ = false;
         bool afterSeek = false;
         bool readForward = m_readForward;
-        int64_t lastPktPts = INT64_MIN, minPtsAfterSeek = INT64_MAX;
+        int64_t lastPktPts = INT64_MIN, minPtsAfterSeek = INT64_MAX, prevMinPtsAfterSeek = INT64_MAX;
         int64_t backwardReadLimitPts;
         int64_t seekPts = INT64_MIN;
         list<int64_t> ptsList;
@@ -1390,7 +1390,7 @@ private:
                     m_logger->Log(WARN) << "avformat_seek_file() FAILED to seek to time " << seekTs << "(" << seekPts << ")! fferr=" << fferr << "." << endl;
                 }
                 lastPktPts = INT64_MIN;
-                minPtsAfterSeek = INT64_MAX;
+                minPtsAfterSeek = prevMinPtsAfterSeek = INT64_MAX;
                 demuxEof = false;
                 afterSeek = true;
                 if (m_readForward || seekPts <= m_vidStartPts)
@@ -1441,8 +1441,11 @@ private:
                 {
                     if (seekPts <= m_vidStartPts)
                     {
-                        m_logger->Log(WARN) << "!!! >>>> minPtsAfterSeek(" << minPtsAfterSeek << ") > seekPts(" << seekPts
-                                << "), BUT already reach the START TIME." << endl;
+                        if (minPtsAfterSeek != prevMinPtsAfterSeek) {
+                            m_logger->Log(WARN) << "!!! >>>> minPtsAfterSeek(" << minPtsAfterSeek << ") > seekPts(" << seekPts
+                                    << "), BUT already reach the START TIME." << endl;
+                            prevMinPtsAfterSeek = minPtsAfterSeek;
+                        }
                     }
                     else
                     {

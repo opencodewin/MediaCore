@@ -496,7 +496,12 @@ private:
         if ((m_avfmtCtx->oformat->flags&AVFMT_NOFILE) == 0)
         {
             fferr = avio_open(&m_avfmtCtx->pb, url.c_str(), AVIO_FLAG_WRITE);
-            if (fferr < 0)
+            if (fferr == AVERROR(EACCES))
+            {
+                m_errMsg = "Target path '" + url + "' is NOT ACCESSIBLE!";
+                return false;
+            }
+            else if (fferr < 0)
             {
                 m_errMsg = FFapiFailureMessage("avio_open", fferr);
                 return false;
