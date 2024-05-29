@@ -107,19 +107,26 @@ public:
         m_hReader->EnableHwAccel(VideoClip::USE_HWACCEL);
         if (!m_hReader->Open(hParser))
             throw runtime_error(m_hReader->GetError());
-        const auto outWidth = hSettings->VideoOutWidth();
-        const auto outHeight = hSettings->VideoOutHeight();
-        const auto frameRate = hSettings->VideoOutFrameRate();
         uint32_t readerWidth, readerHeight;
-        if (outWidth*vidStm->height > outHeight*vidStm->width)
+        if (hSettings->IsVideoSrcKeepOriginalSize())
         {
-            readerHeight = outHeight;
-            readerWidth = vidStm->width*outHeight/vidStm->height;
+            readerWidth = vidStm->width;
+            readerHeight = vidStm->height;
         }
         else
         {
-            readerWidth = outWidth;
-            readerHeight = vidStm->height*outWidth/vidStm->width;
+            const auto outWidth = hSettings->VideoOutWidth();
+            const auto outHeight = hSettings->VideoOutHeight();
+            if (outWidth*vidStm->height > outHeight*vidStm->width)
+            {
+                readerHeight = outHeight;
+                readerWidth = vidStm->width*outHeight/vidStm->height;
+            }
+            else
+            {
+                readerWidth = outWidth;
+                readerHeight = vidStm->height*outWidth/vidStm->width;
+            }
         }
         readerWidth += readerWidth&0x1;
         readerHeight += readerHeight&0x1;
@@ -130,6 +137,7 @@ public:
         m_outDtype = hSettings->VideoOutDataType();
         if (!m_hReader->ConfigVideoReader(readerWidth, readerHeight, m_outClrfmt, m_outDtype, interpMode, hSettings->GetHwaccelManager()))
             throw runtime_error(m_hReader->GetError());
+        const auto frameRate = hSettings->VideoOutFrameRate();
         if (frameRate.num <= 0 || frameRate.den <= 0)
             throw invalid_argument("Invalid argument value for 'frameRate'!");
         m_frameRate = frameRate;

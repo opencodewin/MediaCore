@@ -47,6 +47,11 @@ class SharedSettings_Impl : public SharedSettings
         return m_hHwaMgr;
     }
 
+    bool IsVideoSrcKeepOriginalSize() const override
+    {
+        return m_isVidsrcKeepOrgSize;
+    }
+
     uint32_t AudioOutChannels() const override
     {
         return m_audOutChannels;
@@ -106,6 +111,11 @@ class SharedSettings_Impl : public SharedSettings
     void SetAudioOutChannels(uint32_t channels) override
     {
         m_audOutChannels = channels;
+    }
+
+    void SetVideoSrcKeepOriginalSize(bool enable) override
+    {
+        m_isVidsrcKeepOrgSize = enable;
     }
 
     void SetAudioOutSampleRate(uint32_t sampleRate) override
@@ -174,6 +184,7 @@ private:
     ImColorFormat m_vidOutColorFormat{IM_CF_RGBA};
     ImDataType m_vidOutDataType{IM_DT_FLOAT32};
     HwaccelManager::Holder m_hHwaMgr;
+    bool m_isVidsrcKeepOrgSize{ false };
     uint32_t m_audOutChannels{0};
     uint32_t m_audOutSampleRate{0};
     ImDataType m_audOutDataType{IM_DT_FLOAT32};

@@ -24,6 +24,7 @@ struct SharedSettings
     virtual ImColorFormat VideoOutColorFormat() const = 0;
     virtual ImDataType VideoOutDataType() const = 0;
     virtual HwaccelManager::Holder GetHwaccelManager() const = 0;
+    virtual bool IsVideoSrcKeepOriginalSize() const = 0;
     virtual uint32_t AudioOutChannels() const = 0;
     virtual uint32_t AudioOutSampleRate() const = 0;
     virtual ImDataType AudioOutDataType() const = 0;
@@ -36,6 +37,7 @@ struct SharedSettings
     virtual void SetVideoOutColorFormat(ImColorFormat colorFormat) = 0;
     virtual void SetVideoOutDataType(ImDataType dataType) = 0;
     virtual void SetHwaccelManager(HwaccelManager::Holder hHwaMgr) = 0;
+    virtual void SetVideoSrcKeepOriginalSize(bool enable) = 0;
     virtual void SetAudioOutChannels(uint32_t channels) = 0;
     virtual void SetAudioOutSampleRate(uint32_t sampleRate) = 0;
     virtual void SetAudioOutDataType(ImDataType dataType) = 0;
