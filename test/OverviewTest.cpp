@@ -68,9 +68,7 @@ static void MediaOverview_Finalize(void** handle)
     // g_movr2 = nullptr;
     for (auto& tid : g_snapshotTids)
     {
-        if (tid)
-            ImGui::ImDestroyTexture(tid);
-        tid = nullptr;
+        ImGui::ImDestroyTexture(&tid);
     }
 #ifdef USE_PLACES_FEATURE
 	// save bookmarks
@@ -209,9 +207,7 @@ static bool MediaOverview_Frame(void * handle, bool app_will_quit)
             // g_movr2->Close();
             for (auto& tid : g_snapshotTids)
             {
-                if (tid)
-                    ImGui::ImDestroyTexture(tid);
-                tid = nullptr;
+                ImGui::ImDestroyTexture(&tid);
             }
             string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
             g_mediaParser = MediaParser::CreateInstance();

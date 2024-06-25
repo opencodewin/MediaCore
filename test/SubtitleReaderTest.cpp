@@ -62,11 +62,7 @@ static void SubtitleReader_Initialize(void** handle)
 
 static void SubtitleReader_Finalize(void** handle)
 {
-    if (g_imageTid)
-    {
-        ImGui::ImDestroyTexture(g_imageTid);
-        g_imageTid = nullptr;
-    }
+    ImGui::ImDestroyTexture(&g_imageTid);
 
 #ifdef USE_PLACES_FEATURE
     // save bookmarks

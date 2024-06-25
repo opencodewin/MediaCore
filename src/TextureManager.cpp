@@ -96,12 +96,11 @@ private:
             {
                 if (m_ownTx)
                 {
-                    ImGui::ImDestroyTexture(m_tid);
+                    ImGui::ImDestroyTexture(&m_tid);
                     m_owner->m_txCount--;
                     m_owner->m_logger->Log(VERBOSE) << "Destroyed texture in container '" << m_container->GetName() << "'." << endl;
                     m_ownTx = false;
                 }
-                m_tid = nullptr;
                 txDestroyed = true;
             }
             return txDestroyed;
@@ -533,8 +532,7 @@ private:
                 bool textureDestroyed = false;
                 if (m_tid)
                 {
-                    ImGui::ImDestroyTexture(m_tid);
-                    m_tid = nullptr;
+                    ImGui::ImDestroyTexture(&m_tid);
                     textureDestroyed = true;
                 }
                 return textureDestroyed;
