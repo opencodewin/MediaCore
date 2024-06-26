@@ -110,23 +110,35 @@ public:
         return true;
     }
 
-    bool Configure(uint32_t outChannels, uint32_t outSampleRate, uint32_t outSamplesPerFrame) override
+    bool Configure(uint32_t outChannels, uint32_t outSampleRate, const string& sampleFormat, uint32_t outSamplesPerFrame) override
     {
+        auto avSmpfmt = av_get_sample_fmt(sampleFormat.c_str());
+        if (avSmpfmt == AV_SAMPLE_FMT_NONE) {
+            m_errMsg = "Unknown audio sample format '" + sampleFormat + "'!";
+            return false;
+        }
         auto hSettings = SharedSettings::CreateInstance();
         hSettings->SetAudioOutChannels(outChannels);
         hSettings->SetAudioOutSampleRate(outSampleRate);
-        hSettings->SetAudioOutDataType(GetDataTypeFromSampleFormat(AV_SAMPLE_FMT_FLT));
+        hSettings->SetAudioOutDataType(GetDataTypeFromSampleFormat(avSmpfmt));
+        hSettings->SetAudioOutIsPlanar(av_sample_fmt_is_planar(avSmpfmt));
         return Configure(hSettings, outSamplesPerFrame);
     }
 
     Holder CloneAndConfigure(SharedSettings::Holder hSettings, uint32_t outSamplesPerFrame) override;
 
-    Holder CloneAndConfigure(uint32_t outChannels, uint32_t outSampleRate, uint32_t outSamplesPerFrame) override
+    Holder CloneAndConfigure(uint32_t outChannels, uint32_t outSampleRate, const string& sampleFormat, uint32_t outSamplesPerFrame) override
     {
+        auto avSmpfmt = av_get_sample_fmt(sampleFormat.c_str());
+        if (avSmpfmt == AV_SAMPLE_FMT_NONE) {
+            m_errMsg = "Unknown audio sample format '" + sampleFormat + "'!";
+            return nullptr;
+        }
         auto hSettings = SharedSettings::CreateInstance();
         hSettings->SetAudioOutChannels(outChannels);
         hSettings->SetAudioOutSampleRate(outSampleRate);
-        hSettings->SetAudioOutDataType(GetDataTypeFromSampleFormat(AV_SAMPLE_FMT_FLT));
+        hSettings->SetAudioOutDataType(GetDataTypeFromSampleFormat(avSmpfmt));
+        hSettings->SetAudioOutIsPlanar(av_sample_fmt_is_planar(avSmpfmt));
         return CloneAndConfigure(hSettings, outSamplesPerFrame);
     }
 
@@ -790,7 +802,7 @@ private:
 #else
         oss << ":sum=1";
 #endif
-        // oss << ",aformat=" << av_get_sample_fmt_name(m_mixOutSmpfmt);
+        oss << ",aformat=" << av_get_sample_fmt_name(m_mixOutSmpfmt);
         string filtArgs = oss.str(); oss.str("");
         m_logger->Log(DEBUG) << "'MultiTrackAudioReader' mixer filter args: '" << filtArgs << "'." << endl;
         fferr = avfilter_graph_parse_ptr(m_filterGraph, filtArgs.c_str(), &m_filterInputs, &m_filterOutputs, nullptr);
@@ -967,7 +979,7 @@ private:
                             amat.time_stamp = ConvertPtsToTs(outfrm->pts);
                             amat.flags = IM_MAT_FLAGS_AUDIO_FRAME;
                             amat.rate = { (int)m_outSampleRate, 1 };
-                            amat.elempack = outChannels;
+                            amat.elempack = isDstPlanar ? 1 : outChannels;
                             amat.index_count = outfrm->pts;
                             av_frame_unref(outfrm.get());
                             list<ImGui::ImMat> aeOutMats;

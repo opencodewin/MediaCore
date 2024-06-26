@@ -36,9 +36,9 @@ struct MultiTrackAudioReader
     static MEDIACORE_API Logger::ALogger* GetLogger();
 
     virtual bool Configure(SharedSettings::Holder hSettings, uint32_t outSamplesPerFrame = 1024) = 0;
-    virtual bool Configure(uint32_t outChannels, uint32_t outSampleRate, uint32_t outSamplesPerFrame = 1024) = 0;
+    virtual bool Configure(uint32_t outChannels, uint32_t outSampleRate, const std::string& sampleFormat, uint32_t outSamplesPerFrame = 1024) = 0;
     virtual Holder CloneAndConfigure(SharedSettings::Holder hSettings, uint32_t outSamplesPerFrame) = 0;
-    virtual Holder CloneAndConfigure(uint32_t outChannels, uint32_t outSampleRate, uint32_t outSamplesPerFrame) = 0;
+    virtual Holder CloneAndConfigure(uint32_t outChannels, uint32_t outSampleRate, const std::string& sampleFormat, uint32_t outSamplesPerFrame) = 0;
     virtual SharedSettings::Holder GetSharedSettings() = 0;
     virtual SharedSettings::Holder GetTrackSharedSettings() = 0;
     virtual bool UpdateSettings(SharedSettings::Holder hSettings) = 0;

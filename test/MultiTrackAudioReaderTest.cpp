@@ -121,7 +121,7 @@ static void MultiTrackAudioReader_Initialize(void** handle)
     io.IniFilename = c_imguiIniPath.c_str();
 
     g_mtAudReader = MultiTrackAudioReader::CreateInstance();
-    g_mtAudReader->Configure(c_audioRenderChannels, c_audioRenderSampleRate);
+    g_mtAudReader->Configure(c_audioRenderChannels, c_audioRenderSampleRate, "flt");
     g_mtAudReader->Start();
 
     g_pcmStream = new SimplePcmStream(g_mtAudReader);
