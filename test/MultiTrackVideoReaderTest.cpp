@@ -117,7 +117,7 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
             IGFD::FileDialogConfig config;
 			config.path = "/mnt/data2/video/hd/";
             config.countSelectionMax = 1;
-			config.flags = ImGuiFileDialogFlags_ShowBookmark | ImGuiFileDialogFlags_Modal;
+			config.flags = ImGuiFileDialogFlags_OpenFile_Default;
             ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", ICON_IGFD_FOLDER_OPEN " 打开视频文件", 
                                                     filters, 
                                                     config);
@@ -427,7 +427,7 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
             IGFD::FileDialogConfig config;
 			config.path = "/workspace/MediaFiles/";
             config.countSelectionMax = 1;
-			config.flags = ImGuiFileDialogFlags_ShowBookmark | ImGuiFileDialogFlags_Modal;
+			config.flags = ImGuiFileDialogFlags_OpenFile_Default;
             ImGuiFileDialog::Instance()->OpenDialog("ChooseSubtitleFileDlgKey", ICON_IGFD_FOLDER_OPEN " 打开字幕文件", 
                                                     filters, 
                                                     config);

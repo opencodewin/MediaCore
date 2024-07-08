@@ -392,7 +392,7 @@ static bool MultiTrackAudioReader_Frame(void * handle, bool app_will_quit)
             IGFD::FileDialogConfig config;
 			config.path = "/mnt/data2/video/hd/";
             config.countSelectionMax = 1;
-			config.flags = ImGuiFileDialogFlags_ShowBookmark | ImGuiFileDialogFlags_Modal;
+			config.flags = ImGuiFileDialogFlags_OpenFile_Default;
             ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", ICON_IGFD_FOLDER_OPEN " 打开音频文件", 
                                                     filters, 
                                                     config);
