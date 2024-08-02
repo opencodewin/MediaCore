@@ -1007,7 +1007,7 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
 
         // YUV -> RGB
         ImGui::VkMat rgbMat;
-        rgbMat.type = IM_DT_INT8;
+        rgbMat.type = m_outDataType;
         rgbMat.color_format = IM_CF_ABGR;
         rgbMat.w = m_outWidth;
         rgbMat.h = m_outHeight;
@@ -1018,7 +1018,7 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
         }
         if (m_outputCpuMat && rgbMat.device == IM_DD_VULKAN)
         {
-            outMat.type = IM_DT_INT8;
+            outMat.type = m_outDataType;
             m_imgClrCvt->Conv(rgbMat, outMat);
         }
         else
