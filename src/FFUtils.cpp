@@ -860,7 +860,7 @@ bool AVFrameToImMatConverter::SetOutColorFormat(ImColorFormat clrfmt)
 
 bool AVFrameToImMatConverter::SetOutDataType(ImDataType dtype)
 {
-    if (dtype != IM_DT_INT8 && dtype != IM_DT_FLOAT16 && dtype != IM_DT_FLOAT32)
+    if (dtype != IM_DT_INT8 && dtype != IM_DT_INT16 && dtype != IM_DT_FLOAT16 && dtype != IM_DT_FLOAT32)
     {
         m_errMsg = string("Do NOT SUPPORT output data type ")+to_string((int)dtype)+"!";
         return false;

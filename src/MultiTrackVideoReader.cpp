@@ -83,9 +83,9 @@ public:
             return false;
         }
         const auto dataType = hSettings->VideoOutDataType();
-        if (dataType != IM_DT_INT8 && dataType != IM_DT_FLOAT32)
+        if (dataType != IM_DT_INT8 && dataType != IM_DT_INT16 && dataType != IM_DT_FLOAT32)
         {
-            ostringstream oss; oss << "INVALID argument! VideoOutDataType=" << dataType << "is not supported. ONLY support output INT8 & FLOAT32 data type.";
+            ostringstream oss; oss << "INVALID argument! VideoOutDataType=" << dataType << "is not supported. ONLY support output INT8/INT16/FLOAT32 data type.";
             m_errMsg = oss.str();
             return false;
         }
